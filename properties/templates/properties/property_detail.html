@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+
+{% block title %}
+{{ property.title }}
+{% endblock %}
+
+{% block content %}
+
+<div class="row">
+
+    <div class="col-lg-8">
+
+        <div class="card shadow-sm mb-4">
+
+            <div class="card-body">
+
+                <div class="d-flex justify-content-between align-items-start mb-4">
+                    <h2 class="mb-0">{{ property.title }}</h2>
+                    <span class="badge text-bg-{% if property.status == 'published' %}success{% elif property.status == 'sold' %}secondary{% elif property.status == 'reserved' %}warning{% else %}light{% endif %}">{{ property.get_status_display }}</span>
+                </div>
+
+                <table class="table">
+
+                    <tr>
+                        <th width="200">Тип</th>
+                        <td>{{ property.get_property_type_display }}</td>
+                    </tr>
+
+                    <tr>
+                        <th>Цена</th>
+                        <td>
+                            {% if property.price %}
+                                {{ property.get_currency_display|slice:":1" }} {{ property.price }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <th>Адрес</th>
+                        <td>{{ property.address|default:"—" }}</td>
+                    </tr>
+
+                    <tr>
+                        <th>Площадь</th>
+                        <td>{{ property.area|default:"—" }} м²</td>
+                    </tr>
+
+                    <tr>
+                        <th>Комнаты</th>
+                        <td>{{ property.rooms|default:"—" }}</td>
+                    </tr>
+
+                    <tr><th>Санузлы</th><td>{{ property.bathrooms|default:"—" }}</td></tr>
+                    <tr><th>Этаж</th><td>{% if property.floor %}{{ property.floor }}{% if property.floors_total %} из {{ property.floors_total }}{% endif %}{% else %}—{% endif %}</td></tr>
+                    <tr><th>Участок</th><td>{% if property.land_area %}{{ property.land_area }} м²{% else %}—{% endif %}</td></tr>
+                    <tr><th>Год постройки</th><td>{{ property.year_built|default:"—" }}</td></tr>
+                    <tr><th>Состояние</th><td>{{ property.get_condition_display|default:"—" }}</td></tr>
+
+                </table>
+
+                {% if property.amenities %}<h5 class="mt-4">Особенности и удобства</h5><p class="mb-0">{{ property.amenities|linebreaksbr }}</p>{% endif %}
+
+            </div>
+
+        </div>
+
+        <div class="card shadow-sm mt-4">
+
+            <div class="card-body">
+
+                <div class="d-flex justify-content-between align-items-center mb-3">
+
+                    <h4 class="mb-0">
+                        Фотографии
+                    </h4>
+
+                    <a
+                        href="{% url 'upload_images' property.pk %}"
+                        class="btn btn-success">
+
+                        📷 Добавить фотографии
+
+                    </a>
+
+                </div>
+
+                {% if property.images.all %}
+
+                    <div class="row">
+
+                        {% for image in property.images.all %}
+
+                            <div class="col-md-4 mb-3">
+
+                                <div class="card">
+
+                                    <img
+                                        src="{{ image.image.url }}"
+                                        class="card-img-top"
+                                        style="height:220px; object-fit:cover;">
+
+                                </div>
+
+                            </div>
+
+                        {% endfor %}
+
+                    </div>
+
+                {% else %}
+
+                    <div class="alert alert-light">
+
+                        Пока нет фотографий.
+
+                    </div>
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+        <div class="card shadow-sm">
+
+            <div class="card-body">
+
+                <h4>
+
+                    AI описание
+
+                </h4>
+
+                <hr>
+
+                {% if property.description %}
+
+                    {{ property.description|linebreaks }}
+
+                {% else %}
+
+                    <p class="text-muted">
+
+                        Пока описание не сгенерировано.
+
+                    </p>
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+    </div>
+
+    <div class="col-lg-4">
+
+        <div class="card shadow-sm mb-4">
+
+            <div class="card-body">
+
+                <h5>
+
+                    Действия
+
+                </h5>
+
+                <hr>
+
+                <form method="post" action="{% url 'generate_description' property.pk %}">
+                    {% csrf_token %}
+                    <button class="btn btn-primary w-100 mb-2">✨ Сгенерировать описание</button>
+                </form>
+
+                <a href="{% url 'edit_property' property.pk %}" class="btn btn-outline-primary w-100 mb-2">✏️ Редактировать объект</a>
+
+                <a
+                    href="{% url 'upload_images' property.pk %}"
+                    class="btn btn-success w-100">
+
+                    📷 Загрузить фотографии
+
+                </a>
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+{% endblock %}

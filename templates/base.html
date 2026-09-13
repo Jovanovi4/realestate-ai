@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}RealEstate AI{% endblock %}</title>
+
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <nav class="navbar navbar-dark bg-dark">
+      <div class="container">
+        <a class="navbar-brand" href="{% url 'property_list' %}"> 🏠 RealEstate AI </a>
+        {% if user.is_authenticated %}
+          <div class="d-flex align-items-center gap-2">
+            <span class="text-white-50 small">{{ user.first_name|default:user.username }}</span>
+            <a class="btn btn-success" href="{% url 'create_property' %}">Новый объект</a>
+            <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn btn-outline-light">Выйти</button></form>
+          </div>
+        {% else %}
+          <a class="btn btn-success" href="{% url 'login' %}">Войти</a>
+        {% endif %}
+      </div>
+    </nav>
+
+    <div class="container mt-5">{% block content %} {% endblock %}</div>
+  </body>
+</html>

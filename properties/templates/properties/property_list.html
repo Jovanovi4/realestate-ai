@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block title %}
+Объекты недвижимости
+{% endblock %}
+
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+
+    <h2>Объекты недвижимости</h2>
+
+    <a href="/create/" class="btn btn-success">
+        + Новый объект
+    </a>
+
+</div>
+
+{% if properties %}
+
+    {% for property in properties %}
+
+        <div class="card shadow-sm mb-3">
+
+            <div class="card-body">
+
+                <div class="row">
+
+                    <div class="col-md-8">
+
+                        <h4>{{ property.title }}</h4>
+
+                        <p class="mb-2">
+                            <strong>Тип:</strong>
+                            {{ property.get_property_type_display }}
+                        </p>
+
+                        <p class="mb-2">
+                            <strong>Адрес:</strong>
+                            {{ property.address|default:"—" }}
+                        </p>
+                          <a
+                            href="/{{ property.id }}/"
+                            class="btn btn-outline-primary">
+
+                            Открыть
+
+                        </a>
+                    </div>
+                    
+
+                    <div class="col-md-4 text-md-end">
+
+                        <h4 class="text-primary">
+
+                            {% if property.price %}
+                                {{ property.get_currency_display|slice:":1" }} {{ property.price }}
+                            {% else %}
+                                —
+                            {% endif %}
+
+                        </h4>
+
+                        <p>
+
+                            {% if property.area %}
+                                {{ property.area }} м²
+                            {% endif %}
+
+                            {% if property.rooms %}
+                                • {{ property.rooms }} комн.
+                            {% endif %}
+
+                        </p>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        </div>
+
+    {% endfor %}
+
+{% else %}
+
+    <div class="alert alert-info">
+
+        Пока нет объектов недвижимости.
+
+        <br><br>
+
+        <a href="/create/" class="btn btn-primary">
+
+            Добавить первый объект
+
+        </a>
+
+    </div>
+
+{% endif %}
+
+{% endblock %}

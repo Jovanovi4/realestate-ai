@@ -1,0 +1,30 @@
+<form method="post" novalidate>
+  {% csrf_token %}
+  {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+  <h5 class="border-bottom pb-2 mb-3">Основное</h5>
+  <div class="row">
+    {% for field in form %}
+      {% if forloop.counter <= 6 %}
+        <div class="{% if field.name == 'title' or field.name == 'address' %}col-12{% else %}col-md-6{% endif %} mb-3">
+          <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}
+          {% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}
+        </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <h5 class="border-bottom pb-2 mt-3 mb-3">Характеристики</h5>
+  <div class="row">
+    {% for field in form %}
+      {% if forloop.counter > 6 and forloop.counter <= 13 %}
+        <div class="col-md-6 mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <h5 class="border-bottom pb-2 mt-3 mb-3">Описание</h5>
+  {% for field in form %}
+    {% if forloop.counter > 13 %}
+      <div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>
+    {% endif %}
+  {% endfor %}
+  <button class="btn btn-primary btn-lg">{{ submit_label }}</button>
+</form>
