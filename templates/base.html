@@ -17,6 +17,7 @@
         {% if user.is_authenticated %}
           <div class="d-flex align-items-center gap-2">
             <span class="text-white-50 small">{{ user.first_name|default:user.username }}</span>
+            <a class="btn btn-outline-light" href="{% url 'edit_profile' %}">Контакты</a>
             <a class="btn btn-success" href="{% url 'create_property' %}">Новый объект</a>
             <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn btn-outline-light">Выйти</button></form>
           </div>

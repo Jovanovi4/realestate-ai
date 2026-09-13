@@ -176,6 +176,8 @@
 
                 <a href="{% url 'edit_property' property.pk %}" class="btn btn-outline-primary w-100 mb-2">✏️ Редактировать объект</a>
 
+                {% if property.landing_published %}<a href="{% url 'public_landing' property.landing_slug %}" target="_blank" class="btn btn-dark w-100 mb-2">🌐 Открыть лендинг</a>{% else %}<a href="{% url 'edit_property' property.pk %}" class="btn btn-outline-dark w-100 mb-2">🌐 Настроить лендинг</a>{% endif %}
+
                 <a
                     href="{% url 'upload_images' property.pk %}"
                     class="btn btn-success w-100">

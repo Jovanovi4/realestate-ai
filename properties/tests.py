@@ -51,9 +51,25 @@ class AccountAndPropertyAccessTests(TestCase):
                 "condition": "excellent",
                 "amenities": "Бассейн, парковка",
                 "description": "Готовое описание",
+                "landing_template": "classic",
+                "landing_published": "on",
             },
         )
         self.assertRedirects(response, reverse("property_detail", args=[property.pk]))
         property.refresh_from_db()
         self.assertEqual(property.status, "published")
         self.assertEqual(property.land_area, 600)
+
+    def test_published_landing_accepts_a_lead(self):
+        owner = User.objects.create_user("agent", password="password")
+        property = Property.objects.create(
+            title="Публичный объект", owner=owner, landing_published=True
+        )
+        landing_url = reverse("public_landing", args=[property.landing_slug])
+        self.assertEqual(self.client.get(landing_url).status_code, 200)
+        response = self.client.post(
+            landing_url,
+            {"name": "Мария", "phone": "+351900000000", "message": "Хочу посмотреть"},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(property.leads.count(), 1)

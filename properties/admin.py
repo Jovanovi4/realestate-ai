@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Property
+from .models import Lead, Property, RealtorProfile
 
 
 @admin.register(Property)
@@ -25,3 +25,14 @@ class PropertyAdmin(admin.ModelAdmin):
         "status",
         "currency",
     )
+
+
+@admin.register(Lead)
+class LeadAdmin(admin.ModelAdmin):
+    list_display = ("name", "phone", "property", "created_at")
+    search_fields = ("name", "phone", "property__title")
+
+
+@admin.register(RealtorProfile)
+class RealtorProfileAdmin(admin.ModelAdmin):
+    list_display = ("user", "display_name", "phone")

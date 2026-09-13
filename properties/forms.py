@@ -1,7 +1,7 @@
 from django import forms
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth.models import User
-from .models import Property
+from .models import Lead, Property, RealtorProfile
 
 
 class PropertyForm(forms.ModelForm):
@@ -24,6 +24,8 @@ class PropertyForm(forms.ModelForm):
             "condition",
             "amenities",
             "description",
+            "landing_template",
+            "landing_published",
         ]
 
         widgets = {
@@ -34,7 +36,33 @@ class PropertyForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
-            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            if isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs["class"] = "form-check-input"
+            else:
+                field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+
+
+class RealtorProfileForm(forms.ModelForm):
+    class Meta:
+        model = RealtorProfile
+        fields = ("display_name", "phone", "telegram_username", "whatsapp_phone")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-control"
+
+
+class LeadForm(forms.ModelForm):
+    class Meta:
+        model = Lead
+        fields = ("name", "phone", "message")
+        widgets = {"message": forms.Textarea(attrs={"rows": 3})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-control"
 
 class RegistrationForm(UserCreationForm):
     email = forms.EmailField(label="Email", required=True)

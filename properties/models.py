@@ -1,3 +1,5 @@
+import uuid
+
 from django.conf import settings
 from django.db import models
 
@@ -32,6 +34,10 @@ class Property(models.Model):
         ("excellent", "Отличное"),
         ("good", "Хорошее"),
         ("needs_repair", "Требует ремонта"),
+    ]
+
+    LANDING_TEMPLATES = [
+        ("classic", "Классический"),
     ]
 
     owner = models.ForeignKey(
@@ -143,6 +149,15 @@ class Property(models.Model):
         verbose_name="Описание"
     )
 
+    landing_slug = models.SlugField(max_length=64, unique=True, null=True, blank=True)
+    landing_published = models.BooleanField(default=False, verbose_name="Лендинг опубликован")
+    landing_template = models.CharField(
+        max_length=30,
+        choices=LANDING_TEMPLATES,
+        default="classic",
+        verbose_name="Шаблон лендинга",
+    )
+
     created_at = models.DateTimeField(
         auto_now_add=True
     )
@@ -158,6 +173,11 @@ class Property(models.Model):
 
     def __str__(self):
         return self.title
+
+    def save(self, *args, **kwargs):
+        if not self.landing_slug:
+            self.landing_slug = uuid.uuid4().hex[:12]
+        super().save(*args, **kwargs)
     
 class PropertyImage(models.Model):
 
@@ -211,3 +231,27 @@ class AIContent(models.Model):
         ordering = ["-created_at"]
         verbose_name = "ИИ-контент"
         verbose_name_plural = "ИИ-контент"
+
+
+class RealtorProfile(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="realtor_profile")
+    display_name = models.CharField(max_length=150, blank=True, verbose_name="Имя для лендинга")
+    phone = models.CharField(max_length=30, blank=True, verbose_name="Телефон")
+    telegram_username = models.CharField(max_length=100, blank=True, verbose_name="Telegram без @")
+    whatsapp_phone = models.CharField(max_length=30, blank=True, verbose_name="WhatsApp (номер)")
+
+    def __str__(self):
+        return self.display_name or self.user.get_full_name() or self.user.username
+
+
+class Lead(models.Model):
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="leads")
+    name = models.CharField(max_length=150, verbose_name="Имя")
+    phone = models.CharField(max_length=30, verbose_name="Телефон")
+    message = models.TextField(blank=True, verbose_name="Комментарий")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Заявка"
+        verbose_name_plural = "Заявки"

@@ -5,8 +5,8 @@ from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
-from .forms import PropertyForm, RegistrationForm
-from .models import Property, PropertyImage
+from .forms import LeadForm, PropertyForm, RegistrationForm, RealtorProfileForm
+from .models import Property, PropertyImage, RealtorProfile
 
 
 class PropertyListView(LoginRequiredMixin, ListView):
@@ -51,6 +51,19 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
         return Property.objects.filter(owner=self.request.user)
 
 
+class RealtorProfileUpdateView(LoginRequiredMixin, UpdateView):
+    model = RealtorProfile
+    form_class = RealtorProfileForm
+    template_name = "properties/profile_form.html"
+
+    def get_object(self, queryset=None):
+        profile, _ = RealtorProfile.objects.get_or_create(user=self.request.user)
+        return profile
+
+    def get_success_url(self):
+        return reverse_lazy("property_list")
+
+
 class PropertyImageUploadView(LoginRequiredMixin, View):
     template_name = "properties/upload_images.html"
 
@@ -75,3 +88,30 @@ def register(request):
         login(request, user)
         return redirect("property_list")
     return render(request, "registration/register.html", {"form": form})
+
+
+class PublicLandingView(View):
+    template_name = "properties/public_landing.html"
+
+    def get_property(self, slug):
+        return get_object_or_404(
+            Property.objects.select_related("owner").prefetch_related("images"),
+            landing_slug=slug,
+            landing_published=True,
+        )
+
+    def get(self, request, slug):
+        property = self.get_property(slug)
+        profile = RealtorProfile.objects.filter(user=property.owner).first()
+        return render(request, self.template_name, {"property": property, "profile": profile, "form": LeadForm()})
+
+    def post(self, request, slug):
+        property = self.get_property(slug)
+        profile = RealtorProfile.objects.filter(user=property.owner).first()
+        form = LeadForm(request.POST)
+        if form.is_valid():
+            lead = form.save(commit=False)
+            lead.property = property
+            lead.save()
+            return render(request, self.template_name, {"property": property, "profile": profile, "form": LeadForm(), "sent": True})
+        return render(request, self.template_name, {"property": property, "profile": profile, "form": form})
