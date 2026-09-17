@@ -38,6 +38,8 @@ class Property(models.Model):
 
     LANDING_TEMPLATES = [
         ("classic", "Классический"),
+        ("modern", "Современный"),
+        ("premium", "Премиальный"),
     ]
 
     owner = models.ForeignKey(
@@ -235,21 +237,32 @@ class AIContent(models.Model):
 
 class RealtorProfile(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="realtor_profile")
-    display_name = models.CharField(max_length=150, blank=True, verbose_name="Имя для лендинга")
+    display_name = models.CharField(max_length=150, blank=True, verbose_name="Имя")
+    photo = models.ImageField(upload_to="realtors/", blank=True, verbose_name="Фото")
     phone = models.CharField(max_length=30, blank=True, verbose_name="Телефон")
     telegram_username = models.CharField(max_length=100, blank=True, verbose_name="Telegram без @")
-    whatsapp_phone = models.CharField(max_length=30, blank=True, verbose_name="WhatsApp (номер)")
+    email = models.EmailField(blank=True, verbose_name="Email")
 
     def __str__(self):
         return self.display_name or self.user.get_full_name() or self.user.username
 
 
 class Lead(models.Model):
+    STATUS_CHOICES = [
+        ("new", "Новая"),
+        ("in_progress", "В работе"),
+        ("viewing", "Показ назначен"),
+        ("won", "Успешно"),
+        ("lost", "Отказ"),
+    ]
+
     property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="leads")
     name = models.CharField(max_length=150, verbose_name="Имя")
     phone = models.CharField(max_length=30, verbose_name="Телефон")
     message = models.TextField(blank=True, verbose_name="Комментарий")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Статус")
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]

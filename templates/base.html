@@ -17,6 +17,7 @@
         {% if user.is_authenticated %}
           <div class="d-flex align-items-center gap-2">
             <span class="text-white-50 small">{{ user.first_name|default:user.username }}</span>
+            <a class="btn btn-outline-light" href="{% url 'lead_list' %}">Заявки</a>
             <a class="btn btn-outline-light" href="{% url 'edit_profile' %}">Контакты</a>
             <a class="btn btn-success" href="{% url 'create_property' %}">Новый объект</a>
             <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn btn-outline-light">Выйти</button></form>
@@ -28,5 +29,33 @@
     </nav>
 
     <div class="container mt-5">{% block content %} {% endblock %}</div>
+    <script>
+      document.querySelectorAll('[data-phone-mask="true"]').forEach((input) => {
+        const formatPhone = () => {
+          let digits = input.value.replace(/\D/g, '');
+          if (!digits) return '';
+          if (digits.startsWith('8')) digits = `7${digits.slice(1)}`;
+          if (!digits.startsWith('7')) digits = `7${digits}`;
+          digits = digits.slice(0, 11);
+          let result = '+7';
+          if (digits.length > 1) result += ` (${digits.slice(1, 4)}`;
+          if (digits.length >= 4) result += `) ${digits.slice(4, 7)}`;
+          if (digits.length >= 7) result += `-${digits.slice(7, 9)}`;
+          if (digits.length >= 9) result += `-${digits.slice(9, 11)}`;
+          return result;
+        };
+
+        input.addEventListener('focus', () => {
+          if (!input.value) input.value = '+7';
+        });
+        input.addEventListener('input', () => {
+          input.value = formatPhone();
+        });
+        input.addEventListener('blur', () => {
+          if (input.value === '+7') input.value = '';
+        });
+        if (input.value) input.value = formatPhone();
+      });
+    </script>
   </body>
 </html>

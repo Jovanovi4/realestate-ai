@@ -176,6 +176,11 @@
 
                 <a href="{% url 'edit_property' property.pk %}" class="btn btn-outline-primary w-100 mb-2">✏️ Редактировать объект</a>
 
+                <form method="post" action="{% url 'delete_property' property.pk %}" onsubmit="return confirm('Удалить объект, все его фотографии и связанные заявки без возможности восстановления?');">
+                    {% csrf_token %}
+                    <button class="btn btn-outline-danger w-100 mb-2">🗑️ Удалить объект</button>
+                </form>
+
                 {% if property.landing_published %}<a href="{% url 'public_landing' property.landing_slug %}" target="_blank" class="btn btn-dark w-100 mb-2">🌐 Открыть лендинг</a>{% else %}<a href="{% url 'edit_property' property.pk %}" class="btn btn-outline-dark w-100 mb-2">🌐 Настроить лендинг</a>{% endif %}
 
                 <a

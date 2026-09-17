@@ -4,8 +4,8 @@
 <div class="row justify-content-center"><div class="col-md-6 col-lg-5"><div class="card shadow-sm"><div class="card-body p-4">
   <h2 class="mb-4">Вход в кабинет</h2>
   <form method="post">{% csrf_token %}
-    {% if form.errors %}<div class="alert alert-danger">Проверьте логин и пароль.</div>{% endif %}
-    <div class="mb-3"><label class="form-label" for="id_username">Логин</label><input class="form-control" type="text" name="username" id="id_username" required autofocus></div>
+    {% if form.errors %}<div class="alert alert-danger">Проверьте номер телефона и пароль.</div>{% endif %}
+    <div class="mb-3"><label class="form-label" for="id_username">Телефон</label><input class="form-control" type="tel" name="username" id="id_username" placeholder="+7 (999) 999-99-99" data-phone-mask="true" inputmode="tel" maxlength="18" required autofocus></div>
     <div class="mb-4"><label class="form-label" for="id_password">Пароль</label><input class="form-control" type="password" name="password" id="id_password" required></div>
     <button class="btn btn-primary w-100">Войти</button>
   </form>

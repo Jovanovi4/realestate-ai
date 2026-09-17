@@ -3,6 +3,6 @@
 {% block content %}
 <div class="row justify-content-center"><div class="col-lg-7"><div class="card shadow-sm"><div class="card-body p-4">
   <h2 class="mb-2">Контакты для лендингов</h2><p class="text-muted mb-4">Эти контакты увидят посетители ваших опубликованных объектов.</p>
-  <form method="post">{% csrf_token %}{% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endfor %}<button class="btn btn-primary">Сохранить контакты</button></form>
+  <form method="post" enctype="multipart/form-data">{% csrf_token %}{% for field in form %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endfor %}<button class="btn btn-primary">Сохранить контакты</button></form>
 </div></div></div></div>
 {% endblock %}

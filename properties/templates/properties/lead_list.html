@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Заявки{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4"><div><h2 class="mb-1">Заявки</h2><p class="text-muted mb-0">Обращения с ваших опубликованных лендингов.</p></div></div>
+
+<form method="get" class="row g-2 align-items-end mb-4"><div class="col-sm-4"><label class="form-label" for="status">Статус</label><select id="status" name="status" class="form-select"><option value="">Все статусы</option>{% for value, label in status_choices %}<option value="{{ value }}" {% if value == selected_status %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div><div class="col-sm-auto"><button class="btn btn-outline-primary">Фильтровать</button></div></form>
+
+{% if leads %}
+<div class="card shadow-sm"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Клиент</th><th>Объект</th><th>Статус</th><th>Дата</th><th></th></tr></thead><tbody>{% for lead in leads %}<tr><td><strong>{{ lead.name }}</strong><br><a href="tel:{{ lead.phone }}" class="text-decoration-none small">{{ lead.phone }}</a></td><td>{{ lead.property.title }}</td><td><span class="badge text-bg-{% if lead.status == 'new' %}primary{% elif lead.status == 'in_progress' %}warning{% elif lead.status == 'viewing' %}info{% elif lead.status == 'won' %}success{% else %}secondary{% endif %}">{{ lead.get_status_display }}</span></td><td class="text-muted small">{{ lead.created_at|date:"d.m.Y H:i" }}</td><td><a class="btn btn-sm btn-outline-primary" href="{% url 'lead_detail' lead.pk %}">Открыть</a></td></tr>{% endfor %}</tbody></table></div></div>
+{% if is_paginated %}<nav class="mt-4"><ul class="pagination">{% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?status={{ selected_status }}&page={{ page_obj.previous_page_number }}">Назад</a></li>{% endif %}<li class="page-item disabled"><span class="page-link">{{ page_obj.number }} из {{ paginator.num_pages }}</span></li>{% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?status={{ selected_status }}&page={{ page_obj.next_page_number }}">Вперёд</a></li>{% endif %}</ul></nav>{% endif %}
+{% else %}<div class="alert alert-light border">Заявок пока нет. Они появятся здесь после заполнения формы на опубликованном лендинге.</div>{% endif %}
+{% endblock %}

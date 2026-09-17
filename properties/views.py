@@ -3,10 +3,10 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views import View
-from django.views.generic import CreateView, DetailView, ListView, UpdateView
+from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
-from .forms import LeadForm, PropertyForm, RegistrationForm, RealtorProfileForm
-from .models import Property, PropertyImage, RealtorProfile
+from .forms import LeadForm, LeadStatusForm, PropertyForm, RegistrationForm, RealtorProfileForm
+from .models import Lead, Property, PropertyImage, RealtorProfile
 
 
 class PropertyListView(LoginRequiredMixin, ListView):
@@ -51,6 +51,30 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
         return Property.objects.filter(owner=self.request.user)
 
 
+class PropertyDeleteView(LoginRequiredMixin, DeleteView):
+    model = Property
+
+    def get_queryset(self):
+        return Property.objects.filter(owner=self.request.user)
+
+    def get_success_url(self):
+        return reverse_lazy("property_list")
+
+    def _delete_image_files(self):
+        for property_image in self.object.images.all():
+            if property_image.image:
+                property_image.image.delete(save=False)
+
+    def form_valid(self, form):
+        self._delete_image_files()
+        return super().form_valid(form)
+
+    def delete(self, request, *args, **kwargs):
+        self.object = self.get_object()
+        self._delete_image_files()
+        return super().delete(request, *args, **kwargs)
+
+
 class RealtorProfileUpdateView(LoginRequiredMixin, UpdateView):
     model = RealtorProfile
     form_class = RealtorProfileForm
@@ -62,6 +86,49 @@ class RealtorProfileUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_success_url(self):
         return reverse_lazy("property_list")
+
+
+class LeadListView(LoginRequiredMixin, ListView):
+    model = Lead
+    template_name = "properties/lead_list.html"
+    context_object_name = "leads"
+    paginate_by = 25
+
+    def get_queryset(self):
+        queryset = Lead.objects.filter(property__owner=self.request.user).select_related("property")
+        status = self.request.GET.get("status")
+        if status in dict(Lead.STATUS_CHOICES):
+            queryset = queryset.filter(status=status)
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["status_choices"] = Lead.STATUS_CHOICES
+        context["selected_status"] = self.request.GET.get("status", "")
+        return context
+
+
+class LeadDetailView(LoginRequiredMixin, UpdateView):
+    model = Lead
+    form_class = LeadStatusForm
+    template_name = "properties/lead_detail.html"
+    context_object_name = "lead"
+
+    def get_queryset(self):
+        return Lead.objects.filter(property__owner=self.request.user).select_related("property")
+
+    def get_success_url(self):
+        return reverse_lazy("lead_detail", kwargs={"pk": self.object.pk})
+
+
+class LeadDeleteView(LoginRequiredMixin, DeleteView):
+    model = Lead
+
+    def get_queryset(self):
+        return Lead.objects.filter(property__owner=self.request.user)
+
+    def get_success_url(self):
+        return reverse_lazy("lead_list")
 
 
 class PropertyImageUploadView(LoginRequiredMixin, View):
@@ -91,7 +158,14 @@ def register(request):
 
 
 class PublicLandingView(View):
-    template_name = "properties/public_landing.html"
+    template_names = {
+        "classic": "properties/public_landing.html",
+        "modern": "properties/public_landing_modern.html",
+        "premium": "properties/public_landing_premium.html",
+    }
+
+    def get_template_name(self, property):
+        return self.template_names.get(property.landing_template, self.template_names["classic"])
 
     def get_property(self, slug):
         return get_object_or_404(
@@ -103,7 +177,7 @@ class PublicLandingView(View):
     def get(self, request, slug):
         property = self.get_property(slug)
         profile = RealtorProfile.objects.filter(user=property.owner).first()
-        return render(request, self.template_name, {"property": property, "profile": profile, "form": LeadForm()})
+        return render(request, self.get_template_name(property), {"property": property, "profile": profile, "form": LeadForm()})
 
     def post(self, request, slug):
         property = self.get_property(slug)
@@ -113,5 +187,5 @@ class PublicLandingView(View):
             lead = form.save(commit=False)
             lead.property = property
             lead.save()
-            return render(request, self.template_name, {"property": property, "profile": profile, "form": LeadForm(), "sent": True})
-        return render(request, self.template_name, {"property": property, "profile": profile, "form": form})
+            return render(request, self.get_template_name(property), {"property": property, "profile": profile, "form": LeadForm(), "sent": True})
+        return render(request, self.get_template_name(property), {"property": property, "profile": profile, "form": form})
