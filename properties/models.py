@@ -4,6 +4,10 @@ from django.conf import settings
 from django.db import models
 
 
+def default_landing_block_order():
+    return ["hero", "facts", "description", "gallery", "contact"]
+
+
 class Property(models.Model):
     PROPERTY_TYPES = [
         ("apartment", "Квартира"),
@@ -18,9 +22,15 @@ class Property(models.Model):
     STATUS_CHOICES = [
         ("draft", "Черновик"),
         ("published", "Опубликован"),
+        ("showing", "На показах"),
         ("reserved", "Забронирован"),
         ("sold", "Продан"),
         ("archived", "В архиве"),
+    ]
+
+    AVITO_OPERATION_CHOICES = [
+        ("sell", "Продам"),
+        ("rent", "Сдам"),
     ]
 
     CURRENCY_CHOICES = [
@@ -42,6 +52,14 @@ class Property(models.Model):
         ("premium", "Премиальный"),
     ]
 
+    LANDING_BLOCKS = [
+        ("hero", "Первый экран"),
+        ("facts", "Основные характеристики"),
+        ("description", "Описание объекта"),
+        ("gallery", "Фотогалерея"),
+        ("contact", "Заявка и контакты"),
+    ]
+
     owner = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
@@ -54,6 +72,12 @@ class Property(models.Model):
     title = models.CharField(
         max_length=255,
         verbose_name="Название"
+    )
+
+    marketing_headline = models.CharField(
+        max_length=255,
+        blank=True,
+        verbose_name="Заголовок объявления",
     )
 
     property_type = models.CharField(
@@ -83,6 +107,14 @@ class Property(models.Model):
         choices=STATUS_CHOICES,
         default="draft",
         verbose_name="Статус",
+    )
+
+    avito_export = models.BooleanField(default=False, verbose_name="Включить в экспорт Avito")
+    avito_operation = models.CharField(
+        max_length=10,
+        choices=AVITO_OPERATION_CHOICES,
+        default="sell",
+        verbose_name="Тип объявления Avito",
     )
 
     address = models.CharField(
@@ -151,6 +183,22 @@ class Property(models.Model):
         verbose_name="Описание"
     )
 
+    short_description = models.TextField(
+        blank=True,
+        verbose_name="Короткое описание",
+    )
+
+    landing_title = models.CharField(max_length=255, blank=True, verbose_name="Заголовок лендинга")
+    landing_subtitle = models.TextField(blank=True, verbose_name="Подзаголовок лендинга")
+    landing_about_title = models.CharField(max_length=255, blank=True, verbose_name="Заголовок блока «Об объекте»")
+    landing_contact_title = models.CharField(max_length=255, blank=True, verbose_name="Заголовок блока заявки")
+    seo_title = models.CharField(max_length=255, blank=True, verbose_name="SEO-заголовок")
+    seo_description = models.CharField(max_length=300, blank=True, verbose_name="SEO-описание")
+    landing_block_order = models.JSONField(
+        default=default_landing_block_order,
+        verbose_name="Порядок блоков лендинга",
+    )
+
     landing_slug = models.SlugField(max_length=64, unique=True, null=True, blank=True)
     landing_published = models.BooleanField(default=False, verbose_name="Лендинг опубликован")
     landing_template = models.CharField(
@@ -180,6 +228,17 @@ class Property(models.Model):
         if not self.landing_slug:
             self.landing_slug = uuid.uuid4().hex[:12]
         super().save(*args, **kwargs)
+
+    @property
+    def primary_image(self):
+        return self.images.filter(is_primary=True).first() or self.images.first()
+
+    def ensure_primary_image(self):
+        if not self.images.filter(is_primary=True).exists():
+            image = self.images.order_by("order", "id").first()
+            if image:
+                image.is_primary = True
+                image.save(update_fields=["is_primary"])
     
 class PropertyImage(models.Model):
 
@@ -197,6 +256,8 @@ class PropertyImage(models.Model):
         default=0
     )
 
+    is_primary = models.BooleanField(default=False, verbose_name="Главная фотография")
+
     class Meta:
         ordering = ["order"]
 
@@ -205,6 +266,20 @@ class PropertyImage(models.Model):
     
 class AIContent(models.Model):
 
+    CONTENT_TYPES = [
+        ("headline", "Заголовок объявления"),
+        ("short_description", "Короткое описание"),
+        ("full_description", "Полное описание"),
+        ("description", "Описание (архив)"),
+    ]
+
+    TONE_CHOICES = [
+        ("business", "Деловой"),
+        ("premium", "Премиальный"),
+        ("concise", "Лаконичный"),
+        ("emotional", "Эмоциональный"),
+    ]
+
     property = models.ForeignKey(
         Property,
         on_delete=models.CASCADE,
@@ -212,8 +287,20 @@ class AIContent(models.Model):
     )
 
     content_type = models.CharField(
-        max_length=30
+        max_length=30,
+        choices=CONTENT_TYPES,
     )
+
+    tone = models.CharField(
+        max_length=20,
+        choices=TONE_CHOICES,
+        default="business",
+        verbose_name="Тон",
+    )
+
+    provider = models.CharField(max_length=30, blank=True, verbose_name="Провайдер")
+    model = models.CharField(max_length=100, blank=True, verbose_name="Модель")
+    prompt = models.TextField(blank=True, verbose_name="Запрос к ИИ")
 
     language = models.CharField(
         max_length=10,
@@ -226,6 +313,9 @@ class AIContent(models.Model):
     )
 
     content = models.TextField()
+    edited_content = models.TextField(blank=True, verbose_name="Отредактированный текст")
+    is_applied = models.BooleanField(default=False, verbose_name="Применён к объекту")
+    applied_at = models.DateTimeField(null=True, blank=True, verbose_name="Применён")
 
     created_at = models.DateTimeField(auto_now_add=True)
 

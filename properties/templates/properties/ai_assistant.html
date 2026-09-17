@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block title %}ИИ-помощник — {{ property.title }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+  <div>
+    <h1 class="h2 mb-1">ИИ-помощник</h1>
+    <p class="text-muted mb-0">{{ property.title }} · текст создаётся только на основе карточки объекта.</p>
+  </div>
+  <a href="{% url 'property_detail' property.pk %}" class="btn btn-outline-secondary">← К объекту</a>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5">Создать текст</h2>
+        <p class="small text-muted">Результат сначала попадёт в историю. Вы сможете изменить его до применения.</p>
+        <form method="post">
+          {% csrf_token %}
+          {% for field in form %}
+            <div class="mb-3">
+              <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+              {{ field }}
+              {% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}
+            </div>
+          {% endfor %}
+          <button class="btn btn-primary w-100">✨ Сгенерировать</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-8">
+    <div class="card shadow-sm">
+      <div class="card-body">
+        <h2 class="h5 mb-3">История генераций</h2>
+        {% if history %}
+          <div class="list-group list-group-flush">
+            {% for item in history %}
+              <div class="list-group-item px-0">
+                <div class="d-flex justify-content-between gap-3 align-items-start">
+                  <div>
+                    <a href="{% url 'ai_content_edit' item.pk %}" class="text-decoration-none text-body"><strong>{{ item.get_content_type_display }}</strong></a>
+                    <span class="text-muted">· {{ item.get_tone_display }}</span>
+                    {% if item.is_applied %}<span class="badge text-bg-success ms-1">Применён</span>{% endif %}
+                    <a href="{% url 'ai_content_edit' item.pk %}" class="d-block text-decoration-none text-body-secondary"><p class="mb-0 mt-2">{{ item.edited_content|default:item.content|truncatechars:180 }}</p></a>
+                  </div>
+                  <div class="text-end text-nowrap"><small class="text-muted d-block mb-2">{{ item.created_at|date:"d.m.Y H:i" }}</small><form method="post" action="{% url 'ai_content_delete' item.pk %}" onsubmit="return confirm('Удалить эту запись из истории генераций?');">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Удалить</button></form></div>
+                </div>
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <p class="text-muted mb-0">Генераций ещё не было.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

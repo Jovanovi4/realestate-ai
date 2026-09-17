@@ -1,5 +1,10 @@
+import json
+
 from django.contrib.auth import login
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.db import transaction
+from django.db.models import Max, Q
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse_lazy
 from django.views import View
@@ -7,6 +12,7 @@ from django.views.generic import CreateView, DeleteView, DetailView, ListView, U
 
 from .forms import LeadForm, LeadStatusForm, PropertyForm, RegistrationForm, RealtorProfileForm
 from .models import Lead, Property, PropertyImage, RealtorProfile
+from .services.avito_service import AvitoExportService
 
 
 class PropertyListView(LoginRequiredMixin, ListView):
@@ -15,7 +21,31 @@ class PropertyListView(LoginRequiredMixin, ListView):
     context_object_name = "properties"
 
     def get_queryset(self):
-        return Property.objects.filter(owner=self.request.user)
+        queryset = Property.objects.filter(owner=self.request.user)
+        query = self.request.GET.get("q", "").strip()
+        property_type = self.request.GET.get("property_type")
+        status = self.request.GET.get("status")
+        min_price = self.request.GET.get("min_price")
+        max_price = self.request.GET.get("max_price")
+
+        if query:
+            queryset = queryset.filter(Q(title__icontains=query) | Q(address__icontains=query))
+        if property_type in dict(Property.PROPERTY_TYPES):
+            queryset = queryset.filter(property_type=property_type)
+        if status in dict(Property.STATUS_CHOICES):
+            queryset = queryset.filter(status=status)
+        if min_price:
+            queryset = queryset.filter(price__gte=min_price)
+        if max_price:
+            queryset = queryset.filter(price__lte=max_price)
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["property_types"] = Property.PROPERTY_TYPES
+        context["status_choices"] = Property.STATUS_CHOICES
+        context["filters"] = self.request.GET
+        return context
 
 
 class PropertyCreateView(LoginRequiredMixin, CreateView):
@@ -49,6 +79,42 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
 
     def get_queryset(self):
         return Property.objects.filter(owner=self.request.user)
+
+
+class AvitoExportView(LoginRequiredMixin, View):
+    template_name = "properties/avito_export.html"
+
+    def get_properties_and_profile(self):
+        properties = Property.objects.filter(
+            owner=self.request.user,
+            avito_export=True,
+        ).prefetch_related("images")
+        profile = RealtorProfile.objects.filter(user=self.request.user).first()
+        return properties, profile
+
+    def get(self, request):
+        properties, profile = self.get_properties_and_profile()
+        valid_properties, invalid_properties = AvitoExportService.get_exportable(properties, profile)
+        if request.GET.get("download") == "1":
+            if not valid_properties:
+                return redirect("avito_export")
+            xml_content = AvitoExportService.build_xml(
+                valid_properties,
+                profile,
+                request.build_absolute_uri("/").rstrip("/"),
+            )
+            response = HttpResponse(xml_content, content_type="application/xml; charset=utf-8")
+            response["Content-Disposition"] = 'attachment; filename="avito-properties.xml"'
+            return response
+        return render(
+            request,
+            self.template_name,
+            {
+                "valid_properties": valid_properties,
+                "invalid_properties": invalid_properties,
+                "selected_count": properties.count(),
+            },
+        )
 
 
 class PropertyDeleteView(LoginRequiredMixin, DeleteView):
@@ -140,9 +206,62 @@ class PropertyImageUploadView(LoginRequiredMixin, View):
 
     def post(self, request, pk):
         property = get_object_or_404(Property, pk=pk, owner=request.user)
+        next_order = (property.images.aggregate(max_order=Max("order"))["max_order"] or -1) + 1
+        has_primary = property.images.filter(is_primary=True).exists()
         for image in request.FILES.getlist("images"):
-            PropertyImage.objects.create(property=property, image=image)
+            PropertyImage.objects.create(
+                property=property,
+                image=image,
+                order=next_order,
+                is_primary=not has_primary,
+            )
+            has_primary = True
+            next_order += 1
         return redirect("property_detail", pk=property.pk)
+
+
+class PropertyImagePrimaryView(LoginRequiredMixin, View):
+    def post(self, request, pk, image_pk):
+        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        image = get_object_or_404(property.images, pk=image_pk)
+        with transaction.atomic():
+            property.images.update(is_primary=False)
+            image.is_primary = True
+            image.save(update_fields=["is_primary"])
+        return redirect("property_detail", pk=property.pk)
+
+
+class PropertyImageDeleteView(LoginRequiredMixin, View):
+    def post(self, request, pk, image_pk):
+        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        image = get_object_or_404(property.images, pk=image_pk)
+        image_file = image.image
+        image.delete()
+        if image_file:
+            image_file.delete(save=False)
+        property.ensure_primary_image()
+        return redirect("property_detail", pk=property.pk)
+
+
+class PropertyImageReorderView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        try:
+            image_ids = json.loads(request.body).get("image_ids", [])
+            image_ids = [int(image_id) for image_id in image_ids]
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return JsonResponse({"ok": False, "error": "Некорректный порядок фотографий."}, status=400)
+
+        existing_images = list(property.images.all())
+        existing_ids = {image.pk for image in existing_images}
+        if len(image_ids) != len(existing_ids) or len(image_ids) != len(set(image_ids)) or set(image_ids) != existing_ids:
+            return JsonResponse({"ok": False, "error": "Список фотографий изменился. Обновите страницу."}, status=400)
+
+        images_by_id = {image.pk: image for image in existing_images}
+        for position, image_id in enumerate(image_ids):
+            images_by_id[image_id].order = position
+        PropertyImage.objects.bulk_update(existing_images, ["order"])
+        return JsonResponse({"ok": True})
 
 
 def register(request):
@@ -167,6 +286,23 @@ class PublicLandingView(View):
     def get_template_name(self, property):
         return self.template_names.get(property.landing_template, self.template_names["classic"])
 
+    @staticmethod
+    def get_landing_order(property):
+        valid_keys = [key for key, _ in Property.LANDING_BLOCKS]
+        order = property.landing_block_order or valid_keys
+        if set(order) != set(valid_keys) or len(order) != len(valid_keys):
+            order = valid_keys
+        return {block: index + 1 for index, block in enumerate(order)}
+
+    def get_context(self, property, profile, form, **extra):
+        return {
+            "property": property,
+            "profile": profile,
+            "form": form,
+            "landing_order": self.get_landing_order(property),
+            **extra,
+        }
+
     def get_property(self, slug):
         return get_object_or_404(
             Property.objects.select_related("owner").prefetch_related("images"),
@@ -177,7 +313,7 @@ class PublicLandingView(View):
     def get(self, request, slug):
         property = self.get_property(slug)
         profile = RealtorProfile.objects.filter(user=property.owner).first()
-        return render(request, self.get_template_name(property), {"property": property, "profile": profile, "form": LeadForm()})
+        return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm()))
 
     def post(self, request, slug):
         property = self.get_property(slug)
@@ -187,5 +323,5 @@ class PublicLandingView(View):
             lead = form.save(commit=False)
             lead.property = property
             lead.save()
-            return render(request, self.get_template_name(property), {"property": property, "profile": profile, "form": LeadForm(), "sent": True})
-        return render(request, self.get_template_name(property), {"property": property, "profile": profile, "form": form})
+            return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(), sent=True))
+        return render(request, self.get_template_name(property), self.get_context(property, profile, form))

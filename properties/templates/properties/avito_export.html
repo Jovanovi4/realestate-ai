@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+
+{% block title %}XML для Avito{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-start gap-3 mb-4"><div><h1 class="h2 mb-1">XML для Avito</h1><p class="text-muted mb-0">Ручная выгрузка отмеченных опубликованных объектов. Файл загружается в кабинет Avito вручную.</p></div><a href="{% url 'property_list' %}" class="btn btn-outline-secondary text-nowrap">← К объектам</a></div>
+
+{% if selected_count == 0 %}
+  <div class="alert alert-info">Нет объектов, отмеченных для выгрузки. Откройте нужный объект и включите «Включить в экспорт Avito».</div>
+{% endif %}
+
+{% if valid_properties %}
+  <div class="card shadow-sm mb-4"><div class="card-body"><div class="d-flex justify-content-between align-items-center gap-3 flex-wrap"><div><h2 class="h5 mb-1">Готово к выгрузке: {{ valid_properties|length }}</h2><p class="text-muted mb-0">Будут добавлены только перечисленные ниже объекты.</p></div><a href="?download=1" class="btn btn-primary">↓ Скачать XML для Avito</a></div><ul class="mb-0 mt-3">{% for property in valid_properties %}<li>{{ property.title }}</li>{% endfor %}</ul></div></div>
+{% endif %}
+
+{% if invalid_properties %}
+  <div class="card shadow-sm"><div class="card-body"><h2 class="h5">Не войдут в файл: {{ invalid_properties|length }}</h2><p class="text-muted">Исправьте отмеченные поля и повторите скачивание.</p><div class="list-group list-group-flush">{% for property, errors in invalid_properties %}<div class="list-group-item px-0"><a href="{% url 'edit_property' property.pk %}" class="fw-semibold">{{ property.title }}</a><div class="small text-danger mt-1">{{ errors|join:"; " }}.</div></div>{% endfor %}</div></div></div>
+{% endif %}
+{% endblock %}

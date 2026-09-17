@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Lead, Property, RealtorProfile
+from .models import AIContent, Lead, Property, RealtorProfile
 
 
 @admin.register(Property)
@@ -37,3 +37,10 @@ class LeadAdmin(admin.ModelAdmin):
 @admin.register(RealtorProfile)
 class RealtorProfileAdmin(admin.ModelAdmin):
     list_display = ("user", "display_name", "phone")
+
+
+@admin.register(AIContent)
+class AIContentAdmin(admin.ModelAdmin):
+    list_display = ("property", "content_type", "tone", "provider", "model", "is_applied", "created_at")
+    list_filter = ("content_type", "tone", "provider", "is_applied")
+    search_fields = ("property__title", "content")

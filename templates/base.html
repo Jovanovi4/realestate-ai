@@ -18,9 +18,11 @@
           <div class="d-flex align-items-center gap-2">
             <span class="text-white-50 small">{{ user.first_name|default:user.username }}</span>
             <a class="btn btn-outline-light" href="{% url 'lead_list' %}">Заявки</a>
-            <a class="btn btn-outline-light" href="{% url 'edit_profile' %}">Контакты</a>
+            <a class="btn btn-outline-light d-inline-flex align-items-center gap-2" href="{% url 'edit_profile' %}" aria-label="Личный кабинет">
+              {% if nav_profile and nav_profile.photo %}<img src="{{ nav_profile.photo.url }}" alt="" width="24" height="24" class="rounded-circle" style="object-fit:cover;">{% endif %}
+              <span>Личный кабинет</span>
+            </a>
             <a class="btn btn-success" href="{% url 'create_property' %}">Новый объект</a>
-            <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn btn-outline-light">Выйти</button></form>
           </div>
         {% else %}
           <a class="btn btn-success" href="{% url 'login' %}">Войти</a>
@@ -28,7 +30,10 @@
       </div>
     </nav>
 
-    <div class="container mt-5">{% block content %} {% endblock %}</div>
+    <div class="container mt-5">
+      {% if messages %}{% for message in messages %}<div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">{{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button></div>{% endfor %}{% endif %}
+      {% block content %} {% endblock %}
+    </div>
     <script>
       document.querySelectorAll('[data-phone-mask="true"]').forEach((input) => {
         const formatPhone = () => {

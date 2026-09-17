@@ -1,18 +1,90 @@
 <form method="post" novalidate>
   {% csrf_token %}
   {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
-  <h5 class="border-bottom pb-2 mb-3">Основное</h5>
-  <div class="row">
-    {% for field in form %}{% if field.name in 'title property_type status price currency address' %}<div class="{% if field.name == 'title' or field.name == 'address' %}col-12{% else %}col-md-6{% endif %} mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endif %}{% endfor %}
+
+  <ul class="nav nav-tabs mb-4" id="property-form-tabs" role="tablist">
+    <li class="nav-item" role="presentation"><button class="nav-link active" id="details-tab" data-bs-toggle="tab" data-bs-target="#details-pane" type="button" role="tab">Основные данные</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link" id="landing-tab" data-bs-toggle="tab" data-bs-target="#landing-pane" type="button" role="tab">Лендинг</button></li>
+  </ul>
+
+  <div class="tab-content">
+    <div class="tab-pane fade show active" id="details-pane" role="tabpanel" aria-labelledby="details-tab">
+      <h5 class="border-bottom pb-2 mb-3">Основное</h5>
+      <div class="row">
+        {% for field in form %}{% if field.name in 'title marketing_headline property_type status price currency address' %}<div class="{% if field.name == 'title' or field.name == 'marketing_headline' or field.name == 'address' %}col-12{% else %}col-md-6{% endif %} mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endif %}{% endfor %}
+      </div>
+      <h5 class="border-bottom pb-2 mt-3 mb-3">Характеристики</h5>
+      <div class="row">
+        {% for field in form %}{% if field.name in 'area rooms bathrooms floor floors_total land_area year_built condition' %}<div class="col-md-6 mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endif %}{% endfor %}
+      </div>
+      <h5 class="border-bottom pb-2 mt-3 mb-3">Описание</h5>
+      {% for field in form %}{% if field.name == 'amenities' or field.name == 'short_description' or field.name == 'description' %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endif %}{% endfor %}
+      <h5 class="border-bottom pb-2 mt-4 mb-3">Публикация на площадках</h5>
+      <div class="form-check mb-3">{{ form.avito_export }}<label class="form-check-label" for="{{ form.avito_export.id_for_label }}">{{ form.avito_export.label }}</label><div class="form-text">Выгрузка формируется вручную файлом XML.</div>{% if form.avito_export.errors %}<div class="text-danger small">{{ form.avito_export.errors|striptags }}</div>{% endif %}</div>
+      <div class="mb-3"><label class="form-label" for="{{ form.avito_operation.id_for_label }}">{{ form.avito_operation.label }}</label>{{ form.avito_operation }}{% if form.avito_operation.errors %}<div class="text-danger small">{{ form.avito_operation.errors|striptags }}</div>{% endif %}</div>
+    </div>
+
+    <div class="tab-pane fade" id="landing-pane" role="tabpanel" aria-labelledby="landing-tab">
+      <h5 class="border-bottom pb-2 mb-3">Публичный лендинг</h5>
+      <div class="mb-3"><label class="form-label" for="{{ form.landing_template.id_for_label }}">{{ form.landing_template.label }}</label>{{ form.landing_template }}</div>
+      <div class="form-check mb-4">{{ form.landing_published }}<label class="form-check-label" for="{{ form.landing_published.id_for_label }}">{{ form.landing_published.label }}</label><div class="form-text">Опубликованный лендинг доступен по публичной ссылке.</div></div>
+      <h5 class="border-bottom pb-2 mt-4 mb-3">Тексты лендинга</h5>
+      {% for field in form %}{% if field.name == 'landing_title' or field.name == 'landing_subtitle' or field.name == 'landing_about_title' or field.name == 'landing_contact_title' %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endif %}{% endfor %}
+      <h5 class="border-bottom pb-2 mt-4 mb-3">SEO</h5>
+      <p class="form-text">Если поля пустые, для страницы используются заголовок и короткое описание объекта.</p>
+      {% for field in form %}{% if field.name == 'seo_title' or field.name == 'seo_description' %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endif %}{% endfor %}
+      <h5 class="border-bottom pb-2 mt-4 mb-3">Порядок блоков</h5>
+      <p class="form-text">Перетаскивайте блоки в нужной последовательности.</p>
+      {{ form.landing_block_order }}
+      {% if form.landing_block_order.errors %}<div class="text-danger small">{{ form.landing_block_order.errors|striptags }}</div>{% endif %}
+      <div class="list-group mb-4" id="landing-block-order">
+        {% for value, label in form.landing_blocks %}
+          <div class="list-group-item d-flex align-items-center gap-2" draggable="true" data-block="{{ value }}"><span class="text-muted">↕</span>{{ label }}</div>
+        {% endfor %}
+      </div>
+    </div>
   </div>
-  <h5 class="border-bottom pb-2 mt-3 mb-3">Характеристики</h5>
-  <div class="row">
-    {% for field in form %}{% if field.name in 'area rooms bathrooms floor floors_total land_area year_built condition' %}<div class="col-md-6 mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endif %}{% endfor %}
-  </div>
-  <h5 class="border-bottom pb-2 mt-3 mb-3">Описание</h5>
-  {% for field in form %}{% if field.name == 'amenities' or field.name == 'description' %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endif %}{% endfor %}
-  <h5 class="border-bottom pb-2 mt-4 mb-3">Публичный лендинг</h5>
-  <div class="mb-3"><label class="form-label" for="{{ form.landing_template.id_for_label }}">{{ form.landing_template.label }}</label>{{ form.landing_template }}</div>
-  <div class="form-check mb-4">{{ form.landing_published }}<label class="form-check-label" for="{{ form.landing_published.id_for_label }}">{{ form.landing_published.label }}</label><div class="form-text">Опубликованный лендинг доступен по публичной ссылке.</div></div>
-  <button class="btn btn-primary btn-lg">{{ submit_label }}</button>
+
+  <button class="btn btn-primary btn-lg mt-3">{{ submit_label }}</button>
 </form>
+
+<script>
+  const landingBlocks = document.getElementById('landing-block-order');
+  const landingOrderInput = document.getElementById('{{ form.landing_block_order.id_for_label }}');
+  if (landingBlocks && landingOrderInput) {
+    let draggedBlock = null;
+    const saveLandingOrder = () => {
+      landingOrderInput.value = JSON.stringify([...landingBlocks.querySelectorAll('[data-block]')].map((item) => item.dataset.block));
+    };
+    landingBlocks.addEventListener('dragstart', (event) => {
+      draggedBlock = event.target.closest('[data-block]');
+      if (draggedBlock) draggedBlock.classList.add('opacity-50');
+    });
+    landingBlocks.addEventListener('dragover', (event) => {
+      event.preventDefault();
+      const target = event.target.closest('[data-block]');
+      if (!draggedBlock || !target || target === draggedBlock) return;
+      const before = event.clientY < target.getBoundingClientRect().top + target.offsetHeight / 2;
+      landingBlocks.insertBefore(draggedBlock, before ? target : target.nextSibling);
+    });
+    landingBlocks.addEventListener('dragend', () => {
+      if (draggedBlock) draggedBlock.classList.remove('opacity-50');
+      draggedBlock = null;
+      saveLandingOrder();
+    });
+    saveLandingOrder();
+  }
+
+  const propertyTabs = document.querySelectorAll('#property-form-tabs [data-bs-toggle="tab"]');
+  const activateTab = (tab) => {
+    propertyTabs.forEach((item) => {
+      const pane = document.querySelector(item.dataset.bsTarget);
+      const isActive = item === tab;
+      item.classList.toggle('active', isActive);
+      item.setAttribute('aria-selected', isActive ? 'true' : 'false');
+      if (pane) pane.classList.toggle('show', isActive), pane.classList.toggle('active', isActive);
+    });
+  };
+  propertyTabs.forEach((tab) => tab.addEventListener('click', () => activateTab(tab)));
+  if (document.querySelector('#landing-pane .text-danger')) activateTab(document.getElementById('landing-tab'));
+</script>

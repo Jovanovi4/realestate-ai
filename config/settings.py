@@ -65,6 +65,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'properties.context_processors.realtor_profile',
             ],
         },
     },
@@ -131,3 +132,11 @@ MEDIA_ROOT = BASE_DIR / "media"
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "property_list"
 LOGOUT_REDIRECT_URL = "login"
+
+# AI provider settings. Values are read from the process environment so secrets
+# never need to be committed to the repository.
+AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama").lower()
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
