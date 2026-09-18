@@ -47,12 +47,14 @@
       <h5 class="border-bottom pb-2 mt-4 mb-3">Порядок блоков</h5>
       <p class="form-text">Перетаскивайте блоки в нужной последовательности.</p>
       {{ form.landing_block_order }}
+      {{ form.landing_enabled_blocks }}
       {% if form.landing_block_order.errors %}<div class="text-danger small">{{ form.landing_block_order.errors|striptags }}</div>{% endif %}
       <div class="list-group mb-4" id="landing-block-order">
-        {% for value, label in form.landing_blocks %}
-          <div class="list-group-item d-flex align-items-center gap-2" draggable="true" data-block="{{ value }}"><span class="text-muted">↕</span>{{ label }}</div>
+        {% for value, label, is_enabled in form.landing_blocks %}
+          <div class="list-group-item d-flex align-items-center gap-2" draggable="true" data-block="{{ value }}"><span class="text-muted">↕</span><span class="flex-grow-1">{{ label }}</span><div class="form-check form-switch mb-0"><input class="form-check-input landing-block-toggle" type="checkbox" data-block-toggle="{{ value }}" {% if is_enabled %}checked{% endif %}><label class="visually-hidden">Показывать {{ label }}</label></div></div>
         {% endfor %}
       </div>
+      {% if property %}<div class="border-top pt-4 mt-4" x-data="{ device: 'desktop' }"><div class="d-flex flex-wrap justify-content-between gap-2 mb-3"><div><h5 class="mb-1">Предпросмотр</h5><p class="form-text mb-0">Показывает сохранённую версию лендинга.</p></div><div class="btn-group"><button type="button" class="btn btn-sm btn-outline-secondary" :class="{ 'active': device === 'desktop' }" @click="device='desktop'">ПК</button><button type="button" class="btn btn-sm btn-outline-secondary" :class="{ 'active': device === 'tablet' }" @click="device='tablet'">Планшет</button><button type="button" class="btn btn-sm btn-outline-secondary" :class="{ 'active': device === 'phone' }" @click="device='phone'">Телефон</button></div></div><div class="bg-light rounded-3 p-2 mx-auto" :style="{ maxWidth: device === 'desktop' ? '100%' : device === 'tablet' ? '768px' : '390px' }"><iframe title="Предпросмотр лендинга" src="{% url 'property_landing_preview' property.pk %}" class="w-100 border-0 bg-white rounded-2" style="height:620px;"></iframe></div></div>{% endif %}
     </div>
   </div>
 
@@ -62,10 +64,14 @@
 <script>
   const landingBlocks = document.getElementById('landing-block-order');
   const landingOrderInput = document.getElementById('{{ form.landing_block_order.id_for_label }}');
-  if (landingBlocks && landingOrderInput) {
+  const landingEnabledInput = document.getElementById('{{ form.landing_enabled_blocks.id_for_label }}');
+  if (landingBlocks && landingOrderInput && landingEnabledInput) {
     let draggedBlock = null;
     const saveLandingOrder = () => {
       landingOrderInput.value = JSON.stringify([...landingBlocks.querySelectorAll('[data-block]')].map((item) => item.dataset.block));
+    };
+    const saveLandingEnabled = () => {
+      landingEnabledInput.value = JSON.stringify(Object.fromEntries([...landingBlocks.querySelectorAll('[data-block-toggle]')].map((item) => [item.dataset.blockToggle, item.checked])));
     };
     landingBlocks.addEventListener('dragstart', (event) => {
       draggedBlock = event.target.closest('[data-block]');
@@ -83,7 +89,9 @@
       draggedBlock = null;
       saveLandingOrder();
     });
+    landingBlocks.querySelectorAll('[data-block-toggle]').forEach((toggle) => toggle.addEventListener('change', saveLandingEnabled));
     saveLandingOrder();
+    saveLandingEnabled();
   }
 
   const propertyTabs = document.querySelectorAll('#property-form-tabs [data-bs-toggle="tab"]');

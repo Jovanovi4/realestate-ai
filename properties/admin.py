@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import AIContent, Lead, Property, RealtorProfile
+from .models import AIContent, Client, ClientInteraction, ClientReminder, Lead, Property, RealtorProfile
 
 
 @admin.register(Property)
@@ -29,9 +29,28 @@ class PropertyAdmin(admin.ModelAdmin):
 
 @admin.register(Lead)
 class LeadAdmin(admin.ModelAdmin):
-    list_display = ("name", "phone", "property", "status", "created_at")
+    list_display = ("name", "phone", "client", "property", "status", "created_at")
     search_fields = ("name", "phone", "property__title")
     list_filter = ("status",)
+
+
+@admin.register(Client)
+class ClientAdmin(admin.ModelAdmin):
+    list_display = ("name", "phone", "owner", "status", "source", "created_at")
+    search_fields = ("name", "phone", "preferred_area")
+    list_filter = ("status", "source")
+
+
+@admin.register(ClientInteraction)
+class ClientInteractionAdmin(admin.ModelAdmin):
+    list_display = ("client", "interaction_type", "created_at")
+    list_filter = ("interaction_type",)
+
+
+@admin.register(ClientReminder)
+class ClientReminderAdmin(admin.ModelAdmin):
+    list_display = ("client", "text", "due_at", "is_done")
+    list_filter = ("is_done",)
 
 
 @admin.register(RealtorProfile)

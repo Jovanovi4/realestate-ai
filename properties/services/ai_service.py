@@ -1,4 +1,5 @@
 import re
+import time
 
 import requests
 from django.conf import settings
@@ -16,7 +17,9 @@ class AIService:
 не предполагай и не приукрашивай характеристики, инфраструктуру, район, вид,
 транспортную доступность, юридический статус, ремонт или любые другие сведения.
 Если факта нет в данных, не упоминай его. Не используй Markdown, звёздочки,
-решётки, списки или служебные комментарии. Верни только готовый текст."""
+решётки, списки или служебные комментарии. Верни только готовый текст.
+Если в запросе явно требуются маркеры вида [[name]] для комплекта текстов,
+сохрани только эти маркеры и размести после каждого готовый текст."""
 
     TONE_INSTRUCTIONS = {
         "business": "Тон: деловой, ясный и профессиональный.",
@@ -29,6 +32,14 @@ class AIService:
         "headline": "Создай один заголовок объявления длиной до 90 символов. Не добавляй кавычки.",
         "short_description": "Создай короткое описание: один абзац, 250–450 символов.",
         "full_description": "Создай полное продающее описание: 2–3 коротких абзаца, до 1 500 символов.",
+        "landing_headline": "Создай заголовок первого экрана лендинга до 90 символов.",
+        "landing_subtitle": "Создай подзаголовок лендинга: один короткий абзац до 280 символов.",
+        "landing_about": "Создай текст для блока «Об объекте»: 1–2 абзаца до 900 символов.",
+        "seo_title": "Создай SEO-заголовок страницы до 60 символов.",
+        "seo_description": "Создай SEO-описание до 155 символов.",
+        "benefits": "Создай три коротких преимущества объекта одной строкой через точку с запятой. Используй только известные факты.",
+        "cta": "Создай один короткий призыв оставить заявку или записаться на просмотр.",
+        "lead_reply": "Создай короткий профессиональный ответ клиенту до 500 символов.",
     }
 
     @staticmethod
@@ -72,7 +83,12 @@ class AIService:
     @classmethod
     def generate_content(cls, property, content_type, tone):
         prompt = cls.build_prompt(property, content_type, tone)
+        return cls._run_prompt(prompt)
+
+    @classmethod
+    def _run_prompt(cls, prompt):
         provider = getattr(settings, "AI_PROVIDER", "ollama").lower()
+        started_at = time.monotonic()
 
         if provider == "openai":
             text, model = cls._generate_openai(prompt)
@@ -84,7 +100,79 @@ class AIService:
         cleaned_text = cls.clean_description(text)
         if not cleaned_text:
             raise AIServiceError("ИИ вернул пустой ответ. Попробуйте ещё раз.")
-        return {"content": cleaned_text, "prompt": prompt, "provider": provider, "model": model}
+        return {
+            "content": cleaned_text,
+            "prompt": prompt,
+            "provider": provider,
+            "model": model,
+            "duration_ms": int((time.monotonic() - started_at) * 1000),
+        }
+
+    @classmethod
+    def generate_bundle(cls, property, tone, bundle_type):
+        bundles = {
+            "package": ["headline", "short_description", "full_description"],
+            "landing": ["landing_headline", "landing_subtitle", "landing_about", "seo_title", "seo_description", "benefits", "cta"],
+        }
+        content_types = bundles.get(bundle_type)
+        if not content_types:
+            raise AIServiceError("Неизвестный комплект генерации.")
+        sections = "\n".join(f"[[{content_type}]] — {cls.CONTENT_INSTRUCTIONS[content_type]}" for content_type in content_types)
+        prompt = "\n\n".join((
+            "Создай комплект текстов. Для каждого пункта верни результат строго после его маркера. Не пропускай маркеры.",
+            sections,
+            cls.TONE_INSTRUCTIONS[tone],
+            "Данные объекта:\n" + cls._property_facts(property),
+        ))
+        result = cls._run_prompt(prompt)
+        pattern = r"\[\[([a-z_]+)\]\]\s*"
+        matches = list(re.finditer(pattern, result["content"]))
+        parsed = {}
+        for index, match in enumerate(matches):
+            key = match.group(1)
+            end = matches[index + 1].start() if index + 1 < len(matches) else len(result["content"])
+            if key in content_types:
+                parsed[key] = cls.clean_description(result["content"][match.end():end])
+        if not all(parsed.get(content_type) for content_type in content_types):
+            raise AIServiceError("ИИ вернул неполный комплект. Попробуйте ещё раз.")
+        return [{**result, "content": parsed[content_type], "content_type": content_type} for content_type in content_types]
+
+    @classmethod
+    def improve_text(cls, property, content_type, tone, improvement, source_text):
+        if not source_text.strip():
+            raise AIServiceError("Вставьте текст, который нужно улучшить.")
+        labels = {
+            "shorter": "Сделай текст короче, сохранив все факты.",
+            "stronger": "Сделай текст убедительнее, не добавляя фактов.",
+            "premium": "Сделай подачу сдержанно-премиальной, без преувеличений.",
+            "plain": "Убери канцелярит и сделай текст естественным.",
+            "audience": f"Адаптируй текст для аудитории: {source_text.splitlines()[0][:200]}.",
+        }
+        if improvement not in labels:
+            raise AIServiceError("Выберите способ улучшения текста.")
+        prompt = "\n\n".join((labels[improvement], cls.TONE_INSTRUCTIONS[tone], "Исходный текст:\n" + source_text, "Данные объекта:\n" + cls._property_facts(property)))
+        return cls._run_prompt(prompt)
+
+    @classmethod
+    def generate_lead_reply(cls, property, lead, tone):
+        prompt = "\n\n".join((
+            "Подготовь первый ответ риелтора на заявку. Поздоровайся по имени, поблагодари за интерес, ответь нейтрально и предложи уточнить удобное время для связи. Не обещай и не утверждай ничего, чего нет в данных.",
+            cls.TONE_INSTRUCTIONS[tone],
+            f"Заявка клиента:\nИмя: {lead.name}\nСообщение: {lead.message or 'не указано'}",
+            "Данные объекта:\n" + cls._property_facts(property),
+        ))
+        return cls._run_prompt(prompt)
+
+    @classmethod
+    def audit_property(cls, property, has_contacts):
+        checks = [
+            ("Название", bool(property.title)), ("Цена", bool(property.price)), ("Адрес", bool(property.address)),
+            ("Площадь", bool(property.area or property.land_area)), ("Описание", bool(property.description or property.short_description)),
+            ("Фотографии", property.images.exists()), ("Контакты риелтора", has_contacts),
+        ]
+        missing = [label for label, present in checks if not present]
+        content = "Карточка готова к публикации." if not missing else "Перед публикацией рекомендуется заполнить: " + ", ".join(missing) + "."
+        return {"content": content, "prompt": "Автоматическая проверка готовности карточки.", "provider": "system", "model": "readiness-check", "duration_ms": 0}
 
     @classmethod
     def _generate_ollama(cls, prompt):

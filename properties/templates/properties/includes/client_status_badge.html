@@ -1,0 +1,1 @@
+<span class="badge text-bg-{% if client.status == 'new' %}primary{% elif client.status == 'in_progress' %}warning{% elif client.status == 'viewing' %}info{% elif client.status == 'negotiation' %}dark{% elif client.status == 'won' %}success{% else %}secondary{% endif %}">{{ client.get_status_display }}</span>

@@ -1,0 +1,11 @@
+<form id="lead-bulk-form" method="post" action="{% url 'lead_bulk_status_update' %}" class="lead-bulk-toolbar mb-3" x-cloak x-show="selected.length" x-transition>
+  {% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.get_full_path }}">
+  <span class="small fw-semibold" x-text="`Выбрано: ${selected.length}`"></span>
+  <label class="visually-hidden" for="lead-bulk-status">Новый статус обработки</label>
+  <select id="lead-bulk-status" name="status" class="form-select form-select-sm" required>
+    <option value="" selected disabled>Изменить статус на…</option>
+    {% for value, label in status_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+  </select>
+  <button class="btn btn-sm btn-primary" type="submit">Применить</button>
+</form>

@@ -29,6 +29,7 @@
       .sidebar-link { display: flex; align-items: center; gap: .7rem; padding: .7rem .75rem; margin-bottom: .2rem; border-radius: .55rem; color: #aeb9c9; font-size: .94rem; font-weight: 600; text-decoration: none; transition: background .15s, color .15s; }
       .sidebar-link:hover, .sidebar-link.active { color: #fff; background: rgba(255,255,255,.08); }
       .sidebar-link .nav-icon { width: 1.25rem; text-align: center; }
+      .sidebar-counter { display:grid; min-width:1.25rem; height:1.25rem; padding:0 .3rem; place-items:center; margin-left:auto; border-radius:999px; color:#fff; background:#dc3545; font-size:.68rem; font-weight:800; line-height:1; }
       .sidebar-bottom { padding-top: 1.25rem; margin-top: auto; border-top: 1px solid rgba(255,255,255,.12); }
       .profile-link { display: flex; align-items: center; gap: .7rem; padding: .55rem; color: #fff; text-decoration: none; border-radius: .7rem; }
       .profile-link:hover { color: #fff; background: rgba(255,255,255,.08); }
@@ -36,6 +37,25 @@
       .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
       .htmx-indicator { opacity: 0; transition: opacity .15s ease; }
       .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+      .lead-filter-bar { display:flex; flex-wrap:wrap; align-items:center; gap:.45rem; padding:.75rem; border:1px solid #e2e8f0; border-radius:.8rem; background:#fff; }
+      .lead-filter-option { padding:.38rem .7rem; border-radius:.5rem; color:#64748b; font-size:.875rem; font-weight:600; text-decoration:none; }
+      .lead-filter-option:hover { color:#172033; background:#f1f5f9; }
+      .lead-filter-option.is-active { color:#fff; background:#334155; }
+      .lead-bulk-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem; padding:.75rem 1rem; border:1px solid #dbe3ee; border-radius:.75rem; background:#fff; box-shadow:0 .2rem .75rem rgba(15,23,42,.04); }
+      .lead-bulk-toolbar .form-select { width:auto; min-width:210px; }
+      .gallery-image-card { position:relative; overflow:hidden; border:1px solid #e2e8f0; border-radius:.75rem; background:#fff; transition:border-color .15s ease, box-shadow .15s ease; }
+      .gallery-image-card:hover { border-color:#cbd5e1; box-shadow:0 .35rem 1rem rgba(15,23,42,.08); }
+      .gallery-image-card.is-primary { border-color:#64748b; box-shadow:0 0 0 1px #64748b; }
+      .gallery-image { display:block; width:100%; height:210px; object-fit:cover; }
+      .gallery-image-actions { position:absolute; inset:.65rem .65rem auto; display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
+      .gallery-primary-label { padding:.28rem .5rem; border-radius:.4rem; color:#fff; background:rgba(15,23,42,.78); font-size:.7rem; font-weight:700; backdrop-filter:blur(5px); }
+      .gallery-action { display:inline-flex; align-items:center; justify-content:center; min-width:2rem; height:2rem; border:1px solid rgba(255,255,255,.82); border-radius:.48rem; color:#172033; background:rgba(255,255,255,.93); font-size:.75rem; font-weight:700; line-height:1; box-shadow:0 .1rem .4rem rgba(15,23,42,.12); }
+      .gallery-action:hover:not(:disabled) { color:#172033; background:#fff; }
+      .gallery-action:disabled { opacity:.55; cursor:default; }
+      .gallery-action-primary { padding:0 .55rem; gap:.3rem; }
+      .gallery-action-delete { color:#b42318; }
+      .gallery-action-delete:hover { color:#8f1d16; }
+      .gallery-image-meta { display:flex; align-items:center; justify-content:space-between; padding:.65rem .75rem; color:#64748b; font-size:.75rem; }
       .app-content { min-height: 100vh; margin-left: var(--sidebar-width); }
       .content-inner { max-width: 1440px; padding: 2.5rem; margin: 0 auto; }
       .mobile-header { display: none; }
@@ -63,7 +83,8 @@
         <p class="sidebar-label">Рабочее пространство</p>
         <nav>
           <a class="sidebar-link {% if request.resolver_match.url_name == 'property_list' %}active{% endif %}" href="{% url 'property_list' %}"><span class="nav-icon">▦</span>Объекты</a>
-          <a class="sidebar-link {% if request.resolver_match.url_name == 'lead_list' %}active{% endif %}" href="{% url 'lead_list' %}"><span class="nav-icon">○</span>Заявки</a>
+          <a class="sidebar-link {% if request.resolver_match.url_name == 'lead_list' %}active{% endif %}" href="{% url 'lead_list' %}"><span class="nav-icon">○</span><span>Заявки</span>{% if nav_new_leads_count %}<span class="sidebar-counter" title="{{ nav_new_leads_count }} новых заявок" aria-label="{{ nav_new_leads_count }} новых заявок">{{ nav_new_leads_label }}</span>{% endif %}</a>
+          <a class="sidebar-link {% if 'client' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'client_list' %}"><span class="nav-icon">◫</span>Клиенты</a>
         </nav>
         <div class="sidebar-bottom" x-data="{ profileOpen: false }">
           <button class="profile-link w-100 border-0 bg-transparent text-start {% if request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' %}active{% endif %}" type="button" @click="profileOpen = !profileOpen" :aria-expanded="profileOpen.toString()">
@@ -73,7 +94,6 @@
           </button>
           <div x-cloak x-show="profileOpen" x-transition class="pt-2">
             <a class="sidebar-link" href="{% url 'edit_profile' %}"><span class="nav-icon">⚙</span>Личный кабинет</a>
-            <a class="sidebar-link" href="{% url 'password_change' %}"><span class="nav-icon">⌁</span>Сменить пароль</a>
             <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="sidebar-link w-100 border-0 bg-transparent" type="submit"><span class="nav-icon">↪</span>Выйти</button></form>
           </div>
         </div>

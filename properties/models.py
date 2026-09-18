@@ -5,7 +5,19 @@ from django.db import models
 
 
 def default_landing_block_order():
-    return ["hero", "facts", "description", "gallery", "mortgage", "contact"]
+    return ["hero", "facts", "description", "gallery", "mortgage", "trust", "contact"]
+
+
+def default_landing_enabled_blocks():
+    return {key: True for key in ["hero", "facts", "description", "gallery", "mortgage", "trust", "contact"]}
+
+
+def default_realtor_benefits():
+    return [
+        {"icon": "◆", "title": "Знание рынка", "description": "Помогаем разобраться в деталях объекта и условиях сделки."},
+        {"icon": "◌", "title": "На связи", "description": "Отвечаем на вопросы и организуем просмотр в удобное время."},
+        {"icon": "✓", "title": "Внимание к сделке", "description": "Сопровождаем процесс бережно и прозрачно."},
+    ]
 
 
 class Property(models.Model):
@@ -58,6 +70,7 @@ class Property(models.Model):
         ("description", "Описание объекта"),
         ("gallery", "Фотогалерея"),
         ("mortgage", "Калькулятор ипотеки"),
+        ("trust", "Преимущества риелтора"),
         ("contact", "Заявка и контакты"),
     ]
 
@@ -199,6 +212,7 @@ class Property(models.Model):
         default=default_landing_block_order,
         verbose_name="Порядок блоков лендинга",
     )
+    landing_enabled_blocks = models.JSONField(default=default_landing_enabled_blocks, verbose_name="Включённые блоки лендинга")
 
     landing_slug = models.SlugField(max_length=64, unique=True, null=True, blank=True)
     landing_published = models.BooleanField(default=False, verbose_name="Лендинг опубликован")
@@ -272,6 +286,29 @@ class AIContent(models.Model):
         ("short_description", "Короткое описание"),
         ("full_description", "Полное описание"),
         ("description", "Описание (архив)"),
+        ("landing_headline", "Первый экран лендинга"),
+        ("landing_subtitle", "Подзаголовок лендинга"),
+        ("landing_about", "Текст «Об объекте»"),
+        ("seo_title", "SEO-заголовок"),
+        ("seo_description", "SEO-описание"),
+        ("benefits", "Преимущества для лендинга"),
+        ("cta", "Призыв к действию"),
+        ("audit", "Проверка готовности"),
+        ("lead_reply", "Ответ клиенту"),
+    ]
+
+    APPLY_TARGET_CHOICES = [
+        ("", "Не применять автоматически"),
+        ("marketing_headline", "Заголовок объявления"),
+        ("short_description", "Короткое описание"),
+        ("description", "Полное описание"),
+        ("landing_title", "Заголовок лендинга"),
+        ("landing_subtitle", "Подзаголовок лендинга"),
+        ("landing_about_title", "Заголовок блока «Об объекте»"),
+        ("landing_contact_title", "Заголовок блока заявки"),
+        ("seo_title", "SEO-заголовок"),
+        ("seo_description", "SEO-описание"),
+        ("profile_about", "Текст «О риелторе»"),
     ]
 
     TONE_CHOICES = [
@@ -286,6 +323,7 @@ class AIContent(models.Model):
         on_delete=models.CASCADE,
         related_name="contents"
     )
+    lead = models.ForeignKey("Lead", on_delete=models.SET_NULL, null=True, blank=True, related_name="ai_contents")
 
     content_type = models.CharField(
         max_length=30,
@@ -301,6 +339,7 @@ class AIContent(models.Model):
 
     provider = models.CharField(max_length=30, blank=True, verbose_name="Провайдер")
     model = models.CharField(max_length=100, blank=True, verbose_name="Модель")
+    duration_ms = models.PositiveIntegerField(default=0, verbose_name="Время генерации, мс")
     prompt = models.TextField(blank=True, verbose_name="Запрос к ИИ")
 
     language = models.CharField(
@@ -312,6 +351,7 @@ class AIContent(models.Model):
         max_length=255,
         blank=True
     )
+    apply_target = models.CharField(max_length=40, choices=APPLY_TARGET_CHOICES, blank=True, verbose_name="Куда применить")
 
     content = models.TextField()
     edited_content = models.TextField(blank=True, verbose_name="Отредактированный текст")
@@ -333,25 +373,106 @@ class RealtorProfile(models.Model):
     phone = models.CharField(max_length=30, blank=True, verbose_name="Телефон")
     telegram_username = models.CharField(max_length=100, blank=True, verbose_name="Telegram без @")
     email = models.EmailField(blank=True, verbose_name="Email")
+    benefits = models.JSONField(default=default_realtor_benefits, verbose_name="Преимущества риелтора")
+    about = models.TextField(
+        blank=True,
+        verbose_name="О риелторе",
+        help_text="Коротко расскажите об опыте, подходе к работе или преимуществах. Этот текст появится на лендингах.",
+    )
 
     def __str__(self):
         return self.display_name or self.user.get_full_name() or self.user.username
 
 
+class Client(models.Model):
+    STATUS_CHOICES = [
+        ("new", "Новый"),
+        ("in_progress", "В работе"),
+        ("viewing", "Показ"),
+        ("negotiation", "Переговоры"),
+        ("won", "Сделка"),
+        ("lost", "Отказ"),
+    ]
+    SOURCE_CHOICES = [
+        ("landing", "Лендинг"),
+        ("avito", "Avito"),
+        ("recommendation", "Рекомендация"),
+        ("manual", "Добавлен вручную"),
+        ("other", "Другое"),
+    ]
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="clients")
+    name = models.CharField(max_length=150, verbose_name="Имя")
+    phone = models.CharField(max_length=30, verbose_name="Телефон")
+    preferred_contact_time = models.CharField(max_length=120, blank=True, verbose_name="Удобное время связи")
+    budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Бюджет")
+    preferred_area = models.CharField(max_length=255, blank=True, verbose_name="Интересующий район")
+    source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default="landing", verbose_name="Источник")
+    notes = models.TextField(blank=True, verbose_name="Комментарий риелтора")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Этап воронки")
+    outcome_reason = models.CharField(max_length=255, blank=True, verbose_name="Причина результата")
+    first_contacted_at = models.DateTimeField(null=True, blank=True, verbose_name="Первый контакт")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        constraints = [models.UniqueConstraint(fields=["owner", "phone"], name="unique_client_phone_per_owner")]
+        verbose_name = "Клиент"
+        verbose_name_plural = "Клиенты"
+
+    def __str__(self):
+        return f"{self.name} · {self.phone}"
+
+
+class ClientInteraction(models.Model):
+    TYPE_CHOICES = [
+        ("call", "Звонок"),
+        ("message", "Сообщение"),
+        ("viewing", "Показ"),
+        ("note", "Заметка"),
+        ("status", "Изменение статуса"),
+    ]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="interactions")
+    lead = models.ForeignKey("Lead", on_delete=models.SET_NULL, null=True, blank=True, related_name="interactions")
+    interaction_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="note", verbose_name="Тип")
+    text = models.TextField(blank=True, verbose_name="Комментарий")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Взаимодействие с клиентом"
+        verbose_name_plural = "История взаимодействий"
+
+
+class ClientReminder(models.Model):
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="reminders")
+    text = models.CharField(max_length=255, verbose_name="Напоминание")
+    due_at = models.DateTimeField(verbose_name="Когда напомнить")
+    is_done = models.BooleanField(default=False, verbose_name="Выполнено")
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["is_done", "due_at"]
+        verbose_name = "Напоминание"
+        verbose_name_plural = "Напоминания"
+
+
 class Lead(models.Model):
     STATUS_CHOICES = [
         ("new", "Новая"),
-        ("in_progress", "В работе"),
-        ("viewing", "Показ назначен"),
-        ("won", "Успешно"),
-        ("lost", "Отказ"),
+        ("read", "Прочитана"),
+        ("archived", "Архив"),
     ]
 
     property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="leads")
+    client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, related_name="leads")
     name = models.CharField(max_length=150, verbose_name="Имя")
     phone = models.CharField(max_length=30, verbose_name="Телефон")
     message = models.TextField(blank=True, verbose_name="Комментарий")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Статус")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Статус обработки")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

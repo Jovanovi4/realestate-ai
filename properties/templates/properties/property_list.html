@@ -10,7 +10,7 @@
   <div class="col-sm-6 col-lg-2"><label class="form-label" for="min_price">Цена от</label><input id="min_price" class="form-control" type="number" name="min_price" value="{{ filters.min_price }}"></div>
   <div class="col-sm-6 col-lg-2"><label class="form-label" for="max_price">Цена до</label><input id="max_price" class="form-control" type="number" name="max_price" value="{{ filters.max_price }}"></div>
   <div class="col-sm-8 col-lg-3"><label class="form-label" for="sort">Сортировка</label><select id="sort" class="form-select" name="sort">{% for value, label in sort_choices %}<option value="{{ value }}" {% if filters.sort == value or not filters.sort and value == 'newest' %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
-  <div class="col-sm-4 col-lg-3 d-flex align-items-end gap-2"><button class="btn btn-primary" type="submit">Применить</button><a href="{% url 'property_list' %}" class="btn btn-outline-secondary">Сбросить</a><span class="htmx-indicator small text-muted ms-auto">Обновляем…</span></div>
+  <div class="col-12"><span class="htmx-indicator small text-muted">Обновляем список…</span></div>
 </form></div></div>
 
 <div id="property-results">{% include "properties/includes/property_cards.html" %}</div>

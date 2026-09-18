@@ -1,8 +1,6 @@
-<form id="lead-filter-form" method="get" class="mb-4" hx-get="{% url 'lead_list' %}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-trigger="change from:select">
-  <label class="form-label" for="status">Быстрый фильтр</label>
-  <div class="d-flex flex-wrap gap-2 align-items-center">
-    <select id="status" name="status" class="form-select" style="max-width: 220px;"><option value="">Все статусы</option>{% for value, label in status_choices %}<option value="{{ value }}" {% if value == selected_status %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
-    <a class="btn btn-sm {% if not selected_status %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{% url 'lead_list' %}" hx-get="{% url 'lead_list' %}" hx-target="#lead-workspace" hx-swap="outerHTML">Все</a>
-    {% for value, label in status_choices %}<a class="btn btn-sm {% if value == selected_status %}btn-primary{% else %}btn-outline-primary{% endif %}" href="?status={{ value }}" hx-get="{% url 'lead_list' %}?status={{ value }}" hx-target="#lead-workspace" hx-swap="outerHTML">{{ label }}</a>{% endfor %}
-  </div>
-</form>
+<div class="lead-filter-bar mb-4">
+  <span class="small fw-semibold text-muted me-2">Показать</span>
+  <a class="lead-filter-option {% if not selected_status %}is-active{% endif %}" href="{% url 'lead_list' %}" hx-get="{% url 'lead_list' %}" hx-target="#lead-workspace" hx-swap="outerHTML">Все</a>
+  {% for value, label in status_choices %}<a class="lead-filter-option {% if value == selected_status %}is-active{% endif %}" href="?status={{ value }}" hx-get="{% url 'lead_list' %}?status={{ value }}" hx-target="#lead-workspace" hx-swap="outerHTML">{{ label }}</a>{% endfor %}
+  <span class="htmx-indicator small text-muted ms-2">Обновляем…</span>
+</div>

@@ -1,4 +1,5 @@
-<div id="lead-workspace">
+<div id="lead-workspace" x-data="{ selected: [] }">
   {% include "properties/includes/lead_filters.html" %}
+  {% include "properties/includes/lead_bulk_status.html" %}
   {% include "properties/includes/lead_list_results.html" %}
 </div>

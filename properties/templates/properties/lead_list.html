@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Заявки{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4"><div><p class="small text-muted mb-1">Рабочее пространство</p><h1 class="h2 mb-1">Заявки</h1><p class="text-muted mb-0">Обращения с опубликованных лендингов.</p></div></div>
+<div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4"><div><p class="small text-muted mb-1">Рабочее пространство</p><h1 class="h2 mb-1">Входящие заявки</h1><p class="text-muted mb-0">Разберите обращения, затем ведите этап сделки в карточке клиента.</p></div><a href="{% url 'client_list' %}" class="btn btn-outline-secondary">Клиенты</a></div>
 
 {% include "properties/includes/lead_workspace.html" %}
 {% endblock %}

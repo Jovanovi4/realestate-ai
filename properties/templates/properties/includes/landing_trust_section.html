@@ -1,0 +1,19 @@
+{% if landing_enabled.trust %}<section class="section trust-section" style="order: {{ landing_order.trust }}">
+  <div class="container">
+    <div class="row align-items-end g-4 mb-4 mb-lg-5">
+      <div class="col-lg-7">
+        <p class="eyebrow">Персональный подход</p>
+        <h2 class="section-title mb-0">Почему выбирают нас</h2>
+      </div>
+      <div class="col-lg-5">
+        {% if profile and profile.about %}
+          <p class="trust-about mb-0">{{ profile.about|linebreaksbr }}</p>
+        {% else %}
+          <p class="trust-about mb-0">Помогаем пройти путь от первого просмотра до уверенного решения о сделке.</p>
+        {% endif %}
+      </div>
+    </div>
+    <div class="row g-3">{% if profile and profile.benefits %}{% for benefit in profile.benefits %}<div class="col-md-4"><article class="trust-card"><span class="trust-number">{{ benefit.icon|default:"◆" }}</span><h3>{{ benefit.title }}</h3><p>{{ benefit.description }}</p></article></div>{% endfor %}{% else %}<div class="col-md-4"><article class="trust-card"><span class="trust-number">01</span><h3>Знание рынка</h3><p>Подскажем актуальную цену и обратим внимание на важные детали объекта.</p></article></div><div class="col-md-4"><article class="trust-card"><span class="trust-number">02</span><h3>На связи</h3><p>Ответим на вопросы и организуем просмотр.</p></article></div><div class="col-md-4"><article class="trust-card"><span class="trust-number">03</span><h3>Внимание к сделке</h3><p>Сопровождаем процесс бережно и прозрачно.</p></article></div>{% endif %}</div>
+  </div>
+</section>
+{% endif %}

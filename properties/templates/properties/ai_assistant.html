@@ -14,11 +14,17 @@
 <div class="row g-4">
   <div class="col-lg-4">
     <div class="card shadow-sm border-0">
-      <div class="card-body" x-data="{ contentType: '{{ form.content_type.value|default:'headline' }}', tone: '{{ form.tone.value|default:'business' }}' }">
-        <h2 class="h5">Создать текст</h2>
-        <p class="small text-muted">Результат откроется справа — его можно отредактировать до применения.</p>
+      <div class="card-body" x-data="{ mode: '{{ form.mode.value|default:'single' }}', contentType: '{{ form.content_type.value|default:'headline' }}', tone: '{{ form.tone.value|default:'business' }}' }">
+        <h2 class="h5">ИИ-инструменты</h2>
+        <p class="small text-muted">Все результаты сохраняются в историю до применения.</p>
         <form method="post" hx-post="{% url 'ai_assistant' property.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" hx-indicator="#ai-generation-indicator" hx-disabled-elt="find button">
           {% csrf_token %}
+          <div class="mb-3"><label class="form-label" for="{{ form.mode.id_for_label }}">{{ form.mode.label }}</label>{{ form.mode }}{% if form.mode.errors %}<div class="text-danger small">{{ form.mode.errors|striptags }}</div>{% endif %}</div>
+          <p class="small text-muted" x-show="mode === 'package'">Заголовок, короткое и полное описание создаются одним запросом.</p>
+          <p class="small text-muted" x-show="mode === 'landing'">Подготовит тексты первого экрана, SEO, CTA и преимущества.</p>
+          <p class="small text-muted" x-show="mode === 'audit'">Проверит, хватает ли данных для публикации объекта.</p>
+          <p class="small text-muted" x-show="mode === 'lead_reply'">Подготовит первый ответ на выбранную заявку.</p>
+          <div x-show="mode === 'single' || mode === 'improve'" x-cloak>
           <div class="mb-3">
             <label class="form-label" for="{{ form.content_type.id_for_label }}">{{ form.content_type.label }}</label>
             {{ form.content_type }}
@@ -27,6 +33,7 @@
           <p class="small text-muted" x-show="contentType === 'headline'">Короткий заголовок для объявления и лендинга.</p>
           <p class="small text-muted" x-show="contentType === 'short_description'">Сжатое описание для карточки и превью.</p>
           <p class="small text-muted" x-show="contentType === 'full_description'">Развёрнутый текст для объекта и лендинга.</p>
+          </div>
           <div class="mb-3">
             <label class="form-label" for="{{ form.tone.id_for_label }}">{{ form.tone.label }}</label>
             {{ form.tone }}
@@ -36,6 +43,8 @@
           <p class="small text-muted" x-show="tone === 'premium'">Премиальная подача: акцент на уровне и деталях.</p>
           <p class="small text-muted" x-show="tone === 'concise'">Лаконичная подача: только самое важное.</p>
           <p class="small text-muted" x-show="tone === 'emotional'">Эмоциональная подача: больше атмосферы и образов.</p>
+          <div x-show="mode === 'improve'" x-cloak><div class="mb-3"><label class="form-label" for="{{ form.improvement.id_for_label }}">{{ form.improvement.label }}</label>{{ form.improvement }}</div><div class="mb-3"><label class="form-label" for="{{ form.source_text.id_for_label }}">{{ form.source_text.label }}</label>{{ form.source_text }}{% if form.source_text.errors %}<div class="text-danger small">{{ form.source_text.errors|striptags }}</div>{% endif %}</div></div>
+          <div x-show="mode === 'lead_reply'" x-cloak><div class="mb-3"><label class="form-label" for="{{ form.lead.id_for_label }}">{{ form.lead.label }}</label>{{ form.lead }}{% if form.lead.errors %}<div class="text-danger small">{{ form.lead.errors|striptags }}</div>{% endif %}</div></div>
           <button class="btn btn-primary w-100">Сгенерировать</button>
           <div id="ai-generation-indicator" class="htmx-indicator text-center text-primary small mt-3">
             <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>ИИ генерирует текст…
@@ -43,6 +52,7 @@
         </form>
       </div>
     </div>
+    <div class="card border-0 shadow-sm mt-3"><div class="card-body py-3"><div class="small text-muted">Журнал генераций</div><div class="d-flex gap-3 mt-1"><span>{{ usage.total }} всего</span><span>{{ usage.ollama }} Ollama</span><span>{{ usage.openai }} OpenAI</span></div></div></div>
   </div>
 
   <div class="col-lg-8">

@@ -1,17 +1,19 @@
 <div id="leads-results">
   {% if leads %}
-    <div class="card shadow-sm border-0">
+    <div class="card shadow-sm border-0 overflow-hidden">
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0">
-          <thead><tr><th>Клиент</th><th>Объект</th><th>Статус</th><th>Дата</th><th></th></tr></thead>
+          <thead><tr><th><input class="form-check-input" type="checkbox" aria-label="Выбрать все заявки на странице" @change="selected = $event.target.checked ? [{% for lead in leads %}'{{ lead.pk }}'{% if not forloop.last %}, {% endif %}{% endfor %}] : []" :checked="selected.length === {{ leads|length }}"></th><th>Клиент</th><th>Объект</th><th>Обработка</th><th>Этап клиента</th><th>Получена</th><th class="text-end"></th></tr></thead>
           <tbody>
             {% for lead in leads %}
-              <tr>
-                <td><strong>{{ lead.name }}</strong><br><a href="tel:{{ lead.phone }}" class="text-decoration-none small">{{ lead.phone }}</a></td>
-                <td>{{ lead.property.title }}</td>
-                <td>{% include "properties/includes/lead_status_control.html" %}</td>
-                <td class="text-muted small">{{ lead.created_at|date:"d.m.Y H:i" }}</td>
-                <td><a class="btn btn-sm btn-outline-primary" href="{% url 'lead_detail' lead.pk %}">Открыть</a></td>
+              <tr :class="{ 'table-active': selected.includes('{{ lead.pk }}') }">
+                <td><input class="form-check-input" type="checkbox" name="lead_ids" value="{{ lead.pk }}" form="lead-bulk-form" aria-label="Выбрать заявку от {{ lead.name }}" x-model="selected"></td>
+                <td><strong class="d-block">{{ lead.name }}</strong><a href="tel:{{ lead.phone }}" class="text-decoration-none small text-muted">{{ lead.phone }}</a>{% if lead.client %}<a href="{% url 'client_detail' lead.client.pk %}" class="d-block small mt-2">Карточка клиента{% if lead.client.leads.count > 1 %} · повторное обращение{% endif %}</a>{% endif %}</td>
+                <td><span class="d-block fw-semibold small">{{ lead.property.title }}</span><span class="small text-muted">{{ lead.property.get_property_type_display }}</span></td>
+                <td>{% include "properties/includes/lead_status_badge.html" %}</td>
+                <td>{% if lead.client %}{% include "properties/includes/client_status_badge.html" with client=lead.client %}{% else %}<span class="text-muted small">—</span>{% endif %}</td>
+                <td class="text-muted small text-nowrap">{{ lead.created_at|date:"d.m.Y" }}<br>{{ lead.created_at|date:"H:i" }}</td>
+                <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'lead_detail' lead.pk %}">Открыть</a></td>
               </tr>
             {% endfor %}
           </tbody>
@@ -26,6 +28,6 @@
       </ul></nav>
     {% endif %}
   {% else %}
-    <div class="alert alert-light border mb-0">Заявок пока нет. Они появятся здесь после заполнения формы на опубликованном лендинге.</div>
+    <div class="card border-0 shadow-sm"><div class="card-body p-5 text-center"><div class="fs-3 mb-2">○</div><h2 class="h5">Заявок пока нет</h2><p class="text-muted mb-0">Обращения появятся здесь после заполнения формы на опубликованном лендинге.</p></div></div>
   {% endif %}
 </div>

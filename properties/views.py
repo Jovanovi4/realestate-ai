@@ -1,18 +1,27 @@
 import json
+import csv
+from datetime import timedelta
 
+from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
 from django.db.models import Max, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
+from django.utils.decorators import method_decorator
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import reverse_lazy
 from django.views import View
+from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
 
-from .forms import LeadForm, LeadStatusForm, PropertyForm, RegistrationForm, RealtorProfileForm
-from .models import Lead, Property, PropertyImage, RealtorProfile
+from .forms import (
+    ClientDetailsForm, ClientForm, ClientInteractionForm, ClientReminderForm, LeadForm,
+    PropertyForm, RegistrationForm, RealtorProfileForm,
+)
+from .models import Client, ClientInteraction, ClientReminder, Lead, Property, PropertyImage, RealtorProfile
 from .services.avito_service import AvitoExportService
 
 
@@ -197,6 +206,178 @@ class RealtorProfileUpdateView(LoginRequiredMixin, UpdateView):
         return context
 
 
+class ClientListView(LoginRequiredMixin, ListView):
+    model = Client
+    template_name = "properties/client_list.html"
+    context_object_name = "clients"
+    paginate_by = 30
+
+    def get_queryset(self):
+        queryset = Client.objects.filter(owner=self.request.user).prefetch_related("leads")
+        query = self.request.GET.get("q", "").strip()
+        status = self.request.GET.get("status", "")
+        source = self.request.GET.get("source", "")
+        date_from = self.request.GET.get("date_from", "")
+        date_to = self.request.GET.get("date_to", "")
+        if query:
+            queryset = queryset.filter(Q(name__icontains=query) | Q(phone__icontains=query) | Q(preferred_area__icontains=query))
+        if status in dict(Client.STATUS_CHOICES):
+            queryset = queryset.filter(status=status)
+        if source in dict(Client.SOURCE_CHOICES):
+            queryset = queryset.filter(source=source)
+        if date_from:
+            queryset = queryset.filter(created_at__date__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(created_at__date__lte=date_to)
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        all_clients = Client.objects.filter(owner=self.request.user)
+        contacted = [client for client in all_clients.exclude(first_contacted_at__isnull=True) if client.first_contacted_at]
+        response_hours = [
+            (client.first_contacted_at - client.created_at).total_seconds() / 3600
+            for client in contacted
+            if client.first_contacted_at >= client.created_at
+        ]
+        total = all_clients.count()
+        won = all_clients.filter(status="won").count()
+        context.update(
+            {
+                "status_choices": Client.STATUS_CHOICES,
+                "source_choices": Client.SOURCE_CHOICES,
+                "filters": self.request.GET,
+                "metrics": {
+                    "new_week": all_clients.filter(created_at__gte=timezone.now() - timedelta(days=7)).count(),
+                    "active": all_clients.exclude(status__in=["won", "lost"]).count(),
+                    "conversion": round(won / total * 100) if total else 0,
+                    "response_hours": round(sum(response_hours) / len(response_hours), 1) if response_hours else None,
+                },
+            }
+        )
+        return context
+
+
+class ClientCreateView(LoginRequiredMixin, CreateView):
+    model = Client
+    form_class = ClientForm
+    template_name = "properties/client_form.html"
+
+    def form_valid(self, form):
+        form.instance.owner = self.request.user
+        existing_client = Client.objects.filter(owner=self.request.user, phone=form.cleaned_data["phone"]).first()
+        if existing_client:
+            form.add_error("phone", f"Клиент с этим номером уже есть в базе: {existing_client.name}.")
+            return self.form_invalid(form)
+        return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse_lazy("client_detail", kwargs={"pk": self.object.pk})
+
+
+class ClientDetailView(LoginRequiredMixin, UpdateView):
+    model = Client
+    form_class = ClientDetailsForm
+    template_name = "properties/client_detail.html"
+    context_object_name = "client"
+
+    def get_queryset(self):
+        return Client.objects.filter(owner=self.request.user)
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["interaction_form"] = ClientInteractionForm()
+        context["reminder_form"] = ClientReminderForm(initial={"due_at": (timezone.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")})
+        context["interactions"] = self.object.interactions.select_related("lead")
+        context["reminders"] = self.object.reminders.all()
+        return context
+
+    def get_success_url(self):
+        return reverse_lazy("client_detail", kwargs={"pk": self.object.pk})
+
+
+class ClientStatusUpdateView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        client = get_object_or_404(Client, pk=pk, owner=request.user)
+        status = request.POST.get("status")
+        if status in dict(Client.STATUS_CHOICES) and status != client.status:
+            previous_status = client.get_status_display()
+            client.status = status
+            client.save(update_fields=["status", "updated_at"])
+            ClientInteraction.objects.create(
+                client=client,
+                interaction_type="status",
+                text=f"Статус изменён: {previous_status} → {client.get_status_display()}.",
+            )
+        if request.headers.get("HX-Request") == "true":
+            return render(request, "properties/includes/client_status_control.html", {"client": client})
+        return redirect("client_detail", pk=client.pk)
+
+
+class ClientInteractionCreateView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        client = get_object_or_404(Client, pk=pk, owner=request.user)
+        form = ClientInteractionForm(request.POST)
+        if form.is_valid():
+            interaction = form.save(commit=False)
+            interaction.client = client
+            interaction.save()
+            if interaction.interaction_type in {"call", "message"} and not client.first_contacted_at:
+                client.first_contacted_at = interaction.created_at
+                client.save(update_fields=["first_contacted_at", "updated_at"])
+        return redirect("client_detail", pk=client.pk)
+
+
+class ClientReminderCreateView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        client = get_object_or_404(Client, pk=pk, owner=request.user)
+        form = ClientReminderForm(request.POST)
+        if form.is_valid():
+            reminder = form.save(commit=False)
+            reminder.client = client
+            reminder.save()
+        return redirect("client_detail", pk=client.pk)
+
+
+class ClientReminderCompleteView(LoginRequiredMixin, View):
+    def post(self, request, pk, reminder_pk):
+        client = get_object_or_404(Client, pk=pk, owner=request.user)
+        reminder = get_object_or_404(client.reminders, pk=reminder_pk)
+        reminder.is_done = True
+        reminder.completed_at = timezone.now()
+        reminder.save(update_fields=["is_done", "completed_at"])
+        return redirect("client_detail", pk=client.pk)
+
+
+class ClientBulkActionView(LoginRequiredMixin, View):
+    def post(self, request):
+        client_ids = [int(pk) for pk in request.POST.getlist("client_ids") if pk.isdigit()]
+        clients = Client.objects.filter(owner=request.user, pk__in=client_ids)
+        action = request.POST.get("action")
+        if action == "delete":
+            clients.delete()
+        return redirect("client_list")
+
+
+class ClientExportView(LoginRequiredMixin, View):
+    def get(self, request):
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = 'attachment; filename="clients.csv"'
+        response.write("\ufeff")
+        writer = csv.writer(response)
+        writer.writerow(["Имя", "Телефон", "Статус", "Источник", "Бюджет", "Район", "Удобное время", "Создан"])
+        for client in Client.objects.filter(owner=request.user).order_by("-created_at"):
+            writer.writerow([client.name, client.phone, client.get_status_display(), client.get_source_display(), client.budget or "", client.preferred_area, client.preferred_contact_time, client.created_at.strftime("%d.%m.%Y %H:%M")])
+        return response
+
+
+class ClientBoardView(LoginRequiredMixin, View):
+    def get(self, request):
+        clients = Client.objects.filter(owner=request.user).order_by("-updated_at")
+        columns = [(value, label, [client for client in clients if client.status == value]) for value, label in Client.STATUS_CHOICES]
+        return render(request, "properties/client_board.html", {"columns": columns})
+
+
 class LeadListView(LoginRequiredMixin, ListView):
     model = Lead
     template_name = "properties/lead_list.html"
@@ -209,7 +390,7 @@ class LeadListView(LoginRequiredMixin, ListView):
         return [self.template_name]
 
     def get_queryset(self):
-        queryset = Lead.objects.filter(property__owner=self.request.user).select_related("property")
+        queryset = Lead.objects.filter(property__owner=self.request.user).select_related("property", "client").prefetch_related("client__leads")
         status = self.request.GET.get("status")
         if status in dict(Lead.STATUS_CHOICES):
             queryset = queryset.filter(status=status)
@@ -222,32 +403,27 @@ class LeadListView(LoginRequiredMixin, ListView):
         return context
 
 
-class LeadDetailView(LoginRequiredMixin, UpdateView):
+class LeadDetailView(LoginRequiredMixin, DetailView):
     model = Lead
-    form_class = LeadStatusForm
     template_name = "properties/lead_detail.html"
     context_object_name = "lead"
 
     def get_queryset(self):
-        return Lead.objects.filter(property__owner=self.request.user).select_related("property")
+        return Lead.objects.filter(property__owner=self.request.user).select_related("property", "client")
 
-    def get_success_url(self):
-        return reverse_lazy("lead_detail", kwargs={"pk": self.object.pk})
-
-
-class LeadStatusUpdateView(LoginRequiredMixin, View):
-    def post(self, request, pk):
-        lead = get_object_or_404(
-            Lead.objects.select_related("property"),
-            pk=pk,
-            property__owner=request.user,
-        )
+class LeadBulkStatusUpdateView(LoginRequiredMixin, View):
+    def post(self, request):
+        lead_ids = request.POST.getlist("lead_ids")
         status = request.POST.get("status")
-        if status in dict(Lead.STATUS_CHOICES):
-            lead.status = status
-            lead.save(update_fields=["status", "updated_at"])
-        if request.headers.get("HX-Request") == "true":
-            return render(request, "properties/includes/lead_status_control.html", {"lead": lead})
+        if not lead_ids:
+            messages.error(request, "Выберите хотя бы одну заявку.")
+        elif status not in dict(Lead.STATUS_CHOICES):
+            messages.error(request, "Выберите корректный статус обработки.")
+        else:
+            leads = Lead.objects.filter(pk__in=lead_ids, property__owner=request.user)
+            updated = leads.exclude(status=status).update(status=status, updated_at=timezone.now())
+            messages.success(request, f"Статус обновлён у {updated} заявок.")
+
         next_url = request.POST.get("next")
         if next_url and url_has_allowed_host_and_scheme(next_url, {request.get_host()}):
             return redirect(next_url)
@@ -366,11 +542,14 @@ class PublicLandingView(View):
         return {block: index + 1 for index, block in enumerate(order)}
 
     def get_context(self, property, profile, form, **extra):
+        valid_keys = [key for key, _ in Property.LANDING_BLOCKS]
+        enabled = property.landing_enabled_blocks or {}
         return {
             "property": property,
             "profile": profile,
             "form": form,
             "landing_order": self.get_landing_order(property),
+            "landing_enabled": {key: bool(enabled.get(key, True)) for key in valid_keys},
             **extra,
         }
 
@@ -393,6 +572,32 @@ class PublicLandingView(View):
         if form.is_valid():
             lead = form.save(commit=False)
             lead.property = property
+            client, created = Client.objects.get_or_create(
+                owner=property.owner,
+                phone=form.cleaned_data["phone"],
+                defaults={"name": form.cleaned_data["name"], "source": "landing"},
+            )
+            if not created and not client.name and form.cleaned_data["name"]:
+                client.name = form.cleaned_data["name"]
+                client.save(update_fields=["name", "updated_at"])
+            lead.client = client
             lead.save()
+            ClientInteraction.objects.create(
+                client=client,
+                lead=lead,
+                interaction_type="note",
+                text=f"Новая заявка с лендинга «{property.title}».",
+            )
             return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(), sent=True))
         return render(request, self.get_template_name(property), self.get_context(property, profile, form))
+
+
+@method_decorator(xframe_options_sameorigin, name="dispatch")
+class PropertyLandingPreviewView(LoginRequiredMixin, PublicLandingView):
+    def get(self, request, pk):
+        property = get_object_or_404(Property.objects.select_related("owner").prefetch_related("images"), pk=pk, owner=request.user)
+        profile = RealtorProfile.objects.filter(user=request.user).first()
+        return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(), preview=True))
+
+    def post(self, request, pk):
+        return self.get(request, pk)

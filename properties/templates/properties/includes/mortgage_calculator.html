@@ -1,4 +1,4 @@
-<section class="section mortgage-section" style="order: {{ landing_order.mortgage }}" data-mortgage-calculator>
+{% if landing_enabled.mortgage %}<section class="section mortgage-section" style="order: {{ landing_order.mortgage }}" data-mortgage-calculator>
   <div class="container"><div class="row justify-content-center"><div class="col-lg-10"><div class="card border-0 shadow-sm mortgage-card"><div class="card-body p-4 p-md-5">
     <div class="row g-4 align-items-end"><div class="col-lg-5"><p class="text-uppercase small fw-semibold text-primary mb-2">Ипотечный калькулятор</p><h2 class="h2 mb-3">Рассчитайте платёж</h2><p class="text-muted mb-0">Укажите условия, чтобы увидеть ориентировочный ежемесячный платёж.</p></div>
       <div class="col-sm-6 col-lg-4"><label class="form-label">Стоимость объекта, ₽</label><input class="form-control" data-price type="number" min="0" step="1000" value="{% if property.currency == 'RUB' %}{{ property.price|default:0 }}{% else %}0{% endif %}"></div>
@@ -10,6 +10,7 @@
     <p class="small text-muted mt-4 mb-0">Расчёт носит справочный характер и не является предложением банка.</p>
   </div></div></div></div></div>
 </section>
+{% endif %}
 <script>
   document.querySelectorAll('[data-mortgage-calculator]').forEach((calculator) => {
     const fields = {
