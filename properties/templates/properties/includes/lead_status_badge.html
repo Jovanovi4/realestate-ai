@@ -1,0 +1,1 @@
+<span class="badge text-bg-{% if lead.status == 'new' %}primary{% elif lead.status == 'in_progress' %}warning{% elif lead.status == 'viewing' %}info{% elif lead.status == 'won' %}success{% else %}secondary{% endif %}">{{ lead.get_status_display }}</span>

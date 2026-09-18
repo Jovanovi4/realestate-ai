@@ -76,6 +76,7 @@ class PropertyForm(forms.ModelForm):
                 field.widget.attrs["class"] = "form-check-input"
             else:
                 field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+        self.fields["property_type"].widget.attrs["x-model"] = "propertyType"
 
     def clean_landing_block_order(self):
         try:
@@ -99,6 +100,7 @@ class RealtorProfileForm(forms.ModelForm):
         for field in self.fields.values():
             field.widget.attrs.setdefault("class", "form-control")
         self.fields["phone"].widget.attrs.update(PHONE_MASK_ATTRS)
+        self.fields["photo"].widget.attrs["x-on:change"] = "selectPhoto($event)"
 
 
 class LeadForm(forms.ModelForm):
@@ -135,6 +137,8 @@ class AIRequestForm(forms.Form):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-select"
+        self.fields["content_type"].widget.attrs["x-model"] = "contentType"
+        self.fields["tone"].widget.attrs["x-model"] = "tone"
 
 
 class AIContentEditForm(forms.ModelForm):
@@ -148,6 +152,7 @@ class AIContentEditForm(forms.ModelForm):
         if not self.instance.edited_content:
             self.initial["edited_content"] = self.instance.content
         self.fields["edited_content"].widget.attrs["class"] = "form-control"
+        self.fields["edited_content"].widget.attrs["x-ref"] = "text"
 
 def normalize_phone(value):
     phone = re.sub(r"[\s()\-]", "", value.strip())

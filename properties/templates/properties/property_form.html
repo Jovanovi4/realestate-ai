@@ -1,4 +1,4 @@
-<form method="post" novalidate>
+<form method="post" novalidate x-data="{ propertyType: '{{ form.property_type.value|default:"apartment" }}' }">
   {% csrf_token %}
   {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
 
@@ -13,9 +13,20 @@
       <div class="row">
         {% for field in form %}{% if field.name in 'title marketing_headline property_type status price currency address' %}<div class="{% if field.name == 'title' or field.name == 'marketing_headline' or field.name == 'address' %}col-12{% else %}col-md-6{% endif %} mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endif %}{% endfor %}
       </div>
+      <div class="alert alert-primary py-2 small" x-cloak x-show="propertyType === 'apartment'">Для квартиры заполните комнаты, этаж и этажность дома.</div>
+      <div class="alert alert-primary py-2 small" x-cloak x-show="['house', 'cottage', 'villa'].includes(propertyType)">Для дома, дачи или виллы укажите площадь дома и участка.</div>
+      <div class="alert alert-primary py-2 small" x-cloak x-show="propertyType === 'land'">Для участка ключевая характеристика — площадь участка.</div>
+      <div class="alert alert-primary py-2 small" x-cloak x-show="['office', 'commercial'].includes(propertyType)">Для коммерческого объекта заполните площадь и расположение в здании.</div>
       <h5 class="border-bottom pb-2 mt-3 mb-3">Характеристики</h5>
       <div class="row">
-        {% for field in form %}{% if field.name in 'area rooms bathrooms floor floors_total land_area year_built condition' %}<div class="col-md-6 mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endif %}{% endfor %}
+        <div class="col-md-6 mb-3" x-cloak x-show="propertyType !== 'land'"><label class="form-label" for="{{ form.area.id_for_label }}">{{ form.area.label }}</label>{{ form.area }}{% if form.area.errors %}<div class="text-danger small">{{ form.area.errors|striptags }}</div>{% endif %}</div>
+        <div class="col-md-6 mb-3" x-cloak x-show="['apartment', 'house', 'cottage', 'villa'].includes(propertyType)"><label class="form-label" for="{{ form.rooms.id_for_label }}">{{ form.rooms.label }}</label>{{ form.rooms }}{% if form.rooms.errors %}<div class="text-danger small">{{ form.rooms.errors|striptags }}</div>{% endif %}</div>
+        <div class="col-md-6 mb-3" x-cloak x-show="['apartment', 'house', 'cottage', 'villa'].includes(propertyType)"><label class="form-label" for="{{ form.bathrooms.id_for_label }}">{{ form.bathrooms.label }}</label>{{ form.bathrooms }}{% if form.bathrooms.errors %}<div class="text-danger small">{{ form.bathrooms.errors|striptags }}</div>{% endif %}</div>
+        <div class="col-md-6 mb-3" x-cloak x-show="['apartment', 'office', 'commercial'].includes(propertyType)"><label class="form-label" for="{{ form.floor.id_for_label }}">{{ form.floor.label }}</label>{{ form.floor }}{% if form.floor.errors %}<div class="text-danger small">{{ form.floor.errors|striptags }}</div>{% endif %}</div>
+        <div class="col-md-6 mb-3" x-cloak x-show="['apartment', 'office', 'commercial'].includes(propertyType)"><label class="form-label" for="{{ form.floors_total.id_for_label }}">{{ form.floors_total.label }}</label>{{ form.floors_total }}{% if form.floors_total.errors %}<div class="text-danger small">{{ form.floors_total.errors|striptags }}</div>{% endif %}</div>
+        <div class="col-md-6 mb-3" x-cloak x-show="['house', 'cottage', 'villa', 'land'].includes(propertyType)"><label class="form-label" for="{{ form.land_area.id_for_label }}">{{ form.land_area.label }}</label>{{ form.land_area }}{% if form.land_area.errors %}<div class="text-danger small">{{ form.land_area.errors|striptags }}</div>{% endif %}</div>
+        <div class="col-md-6 mb-3" x-cloak x-show="propertyType !== 'land'"><label class="form-label" for="{{ form.year_built.id_for_label }}">{{ form.year_built.label }}</label>{{ form.year_built }}{% if form.year_built.errors %}<div class="text-danger small">{{ form.year_built.errors|striptags }}</div>{% endif %}</div>
+        <div class="col-md-6 mb-3"><label class="form-label" for="{{ form.condition.id_for_label }}">{{ form.condition.label }}</label>{{ form.condition }}{% if form.condition.errors %}<div class="text-danger small">{{ form.condition.errors|striptags }}</div>{% endif %}</div>
       </div>
       <h5 class="border-bottom pb-2 mt-3 mb-3">Описание</h5>
       {% for field in form %}{% if field.name == 'amenities' or field.name == 'short_description' or field.name == 'description' %}<div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>{% endif %}{% endfor %}

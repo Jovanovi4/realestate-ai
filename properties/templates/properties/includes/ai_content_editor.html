@@ -1,0 +1,30 @@
+<div id="ai-editor" class="card shadow-sm border-0" x-data="{ copied: false, async copyText() { const text = this.$refs.text.value; if (navigator.clipboard && window.isSecureContext) { await navigator.clipboard.writeText(text); } else { this.$refs.text.select(); document.execCommand('copy'); } this.copied = true; setTimeout(() => this.copied = false, 1800); } }">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+      <div>
+        <h2 class="h5 mb-1">{{ ai_content.get_content_type_display }}</h2>
+        <p class="small text-muted mb-0">{{ ai_content.get_tone_display }} · {{ ai_content.created_at|date:"d.m.Y H:i" }}</p>
+      </div>
+      {% if ai_content.is_applied %}<span class="badge text-bg-success">Применён</span>{% endif %}
+    </div>
+    <p class="small text-muted">Правки сохраняются в истории. Карточка объекта и лендинг изменятся только после применения.</p>
+    <form method="post" action="{% url 'ai_content_edit' ai_content.pk %}" hx-post="{% url 'ai_content_edit' ai_content.pk %}" hx-target="#ai-editor" hx-swap="outerHTML">
+      {% csrf_token %}
+      <label class="form-label" for="{{ form.edited_content.id_for_label }}">Текст</label>
+      {{ form.edited_content }}
+      {% if form.edited_content.errors %}<div class="text-danger small mt-1">{{ form.edited_content.errors|striptags }}</div>{% endif %}
+      <div class="d-flex flex-wrap gap-2 mt-3">
+        <button type="button" class="btn btn-outline-secondary" @click="copyText()"><span x-text="copied ? 'Скопировано' : 'Копировать'"></span></button>
+        <button class="btn btn-outline-primary" name="action" value="save">Сохранить правки</button>
+        <button class="btn btn-primary" name="action" value="apply">Применить к объекту</button>
+      </div>
+    </form>
+    <div class="border-top mt-4 pt-3 d-flex justify-content-between align-items-center gap-3">
+      <small class="text-muted">{{ ai_content.provider|default:"Провайдер не указан" }}{% if ai_content.model %} · {{ ai_content.model }}{% endif %}</small>
+      <form method="post" action="{% url 'ai_content_delete' ai_content.pk %}" hx-post="{% url 'ai_content_delete' ai_content.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" onsubmit="return confirm('Удалить эту запись из истории генераций?');">
+        {% csrf_token %}
+        <button class="btn btn-sm btn-outline-danger">Удалить из истории</button>
+      </form>
+    </div>
+  </div>
+</div>

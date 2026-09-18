@@ -1,0 +1,33 @@
+<div class="card shadow-sm border-0">
+  <div class="card-body">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h2 class="h5 mb-0">История генераций</h2>
+      {% if history %}<span class="badge text-bg-light border text-secondary">{{ history|length }}</span>{% endif %}
+    </div>
+    {% if history %}
+      <div class="list-group list-group-flush">
+        {% for item in history %}
+          <div class="list-group-item px-0">
+            <div class="d-flex justify-content-between gap-3 align-items-start">
+              <a href="{% url 'ai_content_edit' item.pk %}" hx-get="{% url 'ai_content_edit' item.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" class="text-decoration-none text-body flex-grow-1">
+                <strong>{{ item.get_content_type_display }}</strong>
+                <span class="text-muted">· {{ item.get_tone_display }}</span>
+                {% if item.is_applied %}<span class="badge text-bg-success ms-1">Применён</span>{% endif %}
+                <p class="text-body-secondary mb-0 mt-2 small">{{ item.edited_content|default:item.content|truncatechars:180 }}</p>
+              </a>
+              <div class="text-end text-nowrap">
+                <small class="text-muted d-block mb-2">{{ item.created_at|date:"d.m.Y H:i" }}</small>
+                <form method="post" action="{% url 'ai_content_delete' item.pk %}" hx-post="{% url 'ai_content_delete' item.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" onsubmit="return confirm('Удалить эту запись из истории генераций?');">
+                  {% csrf_token %}
+                  <button class="btn btn-sm btn-outline-danger">Удалить</button>
+                </form>
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="text-muted mb-0">Генераций ещё не было.</p>
+    {% endif %}
+  </div>
+</div>

@@ -1,165 +1,35 @@
 {% extends "base.html" %}
 
-{% block title %}
-{{ property.title }}
-{% endblock %}
+{% block title %}{{ property.title }}{% endblock %}
 
 {% block content %}
+<div class="row g-4"><div class="col-lg-8">
+  <div class="card border-0 shadow-sm"><div class="card-body p-4"><div class="d-flex justify-content-between align-items-start gap-3 mb-4"><div><p class="small text-muted mb-1">Карточка объекта</p><h1 class="h2 mb-0">{{ property.marketing_headline|default:property.title }}</h1></div>{% include "properties/includes/property_status_badge.html" %}</div>
+    <table class="table align-middle mb-0"><tr><th width="200">Тип</th><td>{{ property.get_property_type_display }}</td></tr><tr><th>Цена</th><td>{% if property.price %}{{ property.get_currency_display|slice:":1" }} {{ property.price }}{% else %}—{% endif %}</td></tr><tr><th>Адрес</th><td>{{ property.address|default:"—" }}</td></tr><tr><th>Площадь</th><td>{% if property.area %}{{ property.area }} м²{% else %}—{% endif %}</td></tr><tr><th>Комнаты</th><td>{{ property.rooms|default:"—" }}</td></tr><tr><th>Санузлы</th><td>{{ property.bathrooms|default:"—" }}</td></tr><tr><th>Этаж</th><td>{% if property.floor %}{{ property.floor }}{% if property.floors_total %} из {{ property.floors_total }}{% endif %}{% else %}—{% endif %}</td></tr><tr><th>Участок</th><td>{% if property.land_area %}{{ property.land_area }} м²{% else %}—{% endif %}</td></tr><tr><th>Год постройки</th><td>{{ property.year_built|default:"—" }}</td></tr><tr><th>Состояние</th><td>{{ property.get_condition_display|default:"—" }}</td></tr></table>
+    {% if property.amenities %}<h2 class="h5 mt-4">Особенности и удобства</h2><p class="mb-0">{{ property.amenities|linebreaksbr }}</p>{% endif %}
+  </div></div>
 
-<div class="row">
+  {% include "properties/includes/property_gallery_card.html" %}
 
-    <div class="col-lg-8">
-
-        <div class="card shadow-sm mb-4">
-
-            <div class="card-body">
-
-                <div class="d-flex justify-content-between align-items-start mb-4">
-                    <h2 class="mb-0">{{ property.marketing_headline|default:property.title }}</h2>
-                    <span class="badge text-bg-{% if property.status == 'published' %}success{% elif property.status == 'showing' %}info{% elif property.status == 'sold' %}secondary{% elif property.status == 'reserved' %}warning{% else %}light{% endif %}">{{ property.get_status_display }}</span>
-                </div>
-
-                <table class="table">
-
-                    <tr>
-                        <th width="200">Тип</th>
-                        <td>{{ property.get_property_type_display }}</td>
-                    </tr>
-
-                    <tr>
-                        <th>Цена</th>
-                        <td>
-                            {% if property.price %}
-                                {{ property.get_currency_display|slice:":1" }} {{ property.price }}
-                            {% else %}
-                                —
-                            {% endif %}
-                        </td>
-                    </tr>
-
-                    <tr>
-                        <th>Адрес</th>
-                        <td>{{ property.address|default:"—" }}</td>
-                    </tr>
-
-                    <tr>
-                        <th>Площадь</th>
-                        <td>{{ property.area|default:"—" }} м²</td>
-                    </tr>
-
-                    <tr>
-                        <th>Комнаты</th>
-                        <td>{{ property.rooms|default:"—" }}</td>
-                    </tr>
-
-                    <tr><th>Санузлы</th><td>{{ property.bathrooms|default:"—" }}</td></tr>
-                    <tr><th>Этаж</th><td>{% if property.floor %}{{ property.floor }}{% if property.floors_total %} из {{ property.floors_total }}{% endif %}{% else %}—{% endif %}</td></tr>
-                    <tr><th>Участок</th><td>{% if property.land_area %}{{ property.land_area }} м²{% else %}—{% endif %}</td></tr>
-                    <tr><th>Год постройки</th><td>{{ property.year_built|default:"—" }}</td></tr>
-                    <tr><th>Состояние</th><td>{{ property.get_condition_display|default:"—" }}</td></tr>
-
-                </table>
-
-                {% if property.amenities %}<h5 class="mt-4">Особенности и удобства</h5><p class="mb-0">{{ property.amenities|linebreaksbr }}</p>{% endif %}
-
-            </div>
-
-        </div>
-
-        <div class="card shadow-sm mt-4"><div class="card-body">
-            <div class="d-flex justify-content-between align-items-center mb-2"><h4 class="mb-0">Фотографии</h4><a href="{% url 'upload_images' property.pk %}" class="btn btn-success">📷 Добавить фотографии</a></div>
-            <p class="text-muted small">Перетаскивайте карточки, чтобы изменить порядок. Первое фото используется в галерее, а главное фото — на обложках.</p>
-            {% if property.images.all %}
-                <div class="row" id="photo-gallery" data-reorder-url="{% url 'reorder_images' property.pk %}">
-                    {% for image in property.images.all %}
-                        <div class="col-md-4 mb-3 photo-item" draggable="true" data-image-id="{{ image.pk }}">
-                            <div class="card h-100 {% if image.is_primary %}border-primary border-2{% endif %}">
-                                <img src="{{ image.image.url }}" class="card-img-top" style="height:220px; object-fit:cover;" alt="Фото {{ forloop.counter }}">
-                                <div class="card-body p-2"><div class="d-flex justify-content-between align-items-center mb-2"><span class="text-muted small">↕ Перетащить</span>{% if image.is_primary %}<span class="badge text-bg-primary">Главная</span>{% endif %}</div>
-                                    <div class="d-flex gap-2"><form method="post" action="{% url 'set_primary_image' property.pk image.pk %}" class="flex-grow-1">{% csrf_token %}<button class="btn btn-sm btn-outline-primary w-100" {% if image.is_primary %}disabled{% endif %}>Сделать главной</button></form><form method="post" action="{% url 'delete_property_image' property.pk image.pk %}" onsubmit="return confirm('Удалить эту фотографию?');">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Удалить</button></form></div>
-                                </div>
-                            </div>
-                        </div>
-                    {% endfor %}
-                </div>
-            {% else %}<div class="alert alert-light">Пока нет фотографий.</div>{% endif %}
-        </div></div>
-
-        <div class="card shadow-sm">
-
-            <div class="card-body">
-
-                <h4>Тексты объявления</h4>
-
-                <hr>
-
-                {% if property.short_description %}<p class="lead">{{ property.short_description|linebreaksbr }}</p>{% endif %}
-                {% if property.description %}{{ property.description|linebreaks }}{% else %}<p class="text-muted">Пока описание не добавлено.</p>{% endif %}
-
-            </div>
-
-        </div>
-
-    </div>
-
-    <div class="col-lg-4">
-
-        <div class="card shadow-sm mb-4">
-
-            <div class="card-body">
-
-                <h5>
-
-                    Действия
-
-                </h5>
-
-                <hr>
-
-                <a href="{% url 'ai_assistant' property.pk %}" class="btn btn-primary w-100 mb-2">✨ Открыть ИИ-помощника</a>
-
-                <a href="{% url 'edit_property' property.pk %}" class="btn btn-outline-primary w-100 mb-2">✏️ Редактировать объект</a>
-
-                <form method="post" action="{% url 'delete_property' property.pk %}" onsubmit="return confirm('Удалить объект, все его фотографии и связанные заявки без возможности восстановления?');">
-                    {% csrf_token %}
-                    <button class="btn btn-outline-danger w-100 mb-2">🗑️ Удалить объект</button>
-                </form>
-
-                {% if property.landing_published %}<a href="{% url 'public_landing' property.landing_slug %}" target="_blank" class="btn btn-dark w-100 mb-2">🌐 Открыть лендинг</a>{% else %}<a href="{% url 'edit_property' property.pk %}" class="btn btn-outline-dark w-100 mb-2">🌐 Настроить лендинг</a>{% endif %}
-
-            </div>
-
-        </div>
-
-    </div>
-
+  <div class="card border-0 shadow-sm mt-4"><div class="card-body p-4"><h2 class="h4">Тексты объявления</h2><hr>{% if property.short_description %}<p class="lead">{{ property.short_description|linebreaksbr }}</p>{% endif %}{% if property.description %}{{ property.description|linebreaks }}{% else %}<p class="text-muted mb-0">Пока описание не добавлено.</p>{% endif %}</div></div>
 </div>
 
-<script>
-  const photoGallery = document.getElementById('photo-gallery');
-  if (photoGallery) {
-    let draggedItem = null;
-    photoGallery.addEventListener('dragstart', (event) => {
-      draggedItem = event.target.closest('.photo-item');
-      if (draggedItem) draggedItem.classList.add('opacity-50');
-    });
-    photoGallery.addEventListener('dragover', (event) => {
-      event.preventDefault();
-      const target = event.target.closest('.photo-item');
-      if (!target || !draggedItem || target === draggedItem) return;
-      const before = event.clientY < target.getBoundingClientRect().top + target.offsetHeight / 2;
-      photoGallery.insertBefore(draggedItem, before ? target : target.nextSibling);
-    });
-    photoGallery.addEventListener('dragend', async () => {
-      if (!draggedItem) return;
-      draggedItem.classList.remove('opacity-50');
-      const csrfToken = photoGallery.querySelector('[name=csrfmiddlewaretoken]').value;
-      const imageIds = [...photoGallery.querySelectorAll('.photo-item')].map((item) => item.dataset.imageId);
-      const response = await fetch(photoGallery.dataset.reorderUrl, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken}, body: JSON.stringify({image_ids: imageIds})});
-      if (!response.ok) alert('Не удалось сохранить порядок фотографий. Обновите страницу и попробуйте снова.');
-      draggedItem = null;
-    });
-  }
-</script>
+<div class="col-lg-4"><div class="card border-0 shadow-sm"><div class="card-body p-4"><h2 class="h5">Действия</h2><hr>
+  <label class="form-label" for="quick-property-status">Быстро изменить статус</label><form method="post" action="{% url 'update_property_status' property.pk %}" hx-post="{% url 'update_property_status' property.pk %}" hx-target="#property-status" hx-swap="outerHTML" hx-trigger="change" class="mb-3">{% csrf_token %}<div class="d-flex gap-2"><select id="quick-property-status" name="status" class="form-select">{% for value, label in property.STATUS_CHOICES %}<option value="{{ value }}" {% if property.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select><button class="btn btn-outline-secondary" type="submit">Сохранить</button></div></form>
+  <a href="{% url 'ai_assistant' property.pk %}" class="btn btn-primary w-100 mb-2">ИИ-помощник</a><a href="{% url 'edit_property' property.pk %}" class="btn btn-outline-secondary w-100 mb-2">Редактировать объект</a>{% if property.landing_published %}<a href="{% url 'public_landing' property.landing_slug %}" target="_blank" class="btn btn-outline-secondary w-100 mb-2">Открыть лендинг</a>{% else %}<a href="{% url 'edit_property' property.pk %}" class="btn btn-outline-secondary w-100 mb-2">Настроить лендинг</a>{% endif %}<form method="post" action="{% url 'delete_property' property.pk %}" onsubmit="return confirm('Удалить объект, все его фотографии и связанные заявки без возможности восстановления?');">{% csrf_token %}<button class="btn btn-outline-danger w-100">Удалить объект</button></form>
+</div></div></div></div>
 
+<script>
+  const initPhotoGallery = () => {
+    const photoGallery = document.getElementById('photo-gallery');
+    if (!photoGallery || photoGallery.dataset.initialized) return;
+    photoGallery.dataset.initialized = 'true';
+    let draggedItem = null;
+    photoGallery.addEventListener('dragstart', (event) => { draggedItem = event.target.closest('.photo-item'); if (draggedItem) draggedItem.classList.add('opacity-50'); });
+    photoGallery.addEventListener('dragover', (event) => { event.preventDefault(); const target = event.target.closest('.photo-item'); if (!target || !draggedItem || target === draggedItem) return; const before = event.clientY < target.getBoundingClientRect().top + target.offsetHeight / 2; photoGallery.insertBefore(draggedItem, before ? target : target.nextSibling); });
+    photoGallery.addEventListener('dragend', async () => { if (!draggedItem) return; draggedItem.classList.remove('opacity-50'); const csrfToken = photoGallery.querySelector('[name=csrfmiddlewaretoken]').value; const imageIds = [...photoGallery.querySelectorAll('.photo-item')].map((item) => item.dataset.imageId); const response = await fetch(photoGallery.dataset.reorderUrl, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken}, body: JSON.stringify({image_ids: imageIds})}); if (!response.ok) alert('Не удалось сохранить порядок фотографий. Обновите страницу и попробуйте снова.'); draggedItem = null; });
+  };
+  initPhotoGallery();
+  document.body.addEventListener('htmx:afterSwap', initPhotoGallery);
+</script>
 {% endblock %}

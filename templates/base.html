@@ -4,36 +4,86 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}RealEstate AI{% endblock %}</title>
-
-    <link
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css"
-      rel="stylesheet"
-    />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <script defer src="https://unpkg.com/htmx.org@2.0.6"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
+    <style>
+      [x-cloak] { display: none !important; }
+      :root { --sidebar-width: 264px; --ink: #172033; --muted: #64748b; --canvas: #f8fafc; --sidebar: #111827; --accent: #334155; }
+      body { min-height: 100vh; color: var(--ink); background: var(--canvas); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      h1, h2, h3, h4, h5, h6 { letter-spacing: -.025em; }
+      .card { border-radius: .8rem; }
+      .card.shadow-sm { box-shadow: 0 .25rem 1.25rem rgba(15, 23, 42, .06) !important; }
+      .btn { border-radius: .55rem; font-weight: 600; }
+      .btn-primary { --bs-btn-bg: #1f2937; --bs-btn-border-color: #1f2937; --bs-btn-hover-bg: #111827; --bs-btn-hover-border-color: #111827; --bs-btn-active-bg: #111827; --bs-btn-active-border-color: #111827; }
+      .btn-outline-primary { --bs-btn-color: #334155; --bs-btn-border-color: #cbd5e1; --bs-btn-hover-bg: #f1f5f9; --bs-btn-hover-border-color: #cbd5e1; --bs-btn-hover-color: #172033; --bs-btn-active-bg: #e2e8f0; --bs-btn-active-border-color: #cbd5e1; --bs-btn-active-color: #172033; }
+      .btn-outline-secondary { --bs-btn-color: #475569; --bs-btn-border-color: #d6dde7; --bs-btn-hover-bg: #f1f5f9; --bs-btn-hover-border-color: #d6dde7; --bs-btn-hover-color: #172033; }
+      .form-control, .form-select { border-color: #dbe3ee; border-radius: .55rem; }
+      .form-control:focus, .form-select:focus { border-color: #94a3b8; box-shadow: 0 0 0 .2rem rgba(100,116,139,.13); }
+      .table > :not(caption) > * > * { padding: .9rem 1rem; }
+      .table thead th { color: var(--muted); font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+      .app-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 1040; display: flex; flex-direction: column; width: var(--sidebar-width); padding: 1.25rem; color: #e7edf8; background: var(--sidebar); }
+      .app-brand { display: flex; align-items: center; gap: .7rem; margin-bottom: 2rem; color: #fff; font-size: 1.05rem; font-weight: 750; letter-spacing: -.03em; text-decoration: none; }
+      .app-brand-mark { display: grid; width: 2.15rem; height: 2.15rem; place-items: center; border: 1px solid rgba(255,255,255,.18); border-radius: .6rem; background: rgba(255,255,255,.08); font-size: .72rem; font-weight: 800; letter-spacing: .04em; }
+      .sidebar-label { margin: 0 0 .5rem .75rem; color: #7f8ba0; font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+      .sidebar-link { display: flex; align-items: center; gap: .7rem; padding: .7rem .75rem; margin-bottom: .2rem; border-radius: .55rem; color: #aeb9c9; font-size: .94rem; font-weight: 600; text-decoration: none; transition: background .15s, color .15s; }
+      .sidebar-link:hover, .sidebar-link.active { color: #fff; background: rgba(255,255,255,.08); }
+      .sidebar-link .nav-icon { width: 1.25rem; text-align: center; }
+      .sidebar-bottom { padding-top: 1.25rem; margin-top: auto; border-top: 1px solid rgba(255,255,255,.12); }
+      .profile-link { display: flex; align-items: center; gap: .7rem; padding: .55rem; color: #fff; text-decoration: none; border-radius: .7rem; }
+      .profile-link:hover { color: #fff; background: rgba(255,255,255,.08); }
+      .profile-avatar { display: grid; flex: 0 0 2.35rem; width: 2.35rem; height: 2.35rem; place-items: center; overflow: hidden; border-radius: 50%; background: #314158; color: #fff; font-weight: 700; }
+      .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+      .htmx-indicator { opacity: 0; transition: opacity .15s ease; }
+      .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
+      .app-content { min-height: 100vh; margin-left: var(--sidebar-width); }
+      .content-inner { max-width: 1440px; padding: 2.5rem; margin: 0 auto; }
+      .mobile-header { display: none; }
+      .mobile-backdrop { display: none; }
+      @media (max-width: 991.98px) {
+        .app-sidebar { transition: transform .2s ease; transform: translateX(-100%); box-shadow: 12px 0 35px rgba(15,23,42,.22); }
+        .app-sidebar.is-open { transform: translateX(0); }
+        .app-content { margin-left: 0; }
+        .content-inner { padding: 1.25rem; }
+        .mobile-header { display: flex; align-items: center; justify-content: space-between; padding: .85rem 1.25rem; background: #fff; border-bottom: 1px solid #e5e7eb; }
+        .mobile-backdrop { position: fixed; inset: 0; z-index: 1030; background: rgba(15,23,42,.45); }
+      }
+    </style>
   </head>
-  <body>
-    <nav class="navbar navbar-dark bg-dark">
-      <div class="container">
-        <a class="navbar-brand" href="{% url 'property_list' %}"> 🏠 RealEstate AI </a>
-        {% if user.is_authenticated %}
-          <div class="d-flex align-items-center gap-2">
-            <span class="text-white-50 small">{{ user.first_name|default:user.username }}</span>
-            <a class="btn btn-outline-light" href="{% url 'lead_list' %}">Заявки</a>
-            <a class="btn btn-outline-light d-inline-flex align-items-center gap-2" href="{% url 'edit_profile' %}" aria-label="Личный кабинет">
-              {% if nav_profile and nav_profile.photo %}<img src="{{ nav_profile.photo.url }}" alt="" width="24" height="24" class="rounded-circle" style="object-fit:cover;">{% endif %}
-              <span>Личный кабинет</span>
-            </a>
-            <a class="btn btn-success" href="{% url 'create_property' %}">Новый объект</a>
+  <body x-data="{ sidebarOpen: false }">
+    {% if user.is_authenticated %}
+      <header class="mobile-header">
+        <a class="app-brand mb-0" href="{% url 'property_list' %}" style="color:var(--ink)"><span class="app-brand-mark">RE</span>RealEstate AI</a>
+        <button class="btn btn-outline-primary" type="button" @click="sidebarOpen = true" aria-label="Открыть меню">☰</button>
+      </header>
+      <div class="mobile-backdrop" x-cloak x-show="sidebarOpen" @click="sidebarOpen = false"></div>
+      <aside class="app-sidebar" :class="{ 'is-open': sidebarOpen }">
+        <div class="d-flex justify-content-between align-items-center d-lg-none mb-3"><span class="text-white-50 small">Меню</span><button class="btn btn-sm btn-outline-light" type="button" @click="sidebarOpen = false">×</button></div>
+        <a class="app-brand" href="{% url 'property_list' %}"><span class="app-brand-mark">RE</span>RealEstate AI</a>
+        <p class="sidebar-label">Рабочее пространство</p>
+        <nav>
+          <a class="sidebar-link {% if request.resolver_match.url_name == 'property_list' %}active{% endif %}" href="{% url 'property_list' %}"><span class="nav-icon">▦</span>Объекты</a>
+          <a class="sidebar-link {% if request.resolver_match.url_name == 'lead_list' %}active{% endif %}" href="{% url 'lead_list' %}"><span class="nav-icon">○</span>Заявки</a>
+        </nav>
+        <div class="sidebar-bottom" x-data="{ profileOpen: false }">
+          <button class="profile-link w-100 border-0 bg-transparent text-start {% if request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' %}active{% endif %}" type="button" @click="profileOpen = !profileOpen" :aria-expanded="profileOpen.toString()">
+            <span class="profile-avatar">{% if nav_profile and nav_profile.photo %}<img src="{{ nav_profile.photo.url }}" alt="">{% else %}{{ user.username|slice:":1"|upper }}{% endif %}</span>
+            <span class="text-truncate flex-grow-1"><strong class="d-block text-truncate">{% if nav_profile and nav_profile.display_name %}{{ nav_profile.display_name }}{% else %}Личный кабинет{% endif %}</strong><small class="text-white-50">Настройки профиля</small></span>
+            <span class="text-white-50" x-text="profileOpen ? '⌃' : '⌄'"></span>
+          </button>
+          <div x-cloak x-show="profileOpen" x-transition class="pt-2">
+            <a class="sidebar-link" href="{% url 'edit_profile' %}"><span class="nav-icon">⚙</span>Личный кабинет</a>
+            <a class="sidebar-link" href="{% url 'password_change' %}"><span class="nav-icon">⌁</span>Сменить пароль</a>
+            <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="sidebar-link w-100 border-0 bg-transparent" type="submit"><span class="nav-icon">↪</span>Выйти</button></form>
           </div>
-        {% else %}
-          <a class="btn btn-success" href="{% url 'login' %}">Войти</a>
-        {% endif %}
-      </div>
-    </nav>
-
-    <div class="container mt-5">
-      {% if messages %}{% for message in messages %}<div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show" role="alert">{{ message }}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button></div>{% endfor %}{% endif %}
-      {% block content %} {% endblock %}
-    </div>
+        </div>
+      </aside>
+    {% endif %}
+    <main class="{% if user.is_authenticated %}app-content{% else %}container py-5{% endif %}" {% if not user.is_authenticated %}style="max-width: 560px;"{% endif %}><div class="{% if user.is_authenticated %}content-inner{% endif %}">
+      {% if messages %}{% for message in messages %}<div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} {% if user.is_authenticated %}alert-dismissible fade show{% endif %}" role="alert">{{ message }}{% if user.is_authenticated %}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>{% endif %}</div>{% endfor %}{% endif %}
+      {% block content %}{% endblock %}
+    </div></main>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
     <script>
       document.querySelectorAll('[data-phone-mask="true"]').forEach((input) => {
         const formatPhone = () => {
@@ -49,16 +99,9 @@
           if (digits.length >= 9) result += `-${digits.slice(9, 11)}`;
           return result;
         };
-
-        input.addEventListener('focus', () => {
-          if (!input.value) input.value = '+7';
-        });
-        input.addEventListener('input', () => {
-          input.value = formatPhone();
-        });
-        input.addEventListener('blur', () => {
-          if (input.value === '+7') input.value = '';
-        });
+        input.addEventListener('focus', () => { if (!input.value) input.value = '+7'; });
+        input.addEventListener('input', () => { input.value = formatPhone(); });
+        input.addEventListener('blur', () => { if (input.value === '+7') input.value = ''; });
         if (input.value) input.value = formatPhone();
       });
     </script>

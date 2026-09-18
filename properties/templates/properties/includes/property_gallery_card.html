@@ -1,0 +1,11 @@
+<div class="card border-0 shadow-sm mt-4" id="gallery-card"><div class="card-body p-4">
+  <div class="d-flex justify-content-between align-items-center mb-2"><h4 class="h5 mb-0">Фотографии</h4><a href="{% url 'upload_images' property.pk %}" class="btn btn-outline-secondary">Добавить фотографии</a></div>
+  <p class="text-muted small">Перетаскивайте карточки, чтобы изменить порядок. Главное фото используется на обложках и лендингах.</p>
+  {% if property.images.all %}
+    <div class="row" id="photo-gallery" data-reorder-url="{% url 'reorder_images' property.pk %}">
+      {% for image in property.images.all %}
+        <div class="col-md-4 mb-3 photo-item" draggable="true" data-image-id="{{ image.pk }}"><div class="card h-100 {% if image.is_primary %}border-primary border-2{% endif %}"><img src="{{ image.image.url }}" class="card-img-top" style="height:220px;object-fit:cover;" alt="Фото {{ forloop.counter }}"><div class="card-body p-2"><div class="d-flex justify-content-between align-items-center mb-2"><span class="text-muted small">↕ Перетащить</span>{% if image.is_primary %}<span class="badge text-bg-primary">Главная</span>{% endif %}</div><div class="d-flex gap-2"><form method="post" action="{% url 'set_primary_image' property.pk image.pk %}" class="flex-grow-1" hx-post="{% url 'set_primary_image' property.pk image.pk %}" hx-target="#gallery-card" hx-swap="outerHTML">{% csrf_token %}<button class="btn btn-sm btn-outline-primary w-100" {% if image.is_primary %}disabled{% endif %}>Сделать главной</button></form><form method="post" action="{% url 'delete_property_image' property.pk image.pk %}" hx-post="{% url 'delete_property_image' property.pk image.pk %}" hx-target="#gallery-card" hx-swap="outerHTML" onsubmit="return confirm('Удалить эту фотографию?');">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Удалить</button></form></div></div></div></div>
+      {% endfor %}
+    </div>
+  {% else %}<div class="alert alert-light mb-0">Пока нет фотографий.</div>{% endif %}
+</div></div>

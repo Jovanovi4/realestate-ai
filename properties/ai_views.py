@@ -1,7 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView
@@ -9,6 +9,23 @@ from django.views.generic import DetailView
 from .forms import AIContentEditForm, AIRequestForm
 from .models import AIContent, Property
 from .services.ai_service import AIService, AIServiceError
+
+
+def is_htmx(request):
+    return request.headers.get("HX-Request") == "true"
+
+
+def render_ai_content_response(request, ai_content):
+    return render(
+        request,
+        "properties/includes/ai_content_response.html",
+        {
+            "ai_content": ai_content,
+            "property": ai_content.property,
+            "form": AIContentEditForm(instance=ai_content),
+            "history": ai_content.property.contents.all(),
+        },
+    )
 
 
 class AIAssistantView(LoginRequiredMixin, DetailView):
@@ -29,10 +46,14 @@ class AIAssistantView(LoginRequiredMixin, DetailView):
         self.object = self.get_object()
         form = AIRequestForm(request.POST)
         if not form.is_valid():
+            if is_htmx(request):
+                return render(request, "properties/includes/ai_generation_error.html", {"message": "Проверьте выбранные параметры генерации."})
             return self.render_to_response(self.get_context_data(form=form))
         try:
             result = AIService.generate_content(self.object, **form.cleaned_data)
         except AIServiceError as error:
+            if is_htmx(request):
+                return render(request, "properties/includes/ai_generation_error.html", {"message": str(error)})
             messages.error(request, str(error))
             return self.render_to_response(self.get_context_data(form=form))
 
@@ -43,6 +64,8 @@ class AIAssistantView(LoginRequiredMixin, DetailView):
             title=self.object.title,
             **result,
         )
+        if is_htmx(request):
+            return render_ai_content_response(request, content)
         messages.success(request, "Текст создан. Проверьте и отредактируйте его перед применением.")
         return redirect("ai_content_edit", pk=content.pk)
 
@@ -55,9 +78,15 @@ class AIContentEditView(LoginRequiredMixin, DetailView):
     def get_queryset(self):
         return AIContent.objects.select_related("property").filter(property__owner=self.request.user)
 
+    def get_template_names(self):
+        if is_htmx(self.request):
+            return ["properties/includes/ai_content_editor.html"]
+        return [self.template_name]
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["form"] = kwargs.get("form") or AIContentEditForm(instance=self.object)
+        context["history"] = self.object.property.contents.all()
         return context
 
     def post(self, request, *args, **kwargs):
@@ -79,8 +108,12 @@ class AIContentEditView(LoginRequiredMixin, DetailView):
             ai_content.is_applied = True
             ai_content.applied_at = timezone.now()
             ai_content.save(update_fields=["is_applied", "applied_at", "edited_content"])
+            if is_htmx(request):
+                return render_ai_content_response(request, ai_content)
             messages.success(request, "Текст применён к объекту.")
             return redirect("property_detail", pk=ai_content.property.pk)
+        if is_htmx(request):
+            return render_ai_content_response(request, ai_content)
         messages.success(request, "Правки сохранены в истории. Текст ещё не применён к объекту.")
         return redirect("ai_content_edit", pk=ai_content.pk)
 
@@ -92,8 +125,11 @@ class AIContentDeleteView(LoginRequiredMixin, View):
             pk=pk,
             property__owner=request.user,
         )
-        property_pk = ai_content.property.pk
+        property = ai_content.property
+        property_pk = property.pk
         ai_content.delete()
+        if is_htmx(request):
+            return render(request, "properties/includes/ai_content_deleted_response.html", {"property": property, "history": property.contents.all()})
         messages.success(request, "Запись удалена из истории генераций.")
         return redirect("ai_assistant", pk=property_pk)
 

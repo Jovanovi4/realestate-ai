@@ -1,0 +1,31 @@
+<div id="leads-results">
+  {% if leads %}
+    <div class="card shadow-sm border-0">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead><tr><th>Клиент</th><th>Объект</th><th>Статус</th><th>Дата</th><th></th></tr></thead>
+          <tbody>
+            {% for lead in leads %}
+              <tr>
+                <td><strong>{{ lead.name }}</strong><br><a href="tel:{{ lead.phone }}" class="text-decoration-none small">{{ lead.phone }}</a></td>
+                <td>{{ lead.property.title }}</td>
+                <td>{% include "properties/includes/lead_status_control.html" %}</td>
+                <td class="text-muted small">{{ lead.created_at|date:"d.m.Y H:i" }}</td>
+                <td><a class="btn btn-sm btn-outline-primary" href="{% url 'lead_detail' lead.pk %}">Открыть</a></td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% if is_paginated %}
+      <nav class="mt-4"><ul class="pagination">
+        {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?status={{ selected_status }}&page={{ page_obj.previous_page_number }}">Назад</a></li>{% endif %}
+        <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} из {{ paginator.num_pages }}</span></li>
+        {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?status={{ selected_status }}&page={{ page_obj.next_page_number }}">Вперёд</a></li>{% endif %}
+      </ul></nav>
+    {% endif %}
+  {% else %}
+    <div class="alert alert-light border mb-0">Заявок пока нет. Они появятся здесь после заполнения формы на опубликованном лендинге.</div>
+  {% endif %}
+</div>

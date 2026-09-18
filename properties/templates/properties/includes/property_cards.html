@@ -1,0 +1,15 @@
+{% if properties %}
+  <div class="row g-3">
+    {% for property in properties %}
+      <div class="col-md-6 col-xl-4"><article class="card border-0 shadow-sm h-100 overflow-hidden">
+        {% if property.primary_image %}<img src="{{ property.primary_image.image.url }}" alt="{{ property.title }}" class="card-img-top" style="height:220px;object-fit:cover;">{% else %}<div class="bg-light d-flex align-items-center justify-content-center text-muted" style="height:220px;">Нет фото</div>{% endif %}
+        <div class="card-body d-flex flex-column"><div class="d-flex justify-content-between align-items-start gap-2 mb-2"><span class="small text-muted">{{ property.get_property_type_display }}</span><span class="badge text-bg-{% if property.status == 'published' %}success{% elif property.status == 'showing' %}info{% elif property.status == 'reserved' %}warning{% elif property.status == 'sold' %}secondary{% else %}light{% endif %}">{{ property.get_status_display }}</span></div>
+          <h2 class="h5 mb-2">{{ property.marketing_headline|default:property.title }}</h2><p class="text-muted small mb-3">{{ property.address|default:"Адрес не указан" }}</p>
+          <div class="mt-auto d-flex justify-content-between align-items-end gap-2"><div><strong class="d-block fs-5">{% if property.price %}{{ property.get_currency_display|slice:":1" }} {{ property.price }}{% else %}Цена не указана{% endif %}</strong><small class="text-muted">{% if property.area %}{{ property.area }} м²{% endif %}{% if property.rooms %} · {{ property.rooms }} комн.{% endif %}</small></div><a href="{% url 'property_detail' property.pk %}" class="btn btn-outline-secondary">Открыть</a></div>
+        </div>
+      </article></div>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="card border-0 shadow-sm"><div class="card-body p-5 text-center"><p class="fs-5 mb-2">Объекты не найдены</p><p class="text-muted mb-3">Измените фильтры или добавьте новый объект.</p><a href="{% url 'create_property' %}" class="btn btn-primary">Создать объект</a></div></div>
+{% endif %}

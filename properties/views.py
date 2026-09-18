@@ -6,6 +6,7 @@ from django.db import transaction
 from django.db.models import Max, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import reverse_lazy
 from django.views import View
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
@@ -20,6 +21,11 @@ class PropertyListView(LoginRequiredMixin, ListView):
     template_name = "properties/property_list.html"
     context_object_name = "properties"
 
+    def get_template_names(self):
+        if self.request.headers.get("HX-Request") == "true":
+            return ["properties/includes/property_cards.html"]
+        return [self.template_name]
+
     def get_queryset(self):
         queryset = Property.objects.filter(owner=self.request.user)
         query = self.request.GET.get("q", "").strip()
@@ -27,6 +33,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
         status = self.request.GET.get("status")
         min_price = self.request.GET.get("min_price")
         max_price = self.request.GET.get("max_price")
+        sort = self.request.GET.get("sort", "newest")
 
         if query:
             queryset = queryset.filter(Q(title__icontains=query) | Q(address__icontains=query))
@@ -38,13 +45,27 @@ class PropertyListView(LoginRequiredMixin, ListView):
             queryset = queryset.filter(price__gte=min_price)
         if max_price:
             queryset = queryset.filter(price__lte=max_price)
-        return queryset
+        ordering = {
+            "newest": "-created_at",
+            "oldest": "created_at",
+            "updated": "-updated_at",
+            "price_asc": "price",
+            "price_desc": "-price",
+        }
+        return queryset.order_by(ordering.get(sort, ordering["newest"]))
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["property_types"] = Property.PROPERTY_TYPES
         context["status_choices"] = Property.STATUS_CHOICES
         context["filters"] = self.request.GET
+        context["sort_choices"] = [
+            ("newest", "Сначала новые"),
+            ("oldest", "Сначала старые"),
+            ("updated", "Недавно обновлённые"),
+            ("price_asc", "Цена: по возрастанию"),
+            ("price_desc", "Цена: по убыванию"),
+        ]
         return context
 
 
@@ -79,6 +100,18 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
 
     def get_queryset(self):
         return Property.objects.filter(owner=self.request.user)
+
+
+class PropertyStatusUpdateView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        status = request.POST.get("status")
+        if status in dict(Property.STATUS_CHOICES):
+            property.status = status
+            property.save(update_fields=["status", "updated_at"])
+        if request.headers.get("HX-Request") != "true":
+            return redirect("property_detail", pk=property.pk)
+        return render(request, "properties/includes/property_status_badge.html", {"property": property})
 
 
 class AvitoExportView(LoginRequiredMixin, View):
@@ -151,7 +184,17 @@ class RealtorProfileUpdateView(LoginRequiredMixin, UpdateView):
         return profile
 
     def get_success_url(self):
-        return reverse_lazy("property_list")
+        return reverse_lazy("edit_profile")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        properties = Property.objects.filter(owner=self.request.user)
+        context["statistics"] = {
+            "properties": properties.count(),
+            "published_landings": properties.filter(landing_published=True).count(),
+            "new_leads": Lead.objects.filter(property__owner=self.request.user, status="new").count(),
+        }
+        return context
 
 
 class LeadListView(LoginRequiredMixin, ListView):
@@ -159,6 +202,11 @@ class LeadListView(LoginRequiredMixin, ListView):
     template_name = "properties/lead_list.html"
     context_object_name = "leads"
     paginate_by = 25
+
+    def get_template_names(self):
+        if self.request.headers.get("HX-Request") == "true":
+            return ["properties/includes/lead_workspace.html"]
+        return [self.template_name]
 
     def get_queryset(self):
         queryset = Lead.objects.filter(property__owner=self.request.user).select_related("property")
@@ -185,6 +233,25 @@ class LeadDetailView(LoginRequiredMixin, UpdateView):
 
     def get_success_url(self):
         return reverse_lazy("lead_detail", kwargs={"pk": self.object.pk})
+
+
+class LeadStatusUpdateView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        lead = get_object_or_404(
+            Lead.objects.select_related("property"),
+            pk=pk,
+            property__owner=request.user,
+        )
+        status = request.POST.get("status")
+        if status in dict(Lead.STATUS_CHOICES):
+            lead.status = status
+            lead.save(update_fields=["status", "updated_at"])
+        if request.headers.get("HX-Request") == "true":
+            return render(request, "properties/includes/lead_status_control.html", {"lead": lead})
+        next_url = request.POST.get("next")
+        if next_url and url_has_allowed_host_and_scheme(next_url, {request.get_host()}):
+            return redirect(next_url)
+        return redirect("lead_list")
 
 
 class LeadDeleteView(LoginRequiredMixin, DeleteView):
@@ -228,6 +295,8 @@ class PropertyImagePrimaryView(LoginRequiredMixin, View):
             property.images.update(is_primary=False)
             image.is_primary = True
             image.save(update_fields=["is_primary"])
+        if request.headers.get("HX-Request") == "true":
+            return render(request, "properties/includes/property_gallery_card.html", {"property": property})
         return redirect("property_detail", pk=property.pk)
 
 
@@ -240,6 +309,8 @@ class PropertyImageDeleteView(LoginRequiredMixin, View):
         if image_file:
             image_file.delete(save=False)
         property.ensure_primary_image()
+        if request.headers.get("HX-Request") == "true":
+            return render(request, "properties/includes/property_gallery_card.html", {"property": property})
         return redirect("property_detail", pk=property.pk)
 
 

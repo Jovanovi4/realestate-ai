@@ -1,0 +1,11 @@
+<div id="lead-status-{{ lead.pk }}" class="d-flex flex-wrap align-items-center gap-2">
+  {% include "properties/includes/lead_status_badge.html" %}
+  <form method="post" action="{% url 'lead_status_update' lead.pk %}" hx-post="{% url 'lead_status_update' lead.pk %}" hx-target="#lead-status-{{ lead.pk }}" hx-swap="outerHTML" hx-trigger="change from:select">
+    {% csrf_token %}
+    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+    <label class="visually-hidden" for="lead-status-select-{{ lead.pk }}">Статус заявки</label>
+    <select id="lead-status-select-{{ lead.pk }}" name="status" class="form-select form-select-sm">
+      {% for value, label in lead.STATUS_CHOICES %}<option value="{{ value }}" {% if lead.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </form>
+</div>

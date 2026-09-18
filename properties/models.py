@@ -5,7 +5,7 @@ from django.db import models
 
 
 def default_landing_block_order():
-    return ["hero", "facts", "description", "gallery", "contact"]
+    return ["hero", "facts", "description", "gallery", "mortgage", "contact"]
 
 
 class Property(models.Model):
@@ -57,6 +57,7 @@ class Property(models.Model):
         ("facts", "Основные характеристики"),
         ("description", "Описание объекта"),
         ("gallery", "Фотогалерея"),
+        ("mortgage", "Калькулятор ипотеки"),
         ("contact", "Заявка и контакты"),
     ]
 

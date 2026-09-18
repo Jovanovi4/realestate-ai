@@ -13,49 +13,42 @@
 
 <div class="row g-4">
   <div class="col-lg-4">
-    <div class="card shadow-sm">
-      <div class="card-body">
+    <div class="card shadow-sm border-0">
+      <div class="card-body" x-data="{ contentType: '{{ form.content_type.value|default:'headline' }}', tone: '{{ form.tone.value|default:'business' }}' }">
         <h2 class="h5">Создать текст</h2>
-        <p class="small text-muted">Результат сначала попадёт в историю. Вы сможете изменить его до применения.</p>
-        <form method="post">
+        <p class="small text-muted">Результат откроется справа — его можно отредактировать до применения.</p>
+        <form method="post" hx-post="{% url 'ai_assistant' property.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" hx-indicator="#ai-generation-indicator" hx-disabled-elt="find button">
           {% csrf_token %}
-          {% for field in form %}
-            <div class="mb-3">
-              <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
-              {{ field }}
-              {% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}
-            </div>
-          {% endfor %}
-          <button class="btn btn-primary w-100">✨ Сгенерировать</button>
+          <div class="mb-3">
+            <label class="form-label" for="{{ form.content_type.id_for_label }}">{{ form.content_type.label }}</label>
+            {{ form.content_type }}
+            {% if form.content_type.errors %}<div class="text-danger small">{{ form.content_type.errors|striptags }}</div>{% endif %}
+          </div>
+          <p class="small text-muted" x-show="contentType === 'headline'">Короткий заголовок для объявления и лендинга.</p>
+          <p class="small text-muted" x-show="contentType === 'short_description'">Сжатое описание для карточки и превью.</p>
+          <p class="small text-muted" x-show="contentType === 'full_description'">Развёрнутый текст для объекта и лендинга.</p>
+          <div class="mb-3">
+            <label class="form-label" for="{{ form.tone.id_for_label }}">{{ form.tone.label }}</label>
+            {{ form.tone }}
+            {% if form.tone.errors %}<div class="text-danger small">{{ form.tone.errors|striptags }}</div>{% endif %}
+          </div>
+          <p class="small text-muted" x-show="tone === 'business'">Деловая подача: ясно, сдержанно и по фактам.</p>
+          <p class="small text-muted" x-show="tone === 'premium'">Премиальная подача: акцент на уровне и деталях.</p>
+          <p class="small text-muted" x-show="tone === 'concise'">Лаконичная подача: только самое важное.</p>
+          <p class="small text-muted" x-show="tone === 'emotional'">Эмоциональная подача: больше атмосферы и образов.</p>
+          <button class="btn btn-primary w-100">Сгенерировать</button>
+          <div id="ai-generation-indicator" class="htmx-indicator text-center text-primary small mt-3">
+            <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>ИИ генерирует текст…
+          </div>
         </form>
       </div>
     </div>
   </div>
 
   <div class="col-lg-8">
-    <div class="card shadow-sm">
-      <div class="card-body">
-        <h2 class="h5 mb-3">История генераций</h2>
-        {% if history %}
-          <div class="list-group list-group-flush">
-            {% for item in history %}
-              <div class="list-group-item px-0">
-                <div class="d-flex justify-content-between gap-3 align-items-start">
-                  <div>
-                    <a href="{% url 'ai_content_edit' item.pk %}" class="text-decoration-none text-body"><strong>{{ item.get_content_type_display }}</strong></a>
-                    <span class="text-muted">· {{ item.get_tone_display }}</span>
-                    {% if item.is_applied %}<span class="badge text-bg-success ms-1">Применён</span>{% endif %}
-                    <a href="{% url 'ai_content_edit' item.pk %}" class="d-block text-decoration-none text-body-secondary"><p class="mb-0 mt-2">{{ item.edited_content|default:item.content|truncatechars:180 }}</p></a>
-                  </div>
-                  <div class="text-end text-nowrap"><small class="text-muted d-block mb-2">{{ item.created_at|date:"d.m.Y H:i" }}</small><form method="post" action="{% url 'ai_content_delete' item.pk %}" onsubmit="return confirm('Удалить эту запись из истории генераций?');">{% csrf_token %}<button class="btn btn-sm btn-outline-danger">Удалить</button></form></div>
-                </div>
-              </div>
-            {% endfor %}
-          </div>
-        {% else %}
-          <p class="text-muted mb-0">Генераций ещё не было.</p>
-        {% endif %}
-      </div>
+    {% include "properties/includes/ai_editor_placeholder.html" %}
+    <div class="mt-4">
+      {% include "properties/includes/ai_history.html" %}
     </div>
   </div>
 </div>
