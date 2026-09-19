@@ -4,7 +4,7 @@ from django.urls import path, reverse_lazy
 from .ai_views import AIAssistantView, AIContentDeleteView, AIContentEditView, AILeadReplyView, generate_description
 from .forms import AccountPasswordChangeForm, PhoneAuthenticationForm
 from .views import (
-    AvitoExportView,
+    AvitoExportView, CianExportView,
     PropertyCreateView,
     PropertyDetailView,
     PropertyDeleteView,
@@ -43,6 +43,7 @@ urlpatterns = [
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("profile/", RealtorProfileUpdateView.as_view(), name="edit_profile"),
     path("avito/export/", AvitoExportView.as_view(), name="avito_export"),
+    path("cian/export/", CianExportView.as_view(), name="cian_export"),
     path(
         "profile/password/",
         auth_views.PasswordChangeView.as_view(

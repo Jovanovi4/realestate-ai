@@ -38,6 +38,19 @@ class Property(models.Model):
         ("reserved", "Забронирован"),
         ("sold", "Продан"),
         ("archived", "В архиве"),
+        ("available", "Свободен"),
+        ("rented", "Сдан"),
+    ]
+
+    DEAL_TYPE_CHOICES = [
+        ("sale", "Продажа"),
+        ("rent", "Долгосрочная аренда"),
+    ]
+
+    UTILITIES_CHOICES = [
+        ("included", "Включены в стоимость"),
+        ("separate", "Оплачиваются отдельно"),
+        ("meters", "Отдельно по счётчикам"),
     ]
 
     AVITO_OPERATION_CHOICES = [
@@ -124,6 +137,8 @@ class Property(models.Model):
     )
 
     avito_export = models.BooleanField(default=False, verbose_name="Включить в экспорт Avito")
+    cian_export = models.BooleanField(default=False, verbose_name="Включить в экспорт ЦИАН")
+    deal_type = models.CharField(max_length=10, choices=DEAL_TYPE_CHOICES, default="sale", verbose_name="Тип сделки")
     avito_operation = models.CharField(
         max_length=10,
         choices=AVITO_OPERATION_CHOICES,
@@ -202,6 +217,15 @@ class Property(models.Model):
         verbose_name="Короткое описание",
     )
 
+    rent_deposit = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Залог")
+    rent_commission = models.PositiveIntegerField(null=True, blank=True, verbose_name="Комиссия, %")
+    utilities_terms = models.CharField(max_length=20, choices=UTILITIES_CHOICES, blank=True, verbose_name="Коммунальные платежи")
+    min_lease_months = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Минимальный срок аренды, мес.")
+    available_from = models.DateField(null=True, blank=True, verbose_name="Свободен с")
+    furnished = models.BooleanField(default=False, verbose_name="Есть мебель")
+    pets_allowed = models.BooleanField(default=False, verbose_name="Можно с животными")
+    children_allowed = models.BooleanField(default=False, verbose_name="Можно с детьми")
+
     landing_title = models.CharField(max_length=255, blank=True, verbose_name="Заголовок лендинга")
     landing_subtitle = models.TextField(blank=True, verbose_name="Подзаголовок лендинга")
     landing_about_title = models.CharField(max_length=255, blank=True, verbose_name="Заголовок блока «Об объекте»")
@@ -249,6 +273,10 @@ class Property(models.Model):
     @property
     def primary_image(self):
         return self.images.filter(is_primary=True).first() or self.images.first()
+
+    @property
+    def price_period_label(self):
+        return "в месяц" if self.deal_type == "rent" else ""
 
     def ensure_primary_image(self):
         if not self.images.filter(is_primary=True).exists():
@@ -463,6 +491,10 @@ class ClientReminder(models.Model):
 
 
 class Lead(models.Model):
+    INTEREST_CHOICES = [
+        ("buy", "Покупка"),
+        ("long_rent", "Долгосрочная аренда"),
+    ]
     STATUS_CHOICES = [
         ("new", "Новая"),
         ("read", "Прочитана"),
@@ -475,6 +507,7 @@ class Lead(models.Model):
     phone = models.CharField(max_length=30, verbose_name="Телефон")
     message = models.TextField(blank=True, verbose_name="Комментарий")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Статус обработки")
+    interest_type = models.CharField(max_length=20, choices=INTEREST_CHOICES, default="buy", verbose_name="Интерес клиента")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -55,9 +55,10 @@ class AIService:
     def _property_facts(cls, property):
         facts = [
             ("Название объекта", property.title),
+            ("Тип сделки", property.get_deal_type_display()),
             ("Тип", property.get_property_type_display()),
             ("Статус", property.get_status_display()),
-            ("Цена", f"{property.price} {property.get_currency_display()}" if property.price else ""),
+            ("Ставка аренды в месяц" if property.deal_type == "rent" else "Цена", f"{property.price} {property.get_currency_display()}" if property.price else ""),
             ("Адрес", property.address),
             ("Площадь", f"{property.area} м²" if property.area else ""),
             ("Комнаты", property.rooms),
@@ -67,6 +68,14 @@ class AIService:
             ("Год постройки", property.year_built),
             ("Состояние", property.get_condition_display() if property.condition else ""),
             ("Особенности и удобства", property.amenities),
+            ("Залог", property.rent_deposit if property.deal_type == "rent" else ""),
+            ("Комиссия, %", property.rent_commission if property.deal_type == "rent" else ""),
+            ("Коммунальные платежи", property.get_utilities_terms_display() if property.deal_type == "rent" and property.utilities_terms else ""),
+            ("Минимальный срок аренды, мес.", property.min_lease_months if property.deal_type == "rent" else ""),
+            ("Свободен с", property.available_from if property.deal_type == "rent" else ""),
+            ("Мебель", "есть" if property.deal_type == "rent" and property.furnished else ""),
+            ("Можно с животными", "да" if property.deal_type == "rent" and property.pets_allowed else ""),
+            ("Можно с детьми", "да" if property.deal_type == "rent" and property.children_allowed else ""),
         ]
         return "\n".join(f"- {label}: {value}" for label, value in facts if value not in (None, ""))
 
@@ -74,9 +83,11 @@ class AIService:
     def build_prompt(cls, property, content_type, tone):
         if content_type not in cls.CONTENT_INSTRUCTIONS or tone not in cls.TONE_INSTRUCTIONS:
             raise AIServiceError("Неизвестный тип текста или тон генерации.")
+        deal_instruction = "Это объявление о долгосрочной аренде. Акцентируй только известные условия проживания, срок, доступность, мебель, коммунальные платежи и правила. Не называй объект продажей." if property.deal_type == "rent" else "Это объявление о продаже."
         return "\n\n".join((
             cls.CONTENT_INSTRUCTIONS[content_type],
             cls.TONE_INSTRUCTIONS[tone],
+            deal_instruction,
             "Данные объекта:\n" + cls._property_facts(property),
         ))
 
@@ -122,6 +133,7 @@ class AIService:
             "Создай комплект текстов. Для каждого пункта верни результат строго после его маркера. Не пропускай маркеры.",
             sections,
             cls.TONE_INSTRUCTIONS[tone],
+            "Это долгосрочная аренда; используй условия аренды." if property.deal_type == "rent" else "Это продажа объекта.",
             "Данные объекта:\n" + cls._property_facts(property),
         ))
         result = cls._run_prompt(prompt)

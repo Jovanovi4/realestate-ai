@@ -30,6 +30,49 @@
     photoGallery.addEventListener('dragend', async () => { if (!draggedItem) return; draggedItem.classList.remove('opacity-50'); const csrfToken = photoGallery.querySelector('[name=csrfmiddlewaretoken]').value; const imageIds = [...photoGallery.querySelectorAll('.photo-item')].map((item) => item.dataset.imageId); const response = await fetch(photoGallery.dataset.reorderUrl, {method: 'POST', credentials: 'same-origin', headers: {'Content-Type': 'application/json', 'X-CSRFToken': csrfToken}, body: JSON.stringify({image_ids: imageIds})}); if (!response.ok) alert('Не удалось сохранить порядок фотографий. Обновите страницу и попробуйте снова.'); draggedItem = null; });
   };
   initPhotoGallery();
+  const propertyDataEdit = document.querySelector('#data-pane a.btn');
+  if (propertyDataEdit) {
+    propertyDataEdit.classList.add('btn-icon');
+    propertyDataEdit.title = 'Редактировать данные объекта';
+    propertyDataEdit.setAttribute('aria-label', 'Редактировать данные объекта');
+    propertyDataEdit.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+  }
+  const exportCard = [...document.querySelectorAll('#publication-pane .card')].find((card) => card.querySelector('h2')?.textContent.trim() === 'Avito');
+  if (exportCard) {
+    const exportEnabled = (enabled) => enabled ? '<span class="text-success">включён</span>' : '<span class="text-muted">выключен</span>';
+    exportCard.querySelector('h2').textContent = 'Экспорт XML';
+    exportCard.querySelector('p').innerHTML = `Avito — ${exportEnabled({% if property.avito_export %}true{% else %}false{% endif %})}<span class="mx-1">·</span>ЦИАН — ${exportEnabled({% if property.cian_export %}true{% else %}false{% endif %})}`;
+    exportCard.querySelector('.d-flex.flex-wrap.gap-2').outerHTML = `<div class="d-flex flex-wrap gap-2"><div class="dropdown action-menu"><button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">Выбрать площадку ▾</button><ul class="dropdown-menu"><li><a class="dropdown-item" href="{% url 'avito_export' %}">Avito</a></li><li><a class="dropdown-item" href="{% url 'cian_export' %}">ЦИАН</a></li></ul></div><a href="{% url 'edit_property' property.pk %}" class="btn btn-outline-secondary">Настроить выгрузку</a></div>`;
+  }
+  const landingActions = document.querySelector('#landing-pane .d-flex.flex-wrap.gap-2');
+  if (landingActions) {
+    landingActions.querySelectorAll('a').forEach((link) => {
+      if (link.target === '_blank') {
+        link.classList.add('btn-icon');
+        link.title = 'Открыть публичный лендинг';
+        link.setAttribute('aria-label', 'Открыть публичный лендинг');
+        link.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 3h7v7M10 14 21 3M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6"/></svg>';
+      } else if (link.textContent.trim() === 'Все лендинги') {
+        link.classList.add('btn-icon');
+        link.title = 'Все лендинги';
+        link.setAttribute('aria-label', 'Все лендинги');
+        link.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>';
+      }
+    });
+  }
+  const landingPane = document.getElementById('landing-pane');
+  if (landingPane) {
+    const previewCard = document.createElement('section');
+    previewCard.className = 'card border-0 shadow-sm mt-4';
+    previewCard.innerHTML = `<div class="card-body p-4 p-lg-5"><div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-3"><div><h2 class="h5 mb-1">Предпросмотр лендинга</h2><p class="small text-muted mb-0">Проверьте сохранённую версию для разных устройств.</p></div><div class="btn-group"><button type="button" class="btn btn-sm btn-outline-secondary active" data-preview-device="desktop">ПК</button><button type="button" class="btn btn-sm btn-outline-secondary" data-preview-device="tablet">Планшет</button><button type="button" class="btn btn-sm btn-outline-secondary" data-preview-device="phone">Телефон</button></div></div><div class="bg-light rounded-3 p-2 mx-auto" data-preview-frame style="max-width:100%;"><iframe title="Предпросмотр лендинга" src="{% url 'property_landing_preview' property.pk %}" loading="lazy" class="w-100 border-0 bg-white rounded-2" style="height:620px;"></iframe></div></div>`;
+    landingPane.append(previewCard);
+    const previewFrame = previewCard.querySelector('[data-preview-frame]');
+    const previewWidths = { desktop: '100%', tablet: '768px', phone: '390px' };
+    previewCard.querySelectorAll('[data-preview-device]').forEach((button) => button.addEventListener('click', () => {
+      previewFrame.style.maxWidth = previewWidths[button.dataset.previewDevice];
+      previewCard.querySelectorAll('[data-preview-device]').forEach((item) => item.classList.toggle('active', item === button));
+    }));
+  }
   document.body.addEventListener('htmx:afterSwap', initPhotoGallery);
 </script>
 {% endblock %}

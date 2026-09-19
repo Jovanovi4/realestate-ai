@@ -55,7 +55,7 @@ class AvitoExportService:
             ad = ET.SubElement(root, "Ad")
             cls._add(ad, "Id", f"realestate-ai-{property.pk}")
             cls._add(ad, "Category", category)
-            cls._add(ad, "OperationType", "Продам" if property.avito_operation == "sell" else "Сдам")
+            cls._add(ad, "OperationType", "Сдам" if property.deal_type == "rent" else "Продам")
             cls._add(ad, "PropertyRights", "Посредник")
             cls._add(ad, "ObjectType", object_type)
             cls._add(ad, "Title", property.marketing_headline or property.title)

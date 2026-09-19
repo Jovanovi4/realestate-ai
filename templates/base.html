@@ -34,7 +34,8 @@
       .sidebar-label { margin: 0 0 .5rem .75rem; color: #7f8ba0; font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
       .sidebar-link { display: flex; align-items: center; gap: .7rem; padding: .7rem .75rem; margin-bottom: .2rem; border-radius: .55rem; color: #aeb9c9; font-size: .94rem; font-weight: 600; text-decoration: none; transition: background .15s, color .15s; }
       .sidebar-link:hover, .sidebar-link.active { color: #fff; background: rgba(255,255,255,.08); }
-      .sidebar-link .nav-icon { width: 1.25rem; text-align: center; }
+      .sidebar-link .nav-icon { display:inline-grid; width:1.25rem; height:1.25rem; place-items:center; }
+      .sidebar-link .nav-icon svg { width:1.12rem; height:1.12rem; }
       .sidebar-counter { display:grid; min-width:1.25rem; height:1.25rem; padding:0 .3rem; place-items:center; margin-left:auto; border-radius:999px; color:#fff; background:#dc3545; font-size:.68rem; font-weight:800; line-height:1; }
       .sidebar-bottom { padding-top: 1.25rem; margin-top: auto; border-top: 1px solid rgba(255,255,255,.12); }
       .profile-link { display: flex; align-items: center; gap: .7rem; padding: .55rem; color: #fff; text-decoration: none; border-radius: .7rem; }
@@ -121,10 +122,10 @@
         <a class="app-brand" href="{% url 'property_list' %}"><span class="app-brand-mark">RE</span>RealEstate AI</a>
         <p class="sidebar-label">Рабочее пространство</p>
         <nav>
-          <a class="sidebar-link {% if request.resolver_match.url_name == 'property_list' %}active{% endif %}" href="{% url 'property_list' %}"><span class="nav-icon">▦</span>Объекты</a>
+          <a class="sidebar-link {% if request.resolver_match.url_name == 'property_list' %}active{% endif %}" href="{% url 'property_list' %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8.878.392a1.5 1.5 0 0 0-1.756 0L.257 4.25A.5.5 0 0 0 0 4.686v6.628a1.5 1.5 0 0 0 .757 1.307l6.365 3.576a1.75 1.75 0 0 0 1.756 0l6.365-3.576A1.5 1.5 0 0 0 16 11.314V4.686a.5.5 0 0 0-.257-.436L8.878.392ZM7.61 1.265a.75.75 0 0 1 .78 0l5.31 2.987L8 7.491 2.3 4.252l5.31-2.987ZM1 5.548l6.5 3.693v5.625l-5.753-3.233A.5.5 0 0 1 1 11.197V5.548Zm14 0v5.649a.5.5 0 0 1-.747.436L8.5 14.866V9.24L15 5.548Z"/></svg></span>Объекты</a>
           <a class="sidebar-link {% if request.resolver_match.url_name == 'landing_list' %}active{% endif %}" href="{% url 'landing_list' %}"><span class="nav-icon">▱</span>Лендинги</a>
-          <a class="sidebar-link {% if request.resolver_match.url_name == 'lead_list' %}active{% endif %}" href="{% url 'lead_list' %}"><span class="nav-icon">○</span><span>Заявки</span>{% if nav_new_leads_count %}<span class="sidebar-counter" title="{{ nav_new_leads_count }} новых заявок" aria-label="{{ nav_new_leads_count }} новых заявок">{{ nav_new_leads_label }}</span>{% endif %}</a>
-          <a class="sidebar-link {% if 'client' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'client_list' %}"><span class="nav-icon">◫</span>Клиенты</a>
+          <a class="sidebar-link {% if request.resolver_match.url_name == 'lead_list' %}active{% endif %}" href="{% url 'lead_list' %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .8 2.9a2 2 0 0 1-.5 2.1L8.1 10a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.4 1.9.7 2.9.8a2 2 0 0 1 1.6 1.9Z"/></svg></span><span>Заявки</span>{% if nav_new_leads_count %}<span class="sidebar-counter" title="{{ nav_new_leads_count }} новых заявок" aria-label="{{ nav_new_leads_count }} новых заявок">{{ nav_new_leads_label }}</span>{% endif %}</a>
+          <a class="sidebar-link {% if 'client' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'client_list' %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14Zm0-13a6 6 0 1 1 0 12A6 6 0 0 1 8 2Zm0 2.5a2.25 2.25 0 1 1 0 4.5 2.25 2.25 0 0 1 0-4.5Zm0 5.5c-1.5 0-2.83.73-3.65 1.85A5.95 5.95 0 0 0 8 13a5.95 5.95 0 0 0 3.65-1.15A4.5 4.5 0 0 0 8 10Z"/></svg></span>Клиенты</a>
         </nav>
         <div class="sidebar-bottom" x-data="{ profileOpen: false }">
           <button class="profile-link w-100 border-0 bg-transparent text-start {% if request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' %}active{% endif %}" type="button" @click="profileOpen = !profileOpen" :aria-expanded="profileOpen.toString()">

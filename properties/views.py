@@ -7,6 +7,7 @@ from django.contrib.auth import login
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
 from django.db.models import Count, Max, Q
+from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -23,12 +24,14 @@ from .forms import (
 )
 from .models import AIContent, Client, ClientInteraction, ClientReminder, Lead, Property, PropertyImage, RealtorProfile
 from .services.avito_service import AvitoExportService
+from .services.cian_service import CianExportService
 
 
 class PropertyListView(LoginRequiredMixin, ListView):
     model = Property
     template_name = "properties/property_list.html"
     context_object_name = "properties"
+    paginate_by = 10
 
     def get_template_names(self):
         if self.request.headers.get("HX-Request") == "true":
@@ -39,6 +42,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
         queryset = Property.objects.filter(owner=self.request.user)
         query = self.request.GET.get("q", "").strip()
         property_type = self.request.GET.get("property_type")
+        deal_type = self.request.GET.get("deal_type")
         status = self.request.GET.get("status")
         min_price = self.request.GET.get("min_price")
         max_price = self.request.GET.get("max_price")
@@ -48,6 +52,8 @@ class PropertyListView(LoginRequiredMixin, ListView):
             queryset = queryset.filter(Q(title__icontains=query) | Q(address__icontains=query))
         if property_type in dict(Property.PROPERTY_TYPES):
             queryset = queryset.filter(property_type=property_type)
+        if deal_type in dict(Property.DEAL_TYPE_CHOICES):
+            queryset = queryset.filter(deal_type=deal_type)
         if status in dict(Property.STATUS_CHOICES):
             queryset = queryset.filter(status=status)
         if min_price:
@@ -66,6 +72,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["property_types"] = Property.PROPERTY_TYPES
+        context["deal_types"] = Property.DEAL_TYPE_CHOICES
         context["status_choices"] = Property.STATUS_CHOICES
         context["filters"] = self.request.GET
         context["sort_choices"] = [
@@ -75,6 +82,9 @@ class PropertyListView(LoginRequiredMixin, ListView):
             ("price_asc", "Цена: по возрастанию"),
             ("price_desc", "Цена: по убыванию"),
         ]
+        params = self.request.GET.copy()
+        params.pop("page", None)
+        context["pagination_query"] = params.urlencode()
         return context
 
 
@@ -134,6 +144,7 @@ class LandingListView(LoginRequiredMixin, ListView):
     model = Property
     template_name = "properties/landing_list.html"
     context_object_name = "properties"
+    paginate_by = 10
 
     def get_queryset(self):
         queryset = Property.objects.filter(owner=self.request.user).annotate(landing_leads_count=Count("leads"))
@@ -152,9 +163,15 @@ class LandingListView(LoginRequiredMixin, ListView):
                 "selected_status": self.request.GET.get("status", ""),
                 "published_count": all_landings.filter(landing_published=True).count(),
                 "draft_count": all_landings.filter(landing_published=False).count(),
+                "pagination_query": self._pagination_query(),
             }
         )
         return context
+
+    def _pagination_query(self):
+        params = self.request.GET.copy()
+        params.pop("page", None)
+        return params.urlencode()
 
 
 class PropertyLandingUnpublishView(LoginRequiredMixin, View):
@@ -218,6 +235,42 @@ class AvitoExportView(LoginRequiredMixin, View):
         )
 
 
+class CianExportView(LoginRequiredMixin, View):
+    template_name = "properties/cian_export.html"
+
+    def get_properties_and_profile(self):
+        properties = Property.objects.filter(
+            owner=self.request.user,
+            cian_export=True,
+        ).prefetch_related("images")
+        profile = RealtorProfile.objects.filter(user=self.request.user).first()
+        return properties, profile
+
+    def get(self, request):
+        properties, profile = self.get_properties_and_profile()
+        valid_properties, invalid_properties = CianExportService.get_exportable(properties, profile)
+        if request.GET.get("download") == "1":
+            if not valid_properties:
+                return redirect("cian_export")
+            xml_content = CianExportService.build_xml(
+                valid_properties,
+                profile,
+                request.build_absolute_uri("/").rstrip("/"),
+            )
+            response = HttpResponse(xml_content, content_type="application/xml; charset=utf-8")
+            response["Content-Disposition"] = 'attachment; filename="cian-properties.xml"'
+            return response
+        return render(
+            request,
+            self.template_name,
+            {
+                "valid_properties": valid_properties,
+                "invalid_properties": invalid_properties,
+                "selected_count": properties.count(),
+            },
+        )
+
+
 class PropertyDeleteView(LoginRequiredMixin, DeleteView):
     model = Property
 
@@ -269,7 +322,7 @@ class ClientListView(LoginRequiredMixin, ListView):
     model = Client
     template_name = "properties/client_list.html"
     context_object_name = "clients"
-    paginate_by = 30
+    paginate_by = 10
 
     def get_queryset(self):
         queryset = Client.objects.filter(owner=self.request.user).prefetch_related("leads")
@@ -352,8 +405,19 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
         context = super().get_context_data(**kwargs)
         context["interaction_form"] = ClientInteractionForm()
         context["reminder_form"] = ClientReminderForm(initial={"due_at": (timezone.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")})
-        context["interactions"] = self.object.interactions.select_related("lead")
-        context["reminders"] = self.object.reminders.all()
+        interaction_queryset = self.object.interactions.select_related("lead", "lead__property")
+        reminder_queryset = self.object.reminders.all()
+        lead_queryset = self.object.leads.select_related("property")
+        context["interactions"] = Paginator(interaction_queryset, 10).get_page(self.request.GET.get("history_page", 1))
+        context["reminders"] = Paginator(reminder_queryset, 10).get_page(self.request.GET.get("reminders_page", 1))
+        context["client_leads"] = Paginator(lead_queryset, 10).get_page(self.request.GET.get("leads_page", 1))
+        context["interactions_total"] = interaction_queryset.count()
+        context["reminders_total"] = reminder_queryset.count()
+        context["client_leads_total"] = lead_queryset.count()
+        for page_param in ("history_page", "reminders_page", "leads_page"):
+            params = self.request.GET.copy()
+            params.pop(page_param, None)
+            context[f"{page_param}_query"] = params.urlencode()
         return context
 
     def get_success_url(self):
@@ -446,7 +510,7 @@ class LeadListView(LoginRequiredMixin, ListView):
     model = Lead
     template_name = "properties/lead_list.html"
     context_object_name = "leads"
-    paginate_by = 25
+    paginate_by = 10
 
     def get_template_names(self):
         if self.request.headers.get("HX-Request") == "true":
@@ -647,6 +711,7 @@ class PublicLandingView(View):
         if form.is_valid():
             lead = form.save(commit=False)
             lead.property = property
+            lead.interest_type = "long_rent" if property.deal_type == "rent" else "buy"
             client, created = Client.objects.get_or_create(
                 owner=property.owner,
                 phone=form.cleaned_data["phone"],
@@ -661,7 +726,7 @@ class PublicLandingView(View):
                 client=client,
                 lead=lead,
                 interaction_type="note",
-                text=f"Новая заявка с лендинга «{property.title}».",
+                text=f"Новая заявка с лендинга «{property.title}» · {lead.get_interest_type_display()}.",
             )
             return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(), sent=True))
         return render(request, self.get_template_name(property), self.get_context(property, profile, form))

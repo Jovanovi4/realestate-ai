@@ -36,8 +36,10 @@ class PropertyForm(forms.ModelForm):
             "title",
             "marketing_headline",
             "property_type",
+            "deal_type",
             "status",
             "avito_export",
+            "cian_export",
             "avito_operation",
             "price",
             "currency",
@@ -53,6 +55,14 @@ class PropertyForm(forms.ModelForm):
             "amenities",
             "short_description",
             "description",
+            "rent_deposit",
+            "rent_commission",
+            "utilities_terms",
+            "min_lease_months",
+            "available_from",
+            "furnished",
+            "pets_allowed",
+            "children_allowed",
             "landing_template",
             "landing_published",
             "landing_title",
@@ -73,6 +83,7 @@ class PropertyForm(forms.ModelForm):
             "landing_trust_about": forms.Textarea(attrs={"rows": 3, "placeholder": "Например: Сопровождаем сделку от первого просмотра до передачи ключей."}),
             "seo_description": forms.Textarea(attrs={"rows": 2}),
             "amenities": forms.Textarea(attrs={"rows": 3}),
+            "available_from": forms.DateInput(attrs={"type": "date"}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -92,6 +103,7 @@ class PropertyForm(forms.ModelForm):
             else:
                 field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
         self.fields["property_type"].widget.attrs["x-model"] = "propertyType"
+        self.fields["deal_type"].widget.attrs["x-model"] = "dealType"
         benefits = self.instance.landing_benefits or []
         for index in range(1, 4):
             benefit = benefits[index - 1] if len(benefits) >= index else {}
@@ -112,6 +124,15 @@ class PropertyForm(forms.ModelForm):
             property.save()
             self.save_m2m()
         return property
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("deal_type") == "rent":
+            if cleaned_data.get("status") == "sold":
+                self.add_error("status", "Для аренды используйте статусы «Свободен», «Бронь» или «Сдан».")
+            if not cleaned_data.get("utilities_terms"):
+                self.add_error("utilities_terms", "Укажите условия оплаты коммунальных услуг.")
+        return cleaned_data
 
     def clean_landing_block_order(self):
         try:
