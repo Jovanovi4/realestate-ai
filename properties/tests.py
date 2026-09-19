@@ -1,5 +1,5 @@
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from .models import Property
@@ -10,15 +10,13 @@ class AccountAndPropertyAccessTests(TestCase):
         response = self.client.post(
             reverse("register"),
             {
-                "username": "agent",
-                "first_name": "Анна",
-                "email": "agent@example.com",
+                "phone": "+7 (999) 123-45-67",
                 "password1": "Secure-agent-password-123",
                 "password2": "Secure-agent-password-123",
             },
         )
         self.assertRedirects(response, reverse("property_list"))
-        self.assertTrue(User.objects.filter(username="agent").exists())
+        self.assertTrue(User.objects.filter(username="+79991234567").exists())
 
     def test_agent_cannot_open_another_agents_property(self):
         owner = User.objects.create_user("owner", password="password")
@@ -37,7 +35,9 @@ class AccountAndPropertyAccessTests(TestCase):
             {
                 "title": "Дом у моря",
                 "property_type": "house",
+                "deal_type": "sale",
                 "status": "published",
+                "avito_operation": "sell",
                 "price": "450000",
                 "currency": "EUR",
                 "address": "Лиссабон",
@@ -60,6 +60,43 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertEqual(property.status, "published")
         self.assertEqual(property.land_area, 600)
 
+    def test_property_accepts_missing_landing_settings_and_rejects_invalid_ones(self):
+        owner = User.objects.create_user("owner", password="password")
+        property = Property.objects.create(title="Квартира", owner=owner)
+        self.client.force_login(owner)
+
+        valid_response = self.client.post(
+            reverse("edit_property", args=[property.pk]),
+            {
+                "title": "Квартира у парка",
+                "property_type": "apartment",
+                "deal_type": "sale",
+                "status": "draft",
+                "avito_operation": "sell",
+                "currency": "RUB",
+                "landing_template": "classic",
+            },
+        )
+        self.assertRedirects(valid_response, reverse("property_detail", args=[property.pk]))
+
+        invalid_response = self.client.post(
+            reverse("edit_property", args=[property.pk]),
+            {
+                "title": "Квартира у парка",
+                "property_type": "apartment",
+                "deal_type": "sale",
+                "status": "draft",
+                "avito_operation": "sell",
+                "currency": "RUB",
+                "landing_template": "classic",
+                "landing_block_order": "{}",
+                "landing_enabled_blocks": "[]",
+            },
+        )
+        self.assertEqual(invalid_response.status_code, 200)
+        self.assertIn("landing_block_order", invalid_response.context["form"].errors)
+        self.assertIn("landing_enabled_blocks", invalid_response.context["form"].errors)
+
     def test_published_landing_accepts_a_lead(self):
         owner = User.objects.create_user("agent", password="password")
         property = Property.objects.create(
@@ -73,3 +110,16 @@ class AccountAndPropertyAccessTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(property.leads.count(), 1)
+
+    @override_settings(AI_ENABLED=False)
+    def test_ai_pages_are_unavailable_when_disabled(self):
+        owner = User.objects.create_user("owner", password="password")
+        property = Property.objects.create(title="Квартира", owner=owner)
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("ai_assistant", args=[property.pk]))
+        self.assertEqual(response.status_code, 404)
+        self.assertNotContains(
+            self.client.get(reverse("property_detail", args=[property.pk])),
+            "ИИ-помощник",
+        )

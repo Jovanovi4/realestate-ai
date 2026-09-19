@@ -92,11 +92,15 @@ class PropertyForm(forms.ModelForm):
         valid_keys = {key for key, _ in Property.LANDING_BLOCKS}
         if set(order) != valid_keys or len(order) != len(valid_keys):
             order = [key for key, _ in Property.LANDING_BLOCKS]
+        self._default_landing_block_order = order
         self.initial["landing_block_order"] = json.dumps(order)
         block_labels = dict(Property.LANDING_BLOCKS)
         enabled = self.instance.landing_enabled_blocks or {key: True for key, _ in Property.LANDING_BLOCKS}
+        self._default_landing_enabled_blocks = {
+            key: bool(enabled.get(key, True)) for key, _ in Property.LANDING_BLOCKS
+        }
         self.landing_blocks = [(key, block_labels[key], bool(enabled.get(key, True))) for key in order]
-        self.initial["landing_enabled_blocks"] = json.dumps({key: bool(enabled.get(key, True)) for key, _ in Property.LANDING_BLOCKS})
+        self.initial["landing_enabled_blocks"] = json.dumps(self._default_landing_enabled_blocks)
         for field in self.fields.values():
             if isinstance(field.widget, forms.CheckboxInput):
                 field.widget.attrs["class"] = "form-check-input"
@@ -135,8 +139,11 @@ class PropertyForm(forms.ModelForm):
         return cleaned_data
 
     def clean_landing_block_order(self):
+        raw_order = self.cleaned_data["landing_block_order"]
+        if not raw_order:
+            return self._default_landing_block_order
         try:
-            order = json.loads(self.cleaned_data["landing_block_order"])
+            order = json.loads(raw_order)
         except (TypeError, json.JSONDecodeError) as error:
             raise ValidationError("Не удалось прочитать порядок блоков лендинга.") from error
         valid_keys = {key for key, _ in Property.LANDING_BLOCKS}
@@ -145,8 +152,11 @@ class PropertyForm(forms.ModelForm):
         return order
 
     def clean_landing_enabled_blocks(self):
+        raw_enabled = self.cleaned_data["landing_enabled_blocks"]
+        if not raw_enabled:
+            return self._default_landing_enabled_blocks
         try:
-            enabled = json.loads(self.cleaned_data["landing_enabled_blocks"])
+            enabled = json.loads(raw_enabled)
         except (TypeError, json.JSONDecodeError) as error:
             raise ValidationError("Не удалось прочитать настройки блоков лендинга.") from error
         valid_keys = {key for key, _ in Property.LANDING_BLOCKS}

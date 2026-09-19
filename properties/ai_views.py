@@ -1,5 +1,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.conf import settings
+from django.http import Http404
 from django.core.paginator import Paginator
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.shortcuts import get_object_or_404, redirect, render
@@ -54,7 +56,16 @@ DEFAULT_TARGETS = {
 }
 
 
-class AIAssistantView(LoginRequiredMixin, DetailView):
+class AIEnabledMixin:
+    """Keep AI endpoints unavailable when a deployment disables the feature."""
+
+    def dispatch(self, request, *args, **kwargs):
+        if not settings.AI_ENABLED:
+            raise Http404
+        return super().dispatch(request, *args, **kwargs)
+
+
+class AIAssistantView(AIEnabledMixin, LoginRequiredMixin, DetailView):
     model = Property
     template_name = "properties/ai_assistant.html"
     context_object_name = "property"
@@ -111,7 +122,7 @@ class AIAssistantView(LoginRequiredMixin, DetailView):
         return redirect("ai_content_edit", pk=content.pk)
 
 
-class AIContentEditView(LoginRequiredMixin, DetailView):
+class AIContentEditView(AIEnabledMixin, LoginRequiredMixin, DetailView):
     model = AIContent
     template_name = "properties/ai_content_edit.html"
     context_object_name = "ai_content"
@@ -158,7 +169,7 @@ class AIContentEditView(LoginRequiredMixin, DetailView):
         return redirect("ai_content_edit", pk=ai_content.pk)
 
 
-class AIContentDeleteView(LoginRequiredMixin, View):
+class AIContentDeleteView(AIEnabledMixin, LoginRequiredMixin, View):
     def post(self, request, pk):
         ai_content = get_object_or_404(
             AIContent.objects.select_related("property"),
@@ -176,7 +187,7 @@ class AIContentDeleteView(LoginRequiredMixin, View):
         return redirect("ai_assistant", pk=property_pk)
 
 
-class AILeadReplyView(LoginRequiredMixin, View):
+class AILeadReplyView(AIEnabledMixin, LoginRequiredMixin, View):
     def post(self, request, pk):
         lead = get_object_or_404(
             Lead.objects.select_related("property"),
@@ -215,4 +226,7 @@ class AILeadReplyView(LoginRequiredMixin, View):
 def generate_description(request, pk):
     """Preserve the old URL, directing it to the review-first assistant workflow."""
     get_object_or_404(Property, pk=pk, owner=request.user)
+    if not settings.AI_ENABLED:
+        messages.info(request, "ИИ-помощник отключён на этом стенде.")
+        return redirect("property_detail", pk=pk)
     return redirect("ai_assistant", pk=pk)

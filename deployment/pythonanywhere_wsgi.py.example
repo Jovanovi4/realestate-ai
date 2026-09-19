@@ -1,0 +1,26 @@
+"""Template for the WSGI file in PythonAnywhere's Web tab.
+
+Copy this into /var/www/<your_username>_pythonanywhere_com_wsgi.py on
+PythonAnywhere. Replace every YOUR_USERNAME and generate a unique secret.
+Never commit the copied file or its secret to Git.
+"""
+
+import os
+import sys
+
+
+PROJECT_PATH = "/home/YOUR_USERNAME/realestate-ai"
+if PROJECT_PATH not in sys.path:
+    sys.path.insert(0, PROJECT_PATH)
+
+os.environ["DJANGO_SETTINGS_MODULE"] = "config.settings"
+os.environ["DJANGO_SECRET_KEY"] = "REPLACE_WITH_A_LONG_RANDOM_SECRET"
+os.environ["DJANGO_DEBUG"] = "False"
+os.environ["DJANGO_ALLOWED_HOSTS"] = "YOUR_USERNAME.pythonanywhere.com"
+os.environ["DJANGO_CSRF_TRUSTED_ORIGINS"] = "https://YOUR_USERNAME.pythonanywhere.com"
+os.environ["AI_ENABLED"] = "False"
+
+from django.core.wsgi import get_wsgi_application
+
+
+application = get_wsgi_application()
