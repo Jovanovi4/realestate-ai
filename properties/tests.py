@@ -1,11 +1,22 @@
+from io import BytesIO
+
 from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
+from PIL import Image
 
 from .models import Property
 
 
 class AccountAndPropertyAccessTests(TestCase):
+    @staticmethod
+    def image_upload():
+        image = Image.new("RGB", (20, 20), color="white")
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG")
+        return SimpleUploadedFile("property.jpg", buffer.getvalue(), content_type="image/jpeg")
+
     def test_registration_creates_an_authenticated_user(self):
         response = self.client.post(
             reverse("register"),
@@ -110,6 +121,19 @@ class AccountAndPropertyAccessTests(TestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(property.leads.count(), 1)
+
+    def test_owner_can_upload_property_image(self):
+        owner = User.objects.create_user("owner", password="password")
+        property = Property.objects.create(title="Квартира", owner=owner)
+        self.client.force_login(owner)
+
+        response = self.client.post(
+            reverse("upload_images", args=[property.pk]),
+            {"images": self.image_upload()},
+        )
+
+        self.assertRedirects(response, reverse("property_detail", args=[property.pk]))
+        self.assertEqual(property.images.count(), 1)
 
     @override_settings(AI_ENABLED=False)
     def test_ai_pages_are_unavailable_when_disabled(self):
