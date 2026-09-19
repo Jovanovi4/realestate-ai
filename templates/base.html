@@ -18,6 +18,12 @@
       .btn-primary { --bs-btn-bg: #1f2937; --bs-btn-border-color: #1f2937; --bs-btn-hover-bg: #111827; --bs-btn-hover-border-color: #111827; --bs-btn-active-bg: #111827; --bs-btn-active-border-color: #111827; }
       .btn-outline-primary { --bs-btn-color: #334155; --bs-btn-border-color: #cbd5e1; --bs-btn-hover-bg: #f1f5f9; --bs-btn-hover-border-color: #cbd5e1; --bs-btn-hover-color: #172033; --bs-btn-active-bg: #e2e8f0; --bs-btn-active-border-color: #cbd5e1; --bs-btn-active-color: #172033; }
       .btn-outline-secondary { --bs-btn-color: #475569; --bs-btn-border-color: #d6dde7; --bs-btn-hover-bg: #f1f5f9; --bs-btn-hover-border-color: #d6dde7; --bs-btn-hover-color: #172033; }
+      .btn-outline-danger { --bs-btn-color: #9f2d25; --bs-btn-border-color: #e8c3be; --bs-btn-hover-bg: #fff6f5; --bs-btn-hover-border-color: #dca9a2; --bs-btn-hover-color: #7f211b; }
+      .btn-icon { display:inline-grid; width:2.15rem; height:2.15rem; padding:0; place-items:center; }
+      .btn-icon svg { width:1rem; height:1rem; }
+      .action-menu .dropdown-toggle::after { display:none; }
+      .action-menu .dropdown-menu { min-width:12rem; padding:.4rem; border-color:#e2e8f0; border-radius:.7rem; box-shadow:0 .6rem 1.5rem rgba(15,23,42,.12); }
+      .action-menu .dropdown-item { border-radius:.45rem; font-size:.875rem; font-weight:600; }
       .form-control, .form-select { border-color: #dbe3ee; border-radius: .55rem; }
       .form-control:focus, .form-select:focus { border-color: #94a3b8; box-shadow: 0 0 0 .2rem rgba(100,116,139,.13); }
       .table > :not(caption) > * > * { padding: .9rem 1rem; }
@@ -43,6 +49,27 @@
       .lead-filter-option.is-active { color:#fff; background:#334155; }
       .lead-bulk-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem; padding:.75rem 1rem; border:1px solid #dbe3ee; border-radius:.75rem; background:#fff; box-shadow:0 .2rem .75rem rgba(15,23,42,.04); }
       .lead-bulk-toolbar .form-select { width:auto; min-width:210px; }
+      .ai-scenario { width:100%; min-height:112px; padding:1rem; border:1px solid #dbe3ee; border-radius:.75rem; color:var(--ink); background:#fff; text-align:left; transition:border-color .15s ease, background .15s ease, box-shadow .15s ease; }
+      .ai-scenario:hover { border-color:#94a3b8; background:#f8fafc; }
+      .ai-scenario.is-active { border-color:#334155; background:#f1f5f9; box-shadow:inset 0 0 0 1px #334155; }
+      .ai-scenario-icon { display:grid; width:2rem; height:2rem; place-items:center; margin-bottom:.75rem; border-radius:.55rem; color:#334155; background:#e8edf3; font-weight:800; }
+      .ai-tone { padding:.38rem .65rem; border:1px solid #dbe3ee; border-radius:.48rem; color:#64748b; background:#fff; font-size:.8rem; font-weight:700; }
+      .ai-tone:hover { color:#172033; background:#f8fafc; }
+      .ai-tone.is-active { border-color:#334155; color:#fff; background:#334155; }
+      .history-delete { display:inline-grid; width:2rem; height:2rem; place-items:center; border:1px solid #f1c7c3; border-radius:.5rem; color:#b42318; background:#fff; }
+      .history-delete:hover { border-color:#e7a7a1; color:#8f1d16; background:#fff7f6; }
+      .workspace-tabs { gap:.4rem; padding:.35rem; border:1px solid #e2e8f0; border-radius:.8rem; background:#fff; }
+      .workspace-tabs .nav-link { padding:.48rem .8rem; border:0; border-radius:.55rem; color:#64748b; font-size:.875rem; font-weight:700; white-space:nowrap; }
+      .workspace-tabs .nav-link:hover { color:#172033; background:#f1f5f9; }
+      .workspace-tabs .nav-link.active { color:#fff; background:#334155; box-shadow:0 .1rem .35rem rgba(15,23,42,.14); }
+      .form-section { margin-bottom:1rem; overflow:hidden; border:1px solid #e2e8f0; border-radius:.8rem; background:#fff; }
+      .form-section > summary { display:flex; align-items:center; gap:.75rem; padding:1rem 1.1rem; cursor:pointer; font-weight:750; list-style:none; }
+      .form-section > summary::-webkit-details-marker { display:none; }
+      .form-section > summary::after { margin-left:auto; color:#64748b; content:'⌄'; transition:transform .15s ease; }
+      .form-section[open] > summary { border-bottom:1px solid #edf1f5; }
+      .form-section[open] > summary::after { transform:rotate(180deg); }
+      .form-section-body { padding:1.1rem; }
+      .form-section-number { display:grid; flex:0 0 1.75rem; width:1.75rem; height:1.75rem; place-items:center; border-radius:50%; color:#475569; background:#eef2f7; font-size:.75rem; font-weight:800; }
       .gallery-image-card { position:relative; overflow:hidden; border:1px solid #e2e8f0; border-radius:.75rem; background:#fff; transition:border-color .15s ease, box-shadow .15s ease; }
       .gallery-image-card:hover { border-color:#cbd5e1; box-shadow:0 .35rem 1rem rgba(15,23,42,.08); }
       .gallery-image-card.is-primary { border-color:#64748b; box-shadow:0 0 0 1px #64748b; }
@@ -60,6 +87,11 @@
       .content-inner { max-width: 1440px; padding: 2.5rem; margin: 0 auto; }
       .mobile-header { display: none; }
       .mobile-backdrop { display: none; }
+      .app-toast-stack { position:fixed; right:1.25rem; bottom:1.25rem; z-index:1090; display:grid; gap:.55rem; max-width:min(24rem, calc(100vw - 2.5rem)); }
+      .app-toast { display:flex; align-items:center; gap:.65rem; padding:.75rem .9rem; border:1px solid #dbe3ee; border-radius:.7rem; color:#172033; background:#fff; box-shadow:0 .65rem 1.6rem rgba(15,23,42,.14); font-size:.875rem; font-weight:600; animation:toast-in .18s ease-out; }
+      .app-toast::before { width:.55rem; height:.55rem; border-radius:50%; background:#64748b; content:''; }
+      @keyframes toast-in { from { opacity:0; transform:translateY(.5rem); } to { opacity:1; transform:translateY(0); } }
+      .mobile-records { display:none; }
       @media (max-width: 991.98px) {
         .app-sidebar { transition: transform .2s ease; transform: translateX(-100%); box-shadow: 12px 0 35px rgba(15,23,42,.22); }
         .app-sidebar.is-open { transform: translateX(0); }
@@ -67,6 +99,13 @@
         .content-inner { padding: 1.25rem; }
         .mobile-header { display: flex; align-items: center; justify-content: space-between; padding: .85rem 1.25rem; background: #fff; border-bottom: 1px solid #e5e7eb; }
         .mobile-backdrop { position: fixed; inset: 0; z-index: 1030; background: rgba(15,23,42,.45); }
+        .desktop-records { display:none; }
+        .mobile-records { display:grid; gap:.75rem; }
+        .mobile-record-card { padding:1rem; border:1px solid #e2e8f0; border-radius:.8rem; background:#fff; box-shadow:0 .2rem .8rem rgba(15,23,42,.04); }
+        .mobile-record-card.is-selected { border-color:#94a3b8; background:#f8fafc; }
+        .mobile-record-meta { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:.65rem 1rem; padding-top:.8rem; margin-top:.8rem; border-top:1px solid #eef2f6; }
+        .mobile-record-meta dt { margin:0 0 .12rem; color:#64748b; font-size:.7rem; font-weight:700; letter-spacing:.04em; text-transform:uppercase; }
+        .mobile-record-meta dd { margin:0; font-size:.875rem; }
       }
     </style>
   </head>
@@ -83,6 +122,7 @@
         <p class="sidebar-label">Рабочее пространство</p>
         <nav>
           <a class="sidebar-link {% if request.resolver_match.url_name == 'property_list' %}active{% endif %}" href="{% url 'property_list' %}"><span class="nav-icon">▦</span>Объекты</a>
+          <a class="sidebar-link {% if request.resolver_match.url_name == 'landing_list' %}active{% endif %}" href="{% url 'landing_list' %}"><span class="nav-icon">▱</span>Лендинги</a>
           <a class="sidebar-link {% if request.resolver_match.url_name == 'lead_list' %}active{% endif %}" href="{% url 'lead_list' %}"><span class="nav-icon">○</span><span>Заявки</span>{% if nav_new_leads_count %}<span class="sidebar-counter" title="{{ nav_new_leads_count }} новых заявок" aria-label="{{ nav_new_leads_count }} новых заявок">{{ nav_new_leads_label }}</span>{% endif %}</a>
           <a class="sidebar-link {% if 'client' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'client_list' %}"><span class="nav-icon">◫</span>Клиенты</a>
         </nav>
@@ -105,6 +145,19 @@
     </div></main>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+      const showAppToast = (message) => {
+        if (!message) return;
+        let stack = document.querySelector('.app-toast-stack');
+        if (!stack) { stack = document.createElement('div'); stack.className = 'app-toast-stack'; document.body.appendChild(stack); }
+        const toast = document.createElement('div');
+        toast.className = 'app-toast'; toast.textContent = message; stack.appendChild(toast);
+        window.setTimeout(() => toast.remove(), 3200);
+      };
+      document.body.addEventListener('htmx:afterRequest', (event) => {
+        if (!event.detail.successful) return;
+        const message = event.detail.elt?.dataset?.successMessage;
+        if (message) showAppToast(message);
+      });
       document.querySelectorAll('[data-phone-mask="true"]').forEach((input) => {
         const formatPhone = () => {
           let digits = input.value.replace(/\D/g, '');

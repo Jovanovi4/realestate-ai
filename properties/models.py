@@ -206,6 +206,8 @@ class Property(models.Model):
     landing_subtitle = models.TextField(blank=True, verbose_name="Подзаголовок лендинга")
     landing_about_title = models.CharField(max_length=255, blank=True, verbose_name="Заголовок блока «Об объекте»")
     landing_contact_title = models.CharField(max_length=255, blank=True, verbose_name="Заголовок блока заявки")
+    landing_trust_about = models.TextField(blank=True, verbose_name="Текст блока преимуществ")
+    landing_benefits = models.JSONField(default=default_realtor_benefits, verbose_name="Карточки преимуществ лендинга")
     seo_title = models.CharField(max_length=255, blank=True, verbose_name="SEO-заголовок")
     seo_description = models.CharField(max_length=300, blank=True, verbose_name="SEO-описание")
     landing_block_order = models.JSONField(
@@ -308,7 +310,7 @@ class AIContent(models.Model):
         ("landing_contact_title", "Заголовок блока заявки"),
         ("seo_title", "SEO-заголовок"),
         ("seo_description", "SEO-описание"),
-        ("profile_about", "Текст «О риелторе»"),
+        ("landing_trust_about", "Текст блока преимуществ"),
     ]
 
     TONE_CHOICES = [

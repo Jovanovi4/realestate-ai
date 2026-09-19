@@ -8,7 +8,7 @@
       {% if ai_content.is_applied %}<span class="badge text-bg-success">Применён</span>{% endif %}
     </div>
     <p class="small text-muted">Правки сохраняются в истории. Данные объекта изменятся только после применения.</p>
-    <form method="post" action="{% url 'ai_content_edit' ai_content.pk %}" hx-post="{% url 'ai_content_edit' ai_content.pk %}" hx-target="#ai-editor" hx-swap="outerHTML">
+    <form method="post" action="{% url 'ai_content_edit' ai_content.pk %}" hx-post="{% url 'ai_content_edit' ai_content.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" data-success-message="Текст сохранён">
       {% csrf_token %}
       <label class="form-label" for="{{ form.edited_content.id_for_label }}">Текст</label>
       {{ form.edited_content }}
@@ -22,7 +22,7 @@
     </form>
     <div class="border-top mt-4 pt-3 d-flex justify-content-between align-items-center gap-3">
       <small class="text-muted">{{ ai_content.provider|default:"Провайдер не указан" }}{% if ai_content.model %} · {{ ai_content.model }}{% endif %}{% if ai_content.duration_ms %} · {{ ai_content.duration_ms }} мс{% endif %}</small>
-      <form method="post" action="{% url 'ai_content_delete' ai_content.pk %}" hx-post="{% url 'ai_content_delete' ai_content.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" onsubmit="return confirm('Удалить эту запись из истории генераций?');">
+      <form method="post" action="{% url 'ai_content_delete' ai_content.pk %}" hx-post="{% url 'ai_content_delete' ai_content.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" data-success-message="Запись удалена" onsubmit="return confirm('Удалить эту запись из истории генераций?');">
         {% csrf_token %}
         <button class="btn btn-sm btn-outline-danger">Удалить из истории</button>
       </form>

@@ -6,13 +6,13 @@ from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
-from django.db.models import Max, Q
+from django.db.models import Count, Max, Q
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.decorators import method_decorator
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.urls import reverse_lazy
+from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
@@ -21,7 +21,7 @@ from .forms import (
     ClientDetailsForm, ClientForm, ClientInteractionForm, ClientReminderForm, LeadForm,
     PropertyForm, RegistrationForm, RealtorProfileForm,
 )
-from .models import Client, ClientInteraction, ClientReminder, Lead, Property, PropertyImage, RealtorProfile
+from .models import AIContent, Client, ClientInteraction, ClientReminder, Lead, Property, PropertyImage, RealtorProfile
 from .services.avito_service import AvitoExportService
 
 
@@ -108,7 +108,66 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
     context_object_name = "property"
 
     def get_queryset(self):
-        return Property.objects.filter(owner=self.request.user)
+        return Property.objects.filter(owner=self.request.user).prefetch_related("images")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        image_count = self.object.images.count()
+        tasks = []
+        if not self.object.price:
+            tasks.append({"text": "Укажите цену объекта", "url": reverse("edit_property", kwargs={"pk": self.object.pk})})
+        if not self.object.address:
+            tasks.append({"text": "Добавьте адрес объекта", "url": reverse("edit_property", kwargs={"pk": self.object.pk})})
+        if image_count < 3:
+            tasks.append({"text": f"Добавьте ещё {3 - image_count} фото", "url": reverse("upload_images", kwargs={"pk": self.object.pk})})
+        if not (self.object.short_description or self.object.description):
+            tasks.append({"text": "Добавьте описание объекта", "url": reverse("edit_property", kwargs={"pk": self.object.pk})})
+        if not self.object.landing_published:
+            tasks.append({"text": "Настройте и опубликуйте лендинг", "url": f"{reverse('edit_property', kwargs={'pk': self.object.pk})}#landing-pane"})
+        context["readiness_tasks"] = tasks
+        context["readiness_completed"] = 5 - len(tasks)
+        context["image_count"] = image_count
+        return context
+
+
+class LandingListView(LoginRequiredMixin, ListView):
+    model = Property
+    template_name = "properties/landing_list.html"
+    context_object_name = "properties"
+
+    def get_queryset(self):
+        queryset = Property.objects.filter(owner=self.request.user).annotate(landing_leads_count=Count("leads"))
+        status = self.request.GET.get("status", "")
+        if status == "published":
+            queryset = queryset.filter(landing_published=True)
+        elif status == "draft":
+            queryset = queryset.filter(landing_published=False)
+        return queryset.order_by("-landing_published", "-updated_at")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        all_landings = Property.objects.filter(owner=self.request.user)
+        context.update(
+            {
+                "selected_status": self.request.GET.get("status", ""),
+                "published_count": all_landings.filter(landing_published=True).count(),
+                "draft_count": all_landings.filter(landing_published=False).count(),
+            }
+        )
+        return context
+
+
+class PropertyLandingUnpublishView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        if property.landing_published:
+            property.landing_published = False
+            property.save(update_fields=["landing_published", "updated_at"])
+            messages.success(request, "Лендинг снят с публикации.")
+        next_url = request.POST.get("next")
+        if next_url and url_has_allowed_host_and_scheme(next_url, {request.get_host()}):
+            return redirect(next_url)
+        return redirect("landing_list")
 
 
 class PropertyStatusUpdateView(LoginRequiredMixin, View):
@@ -234,6 +293,9 @@ class ClientListView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         all_clients = Client.objects.filter(owner=self.request.user)
+        now = timezone.now()
+        start_tomorrow = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        pending_reminders = ClientReminder.objects.filter(client__owner=self.request.user, is_done=False).select_related("client")
         contacted = [client for client in all_clients.exclude(first_contacted_at__isnull=True) if client.first_contacted_at]
         response_hours = [
             (client.first_contacted_at - client.created_at).total_seconds() / 3600
@@ -253,6 +315,8 @@ class ClientListView(LoginRequiredMixin, ListView):
                     "conversion": round(won / total * 100) if total else 0,
                     "response_hours": round(sum(response_hours) / len(response_hours), 1) if response_hours else None,
                 },
+                "overdue_reminders": pending_reminders.filter(due_at__lt=now)[:5],
+                "today_reminders": pending_reminders.filter(due_at__gte=now, due_at__lt=start_tomorrow)[:5],
             }
         )
         return context
@@ -411,12 +475,23 @@ class LeadDetailView(LoginRequiredMixin, DetailView):
     def get_queryset(self):
         return Lead.objects.filter(property__owner=self.request.user).select_related("property", "client")
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["latest_ai_reply"] = self.object.ai_contents.filter(content_type="lead_reply").first()
+        return context
+
 class LeadBulkStatusUpdateView(LoginRequiredMixin, View):
     def post(self, request):
         lead_ids = request.POST.getlist("lead_ids")
+        action = request.POST.get("action", "status")
         status = request.POST.get("status")
         if not lead_ids:
             messages.error(request, "Выберите хотя бы одну заявку.")
+        elif action == "delete":
+            leads = Lead.objects.filter(pk__in=lead_ids, property__owner=request.user)
+            deleted_count = leads.count()
+            leads.delete()
+            messages.success(request, f"Удалено заявок: {deleted_count}.")
         elif status not in dict(Lead.STATUS_CHOICES):
             messages.error(request, "Выберите корректный статус обработки.")
         else:

@@ -2,7 +2,7 @@
   <div class="card-body">
     <div class="d-flex justify-content-between align-items-center mb-3">
       <h2 class="h5 mb-0">История генераций</h2>
-      {% if history %}<span class="badge text-bg-light border text-secondary">{{ history|length }}</span>{% endif %}
+      {% if history_total %}<span class="badge text-bg-light border text-secondary">{{ history_total }}</span>{% endif %}
     </div>
     {% if history %}
       <div class="list-group list-group-flush">
@@ -17,15 +17,17 @@
               </a>
               <div class="text-end text-nowrap">
                 <small class="text-muted d-block mb-2">{{ item.created_at|date:"d.m.Y H:i" }}</small>
-                <form method="post" action="{% url 'ai_content_delete' item.pk %}" hx-post="{% url 'ai_content_delete' item.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" onsubmit="return confirm('Удалить эту запись из истории генераций?');">
+                <form method="post" action="{% url 'ai_content_delete' item.pk %}" hx-post="{% url 'ai_content_delete' item.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" data-success-message="Запись удалена" onsubmit="return confirm('Удалить эту запись из истории генераций?');">
                   {% csrf_token %}
-                  <button class="btn btn-sm btn-outline-danger">Удалить</button>
+                  <input type="hidden" name="history_page" value="{{ history.number }}">
+                  <button class="history-delete" title="Удалить запись" aria-label="Удалить запись «{{ item.get_content_type_display }}»"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/></svg></button>
                 </form>
               </div>
             </div>
           </div>
         {% endfor %}
       </div>
+      {% if history.paginator.num_pages > 1 %}<nav class="mt-4" aria-label="Страницы истории"><ul class="pagination pagination-sm mb-0">{% if history.has_previous %}<li class="page-item"><a class="page-link" href="?history_page={{ history.previous_page_number }}" hx-get="?history_page={{ history.previous_page_number }}" hx-target="#ai-history" hx-swap="outerHTML">Назад</a></li>{% endif %}<li class="page-item disabled"><span class="page-link">{{ history.number }} / {{ history.paginator.num_pages }}</span></li>{% if history.has_next %}<li class="page-item"><a class="page-link" href="?history_page={{ history.next_page_number }}" hx-get="?history_page={{ history.next_page_number }}" hx-target="#ai-history" hx-swap="outerHTML">Вперёд</a></li>{% endif %}</ul></nav>{% endif %}
     {% else %}
       <p class="text-muted mb-0">Генераций ещё не было.</p>
     {% endif %}

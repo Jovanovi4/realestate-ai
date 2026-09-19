@@ -1,7 +1,7 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path, reverse_lazy
 
-from .ai_views import AIAssistantView, AIContentDeleteView, AIContentEditView, generate_description
+from .ai_views import AIAssistantView, AIContentDeleteView, AIContentEditView, AILeadReplyView, generate_description
 from .forms import AccountPasswordChangeForm, PhoneAuthenticationForm
 from .views import (
     AvitoExportView,
@@ -13,6 +13,8 @@ from .views import (
     PropertyImageDeleteView,
     PropertyImageReorderView,
     PropertyListView,
+    LandingListView,
+    PropertyLandingUnpublishView,
     PropertyStatusUpdateView,
     PropertyUpdateView,
     PublicLandingView,
@@ -52,6 +54,7 @@ urlpatterns = [
     ),
     path("leads/", LeadListView.as_view(), name="lead_list"),
     path("leads/bulk-status/", LeadBulkStatusUpdateView.as_view(), name="lead_bulk_status_update"),
+    path("leads/<int:pk>/ai-reply/", AILeadReplyView.as_view(), name="lead_ai_reply"),
     path("leads/<int:pk>/", LeadDetailView.as_view(), name="lead_detail"),
     path("leads/<int:pk>/delete/", LeadDeleteView.as_view(), name="lead_delete"),
     path("clients/", ClientListView.as_view(), name="client_list"),
@@ -64,6 +67,8 @@ urlpatterns = [
     path("clients/<int:pk>/interactions/", ClientInteractionCreateView.as_view(), name="client_interaction_create"),
     path("clients/<int:pk>/reminders/", ClientReminderCreateView.as_view(), name="client_reminder_create"),
     path("clients/<int:pk>/reminders/<int:reminder_pk>/complete/", ClientReminderCompleteView.as_view(), name="client_reminder_complete"),
+    path("landings/", LandingListView.as_view(), name="landing_list"),
+    path("landings/<int:pk>/unpublish/", PropertyLandingUnpublishView.as_view(), name="landing_unpublish"),
     path("", PropertyListView.as_view(), name="property_list"),
     path("landing/<slug:slug>/", PublicLandingView.as_view(), name="public_landing"),
     path("create/", PropertyCreateView.as_view(), name="create_property"),

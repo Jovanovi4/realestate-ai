@@ -1,32 +1,13 @@
 <div id="leads-results">
   {% if leads %}
-    <div class="card shadow-sm border-0 overflow-hidden">
-      <div class="table-responsive">
-        <table class="table table-hover align-middle mb-0">
-          <thead><tr><th><input class="form-check-input" type="checkbox" aria-label="Выбрать все заявки на странице" @change="selected = $event.target.checked ? [{% for lead in leads %}'{{ lead.pk }}'{% if not forloop.last %}, {% endif %}{% endfor %}] : []" :checked="selected.length === {{ leads|length }}"></th><th>Клиент</th><th>Объект</th><th>Обработка</th><th>Этап клиента</th><th>Получена</th><th class="text-end"></th></tr></thead>
-          <tbody>
-            {% for lead in leads %}
-              <tr :class="{ 'table-active': selected.includes('{{ lead.pk }}') }">
-                <td><input class="form-check-input" type="checkbox" name="lead_ids" value="{{ lead.pk }}" form="lead-bulk-form" aria-label="Выбрать заявку от {{ lead.name }}" x-model="selected"></td>
-                <td><strong class="d-block">{{ lead.name }}</strong><a href="tel:{{ lead.phone }}" class="text-decoration-none small text-muted">{{ lead.phone }}</a>{% if lead.client %}<a href="{% url 'client_detail' lead.client.pk %}" class="d-block small mt-2">Карточка клиента{% if lead.client.leads.count > 1 %} · повторное обращение{% endif %}</a>{% endif %}</td>
-                <td><span class="d-block fw-semibold small">{{ lead.property.title }}</span><span class="small text-muted">{{ lead.property.get_property_type_display }}</span></td>
-                <td>{% include "properties/includes/lead_status_badge.html" %}</td>
-                <td>{% if lead.client %}{% include "properties/includes/client_status_badge.html" with client=lead.client %}{% else %}<span class="text-muted small">—</span>{% endif %}</td>
-                <td class="text-muted small text-nowrap">{{ lead.created_at|date:"d.m.Y" }}<br>{{ lead.created_at|date:"H:i" }}</td>
-                <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{% url 'lead_detail' lead.pk %}">Открыть</a></td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+    <div class="desktop-records card shadow-sm border-0 overflow-hidden">
+      <div class="table-responsive"><table class="table table-hover align-middle mb-0">
+        <thead><tr><th><input class="form-check-input" type="checkbox" aria-label="Выбрать все заявки на странице" @change="selected = $event.target.checked ? [{% for lead in leads %}'{{ lead.pk }}'{% if not forloop.last %}, {% endif %}{% endfor %}] : []" :checked="selected.length === {{ leads|length }}"></th><th>Клиент</th><th>Объект</th><th>Обработка</th><th>Этап клиента</th><th>Получена</th><th class="text-end"></th></tr></thead>
+        <tbody>{% for lead in leads %}<tr :class="{ 'table-active': selected.includes('{{ lead.pk }}') }"><td><input class="form-check-input" type="checkbox" name="lead_ids" value="{{ lead.pk }}" form="lead-bulk-form" aria-label="Выбрать заявку от {{ lead.name }}" x-model="selected"></td><td><strong class="d-block">{{ lead.name }}</strong><a href="tel:{{ lead.phone }}" class="text-decoration-none small text-muted">{{ lead.phone }}</a>{% if lead.message %}<p class="small text-muted text-truncate mb-0 mt-2" style="max-width:260px;" title="{{ lead.message }}">{{ lead.message|truncatechars:90 }}</p>{% endif %}{% if lead.client %}<a href="{% url 'client_detail' lead.client.pk %}" class="d-block small mt-2">Карточка клиента{% if lead.client.leads.count > 1 %} · повторное обращение{% endif %}</a>{% endif %}</td><td><span class="d-block fw-semibold small">{{ lead.property.title }}</span><span class="small text-muted">{{ lead.property.get_property_type_display }}</span></td><td>{% include "properties/includes/lead_status_badge.html" %}</td><td>{% if lead.client %}{% include "properties/includes/client_status_badge.html" with client=lead.client %}{% else %}<span class="text-muted small">—</span>{% endif %}</td><td class="text-muted small text-nowrap">{{ lead.created_at|date:"d.m.Y" }}<br>{{ lead.created_at|date:"H:i" }}</td><td class="text-end"><a class="btn btn-sm btn-outline-secondary" href="{% url 'lead_detail' lead.pk %}">Открыть</a></td></tr>{% endfor %}</tbody>
+      </table></div>
     </div>
-    {% if is_paginated %}
-      <nav class="mt-4"><ul class="pagination">
-        {% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?status={{ selected_status }}&page={{ page_obj.previous_page_number }}">Назад</a></li>{% endif %}
-        <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} из {{ paginator.num_pages }}</span></li>
-        {% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?status={{ selected_status }}&page={{ page_obj.next_page_number }}">Вперёд</a></li>{% endif %}
-      </ul></nav>
-    {% endif %}
+    <div class="mobile-records">{% for lead in leads %}<article class="mobile-record-card" :class="{ 'is-selected': selected.includes('{{ lead.pk }}') }"><div class="d-flex align-items-start gap-3"><input class="form-check-input mt-1" type="checkbox" name="lead_ids" value="{{ lead.pk }}" form="lead-bulk-form" aria-label="Выбрать заявку от {{ lead.name }}" x-model="selected"><div class="flex-grow-1 min-w-0"><div class="d-flex justify-content-between gap-2"><div><strong class="d-block">{{ lead.name }}</strong><a href="tel:{{ lead.phone }}" class="small text-muted text-decoration-none">{{ lead.phone }}</a></div>{% include "properties/includes/lead_status_badge.html" %}</div>{% if lead.message %}<p class="small text-muted mb-0 mt-2">{{ lead.message|truncatechars:120 }}</p>{% endif %}<dl class="mobile-record-meta"><div><dt>Объект</dt><dd>{{ lead.property.title }}</dd></div><div><dt>Получена</dt><dd>{{ lead.created_at|date:"d.m · H:i" }}</dd></div></dl><div class="d-flex justify-content-between align-items-center mt-3">{% if lead.client %}<a href="{% url 'client_detail' lead.client.pk %}" class="small">Клиент</a>{% else %}<span></span>{% endif %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'lead_detail' lead.pk %}">Открыть</a></div></div></div></article>{% endfor %}</div>
+    {% if is_paginated %}<nav class="mt-4"><ul class="pagination">{% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?status={{ selected_status }}&page={{ page_obj.previous_page_number }}">Назад</a></li>{% endif %}<li class="page-item disabled"><span class="page-link">{{ page_obj.number }} из {{ paginator.num_pages }}</span></li>{% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?status={{ selected_status }}&page={{ page_obj.next_page_number }}">Вперёд</a></li>{% endif %}</ul></nav>{% endif %}
   {% else %}
     <div class="card border-0 shadow-sm"><div class="card-body p-5 text-center"><div class="fs-3 mb-2">○</div><h2 class="h5">Заявок пока нет</h2><p class="text-muted mb-0">Обращения появятся здесь после заполнения формы на опубликованном лендинге.</p></div></div>
   {% endif %}

@@ -7,5 +7,6 @@
     <option value="" selected disabled>Изменить статус на…</option>
     {% for value, label in status_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
   </select>
-  <button class="btn btn-sm btn-primary" type="submit">Применить</button>
+  <button class="btn btn-sm btn-primary" name="action" value="status" type="submit">Применить</button>
+  <button class="btn btn-sm btn-outline-danger" name="action" value="delete" type="submit" formnovalidate onclick="return confirm('Удалить выбранные заявки без возможности восстановления?');">Удалить</button>
 </form>

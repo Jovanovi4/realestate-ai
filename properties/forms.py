@@ -20,6 +20,15 @@ PHONE_MASK_ATTRS = {
 class PropertyForm(forms.ModelForm):
     landing_block_order = forms.CharField(required=False, widget=forms.HiddenInput())
     landing_enabled_blocks = forms.CharField(required=False, widget=forms.HiddenInput())
+    landing_benefit_1_icon = forms.CharField(label="Иконка", max_length=8, required=False)
+    landing_benefit_1_title = forms.CharField(label="Заголовок", max_length=80, required=False)
+    landing_benefit_1_description = forms.CharField(label="Описание", required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    landing_benefit_2_icon = forms.CharField(label="Иконка", max_length=8, required=False)
+    landing_benefit_2_title = forms.CharField(label="Заголовок", max_length=80, required=False)
+    landing_benefit_2_description = forms.CharField(label="Описание", required=False, widget=forms.Textarea(attrs={"rows": 2}))
+    landing_benefit_3_icon = forms.CharField(label="Иконка", max_length=8, required=False)
+    landing_benefit_3_title = forms.CharField(label="Заголовок", max_length=80, required=False)
+    landing_benefit_3_description = forms.CharField(label="Описание", required=False, widget=forms.Textarea(attrs={"rows": 2}))
 
     class Meta:
         model = Property
@@ -50,6 +59,7 @@ class PropertyForm(forms.ModelForm):
             "landing_subtitle",
             "landing_about_title",
             "landing_contact_title",
+            "landing_trust_about",
             "seo_title",
             "seo_description",
             "landing_block_order",
@@ -60,6 +70,7 @@ class PropertyForm(forms.ModelForm):
             "short_description": forms.Textarea(attrs={"rows": 3}),
             "description": forms.Textarea(attrs={"rows": 6}),
             "landing_subtitle": forms.Textarea(attrs={"rows": 3}),
+            "landing_trust_about": forms.Textarea(attrs={"rows": 3, "placeholder": "Например: Сопровождаем сделку от первого просмотра до передачи ключей."}),
             "seo_description": forms.Textarea(attrs={"rows": 2}),
             "amenities": forms.Textarea(attrs={"rows": 3}),
         }
@@ -81,6 +92,26 @@ class PropertyForm(forms.ModelForm):
             else:
                 field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
         self.fields["property_type"].widget.attrs["x-model"] = "propertyType"
+        benefits = self.instance.landing_benefits or []
+        for index in range(1, 4):
+            benefit = benefits[index - 1] if len(benefits) >= index else {}
+            for key in ("icon", "title", "description"):
+                self.initial[f"landing_benefit_{index}_{key}"] = benefit.get(key, "")
+
+    def save(self, commit=True):
+        property = super().save(commit=False)
+        property.landing_benefits = [
+            {
+                "icon": self.cleaned_data.get(f"landing_benefit_{index}_icon") or "◆",
+                "title": self.cleaned_data.get(f"landing_benefit_{index}_title") or "Преимущество",
+                "description": self.cleaned_data.get(f"landing_benefit_{index}_description") or "",
+            }
+            for index in range(1, 4)
+        ]
+        if commit:
+            property.save()
+            self.save_m2m()
+        return property
 
     def clean_landing_block_order(self):
         try:
@@ -104,21 +135,11 @@ class PropertyForm(forms.ModelForm):
 
 
 class RealtorProfileForm(forms.ModelForm):
-    benefit_1_icon = forms.CharField(label="Иконка преимущества 1", max_length=8, required=False)
-    benefit_1_title = forms.CharField(label="Заголовок преимущества 1", max_length=80, required=False)
-    benefit_1_description = forms.CharField(label="Описание преимущества 1", required=False, widget=forms.Textarea(attrs={"rows": 2}))
-    benefit_2_icon = forms.CharField(label="Иконка преимущества 2", max_length=8, required=False)
-    benefit_2_title = forms.CharField(label="Заголовок преимущества 2", max_length=80, required=False)
-    benefit_2_description = forms.CharField(label="Описание преимущества 2", required=False, widget=forms.Textarea(attrs={"rows": 2}))
-    benefit_3_icon = forms.CharField(label="Иконка преимущества 3", max_length=8, required=False)
-    benefit_3_title = forms.CharField(label="Заголовок преимущества 3", max_length=80, required=False)
-    benefit_3_description = forms.CharField(label="Описание преимущества 3", required=False, widget=forms.Textarea(attrs={"rows": 2}))
     class Meta:
         model = RealtorProfile
-        fields = ("display_name", "photo", "phone", "telegram_username", "email", "about")
+        fields = ("display_name", "photo", "phone", "telegram_username", "email")
         widgets = {
             "photo": forms.FileInput(attrs={"accept": "image/*"}),
-            "about": forms.Textarea(attrs={"rows": 4, "placeholder": "Например: Помогаю подобрать недвижимость и сопровождаю сделку на каждом этапе."}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -129,21 +150,6 @@ class RealtorProfileForm(forms.ModelForm):
         self.fields["photo"].widget.attrs.update(
             {"class": "d-none", "x-ref": "photoInput", "x-on:change": "selectPhoto($event)"}
         )
-        benefits = self.instance.benefits or []
-        for index in range(1, 4):
-            benefit = benefits[index - 1] if len(benefits) >= index else {}
-            for key in ("icon", "title", "description"):
-                self.initial[f"benefit_{index}_{key}"] = benefit.get(key, "")
-
-    def save(self, commit=True):
-        profile = super().save(commit=False)
-        profile.benefits = [
-            {"icon": self.cleaned_data.get(f"benefit_{index}_icon") or "◆", "title": self.cleaned_data.get(f"benefit_{index}_title") or "Преимущество", "description": self.cleaned_data.get(f"benefit_{index}_description") or ""}
-            for index in range(1, 4)
-        ]
-        if commit:
-            profile.save()
-        return profile
 
 
 class LeadForm(forms.ModelForm):
@@ -218,12 +224,10 @@ class ClientReminderForm(forms.ModelForm):
 
 class AIRequestForm(forms.Form):
     MODE_CHOICES = [
-        ("single", "Один текст"),
         ("package", "Комплект объявления"),
-        ("audit", "Проверить готовность"),
         ("landing", "Комплект для лендинга"),
         ("improve", "Улучшить текст"),
-        ("lead_reply", "Ответ клиенту"),
+        ("audit", "Проверить готовность"),
     ]
     IMPROVEMENT_CHOICES = [
         ("shorter", "Сделать короче"),
@@ -232,25 +236,42 @@ class AIRequestForm(forms.Form):
         ("plain", "Убрать канцелярит"),
         ("audience", "Адаптировать для аудитории"),
     ]
-    mode = forms.ChoiceField(label="Задача", choices=MODE_CHOICES, initial="single")
+    IMPROVEMENT_CONTENT_CHOICES = [
+        ("headline", "Заголовок"),
+        ("short_description", "Короткое описание"),
+        ("full_description", "Полное описание"),
+        ("landing_headline", "Заголовок лендинга"),
+        ("landing_subtitle", "Подзаголовок лендинга"),
+        ("landing_about", "Текст блока «Об объекте»"),
+        ("cta", "Призыв к действию"),
+    ]
+    mode = forms.ChoiceField(label="Сценарий", choices=MODE_CHOICES, initial="package")
     content_type = forms.ChoiceField(
-        label="Что создать",
-        choices=AIContent.CONTENT_TYPES,
+        label="Какой текст улучшить",
+        choices=IMPROVEMENT_CONTENT_CHOICES,
+        required=False,
+        initial="full_description",
     )
-    tone = forms.ChoiceField(label="Тон текста", choices=AIContent.TONE_CHOICES)
+    tone = forms.ChoiceField(label="Тон текста", choices=AIContent.TONE_CHOICES, initial="business")
     improvement = forms.ChoiceField(label="Как улучшить", choices=IMPROVEMENT_CHOICES, required=False)
     source_text = forms.CharField(label="Исходный текст или аудитория", required=False, widget=forms.Textarea(attrs={"rows": 4}))
-    lead = forms.ModelChoiceField(label="Заявка клиента", queryset=Lead.objects.none(), required=False)
 
-    def __init__(self, *args, leads=None, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
-        self.fields["lead"].queryset = leads if leads is not None else Lead.objects.none()
-        self.fields["source_text"].widget.attrs["placeholder"] = "Вставьте текст для улучшения или опишите аудиторию для адаптации."
-        self.fields["mode"].widget.attrs["x-model"] = "mode"
-        self.fields["content_type"].widget.attrs["x-model"] = "contentType"
-        self.fields["tone"].widget.attrs["x-model"] = "tone"
+        self.fields["source_text"].label = "Текст для улучшения"
+        self.fields["source_text"].widget.attrs["placeholder"] = "Вставьте текст, который нужно улучшить. Для адаптации укажите аудиторию в первой строке."
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if cleaned_data.get("mode") == "improve" and not cleaned_data.get("source_text", "").strip():
+            self.add_error("source_text", "Вставьте текст, который нужно улучшить.")
+        return cleaned_data
+
+
+class AILeadReplyForm(forms.Form):
+    tone = forms.ChoiceField(choices=AIContent.TONE_CHOICES, initial="business")
 
 
 class AIContentEditForm(forms.ModelForm):
