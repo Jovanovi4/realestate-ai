@@ -1,0 +1,41 @@
+{% if property.images.count > 1 %}
+<section class="section landing-gallery-section" id="gallery" style="order:{{ landing_order.gallery }}">
+  <div class="container">
+    <div class="d-flex justify-content-between align-items-end gap-3 mb-4"><div><p class="eyebrow mb-2">Фотогалерея</p><h2 class="section-title h2 mb-0">Объект в деталях</h2></div><span class="gallery-count">{{ property.images.count }} фото</span></div>
+    {% if property.landing_gallery_style == 'grid' %}
+      <div class="gallery-grid" aria-label="Фотографии объекта">{% for image in property.images.all %}<button type="button" class="gallery-grid-item {% if forloop.first %}gallery-grid-item-main{% endif %}" data-bs-toggle="modal" data-bs-target="#galleryModal" data-gallery-index="{{ forloop.counter0 }}" aria-label="Открыть фото {{ forloop.counter }} на весь экран"><img src="{{ image.image.url }}" alt="{{ property.title }} — фото {{ forloop.counter }}" loading="lazy"></button>{% endfor %}</div>
+    {% else %}
+      <div id="propertyGallery" class="carousel slide landing-gallery" data-bs-touch="true" data-bs-interval="false">
+        <div class="carousel-inner">{% for image in property.images.all %}<div class="carousel-item {% if forloop.first %}active{% endif %}"><img src="{{ image.image.url }}" class="gallery-main-image" alt="{{ property.title }} — фото {{ forloop.counter }}" loading="{% if forloop.first %}eager{% else %}lazy{% endif %}"></div>{% endfor %}</div>
+        <button class="carousel-control-prev" type="button" data-bs-target="#propertyGallery" data-bs-slide="prev" aria-label="Предыдущее фото"><span class="carousel-control-prev-icon" aria-hidden="true"></span></button><button class="carousel-control-next" type="button" data-bs-target="#propertyGallery" data-bs-slide="next" aria-label="Следующее фото"><span class="carousel-control-next-icon" aria-hidden="true"></span></button>
+        <button class="gallery-expand" type="button" data-bs-toggle="modal" data-bs-target="#galleryModal" aria-label="Открыть фотографии на весь экран">↗</button>
+      </div>
+      <div class="gallery-thumbnails" aria-label="Выбор фотографии">{% for image in property.images.all %}<button type="button" class="gallery-thumbnail {% if forloop.first %}is-active{% endif %}" data-bs-target="#propertyGallery" data-bs-slide-to="{{ forloop.counter0 }}" aria-label="Открыть фото {{ forloop.counter }}"><img src="{{ image.image.url }}" alt="" loading="lazy"></button>{% endfor %}</div>
+    {% endif %}
+  </div>
+</section>
+<div class="modal fade" id="galleryModal" tabindex="-1" aria-label="Полноэкранная галерея"><div class="modal-dialog modal-fullscreen"><div class="modal-content gallery-modal"><div class="modal-header border-0"><span class="small text-uppercase fw-semibold">{{ property.title }}</span><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button></div><div class="modal-body p-0 d-flex align-items-center"><div id="propertyGalleryFullscreen" class="carousel slide w-100" data-bs-touch="true" data-bs-interval="false"><div class="carousel-inner">{% for image in property.images.all %}<div class="carousel-item {% if forloop.first %}active{% endif %}"><img src="{{ image.image.url }}" class="gallery-fullscreen-image" alt="{{ property.title }} — фото {{ forloop.counter }}"></div>{% endfor %}</div><button class="carousel-control-prev" type="button" data-bs-target="#propertyGalleryFullscreen" data-bs-slide="prev" aria-label="Предыдущее фото"><span class="carousel-control-prev-icon" aria-hidden="true"></span></button><button class="carousel-control-next" type="button" data-bs-target="#propertyGalleryFullscreen" data-bs-slide="next" aria-label="Следующее фото"><span class="carousel-control-next-icon" aria-hidden="true"></span></button></div></div></div></div></div>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const gallery = document.getElementById('propertyGallery');
+    const fullscreenGallery = document.getElementById('propertyGalleryFullscreen');
+    const modal = document.getElementById('galleryModal');
+    if (!fullscreenGallery || !modal) return;
+
+    if (gallery) {
+      gallery.addEventListener('slid.bs.carousel', (event) => {
+        document.querySelectorAll('.gallery-thumbnail').forEach((thumbnail, index) => {
+          thumbnail.classList.toggle('is-active', index === event.to);
+        });
+      });
+    }
+
+    modal.addEventListener('show.bs.modal', (event) => {
+      const selectedIndex = Number(event.relatedTarget?.dataset.galleryIndex);
+      const slides = gallery ? [...gallery.querySelectorAll('.carousel-item')] : [];
+      const activeIndex = gallery ? slides.indexOf(gallery.querySelector('.carousel-item.active')) : 0;
+      bootstrap.Carousel.getOrCreateInstance(fullscreenGallery).to(Number.isInteger(selectedIndex) ? selectedIndex : Math.max(activeIndex, 0));
+    });
+  });
+</script>
+{% endif %}

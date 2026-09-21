@@ -1,13 +1,17 @@
 import json
 import csv
+from io import BytesIO
+from pathlib import Path
 from datetime import timedelta
 
+from PIL import Image, ImageOps, UnidentifiedImageError
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
 from django.db.models import Count, Max, Q
 from django.core.paginator import Paginator
+from django.core.files.base import ContentFile
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -25,6 +29,28 @@ from .forms import (
 from .models import AIContent, Client, ClientInteraction, ClientReminder, Lead, Property, PropertyImage, RealtorProfile
 from .services.avito_service import AvitoExportService
 from .services.cian_service import CianExportService
+from .services.presentation_service import PresentationError, PresentationService
+from .services.presentation_docx_service import PresentationDocxService
+
+
+def optimize_property_image(uploaded_file):
+    """Resize newly uploaded property photos and strip excess metadata."""
+    try:
+        image = ImageOps.exif_transpose(Image.open(uploaded_file))
+        image.thumbnail((2000, 2000), Image.Resampling.LANCZOS)
+        if image.mode in {"RGBA", "LA"}:
+            background = Image.new("RGB", image.size, "white")
+            background.paste(image, mask=image.getchannel("A"))
+            image = background
+        elif image.mode != "RGB":
+            image = image.convert("RGB")
+        output = BytesIO()
+        image.save(output, format="JPEG", quality=85, optimize=True)
+        filename = f"{Path(uploaded_file.name).stem or 'property'}.jpg"
+        return ContentFile(output.getvalue(), name=filename)
+    except (OSError, UnidentifiedImageError):
+        uploaded_file.seek(0)
+        return uploaded_file
 
 
 class PropertyListView(LoginRequiredMixin, ListView):
@@ -123,19 +149,29 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         image_count = self.object.images.count()
+        has_primary_image = self.object.images.filter(is_primary=True).exists()
+        profile = RealtorProfile.objects.filter(user=self.request.user).first()
+        has_contacts = bool(profile and (profile.phone or profile.email or profile.telegram_username))
+        detail_url = reverse("property_detail", kwargs={"pk": self.object.pk})
+        edit_url = reverse("edit_property", kwargs={"pk": self.object.pk})
         tasks = []
         if not self.object.price:
-            tasks.append({"text": "Укажите цену объекта", "url": reverse("edit_property", kwargs={"pk": self.object.pk})})
+            tasks.append({"text": "Укажите цену объекта", "url": edit_url})
         if not self.object.address:
-            tasks.append({"text": "Добавьте адрес объекта", "url": reverse("edit_property", kwargs={"pk": self.object.pk})})
+            tasks.append({"text": "Добавьте адрес объекта", "url": edit_url})
+        if not has_primary_image:
+            tasks.append({"text": "Назначьте главную фотографию", "url": f"{detail_url}#photos-pane"})
         if image_count < 3:
-            tasks.append({"text": f"Добавьте ещё {3 - image_count} фото", "url": reverse("upload_images", kwargs={"pk": self.object.pk})})
+            tasks.append({"text": f"Добавьте ещё {3 - image_count} фото", "url": f"{detail_url}#photos-pane"})
         if not (self.object.short_description or self.object.description):
-            tasks.append({"text": "Добавьте описание объекта", "url": reverse("edit_property", kwargs={"pk": self.object.pk})})
+            tasks.append({"text": "Добавьте описание объекта", "url": f"{edit_url}#texts-pane"})
         if not self.object.landing_published:
-            tasks.append({"text": "Настройте и опубликуйте лендинг", "url": f"{reverse('edit_property', kwargs={'pk': self.object.pk})}#landing-pane"})
+            tasks.append({"text": "Настройте и опубликуйте лендинг", "url": f"{edit_url}#landing-pane"})
+        if not has_contacts:
+            tasks.append({"text": "Укажите контакты риелтора", "url": reverse("edit_profile")})
         context["readiness_tasks"] = tasks
-        context["readiness_completed"] = 5 - len(tasks)
+        context["readiness_total"] = 7
+        context["readiness_completed"] = context["readiness_total"] - len(tasks)
         context["image_count"] = image_count
         return context
 
@@ -271,6 +307,61 @@ class CianExportView(LoginRequiredMixin, View):
         )
 
 
+class PropertyPresentationPDFView(LoginRequiredMixin, View):
+    def get(self, request, pk):
+        property = get_object_or_404(
+            Property.objects.filter(owner=request.user).prefetch_related("images"),
+            pk=pk,
+        )
+        profile = RealtorProfile.objects.filter(user=request.user).first()
+        def option_enabled(name):
+            values = request.GET.getlist(name)
+            return values[-1] == "1" if values else True
+        try:
+            photo_limit = int(request.GET.get("photos", 6))
+        except (TypeError, ValueError):
+            photo_limit = 6
+        photo_limit = min(max(photo_limit, 0), 8)
+        presentation_template = request.GET.get("template", "classic")
+        if presentation_template not in {"classic", "premium"}:
+            presentation_template = "classic"
+        try:
+            pdf_content = PresentationService.build_pdf(
+                property,
+                profile,
+                include_facts=option_enabled("facts"),
+                include_description=option_enabled("description"),
+                include_benefits=option_enabled("benefits"),
+                include_contacts=option_enabled("contacts"),
+                photo_limit=photo_limit,
+                template=presentation_template,
+            )
+        except PresentationError as error:
+            messages.error(request, str(error))
+            return redirect("property_detail", pk=property.pk)
+        filename = f"presentation-{property.landing_slug or property.pk}.pdf"
+        response = HttpResponse(pdf_content, content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
+
+class PropertyPresentationDOCXView(LoginRequiredMixin, View):
+    def get(self, request, pk):
+        property = get_object_or_404(Property.objects.filter(owner=request.user).prefetch_related("images"), pk=pk)
+        profile = RealtorProfile.objects.filter(user=request.user).first()
+        def enabled(name):
+            values = request.GET.getlist(name)
+            return values[-1] == "1" if values else True
+        try:
+            photo_limit = min(max(int(request.GET.get("photos", 6)), 0), 8)
+        except (TypeError, ValueError):
+            photo_limit = 6
+        content = PresentationDocxService.build_docx(property, profile, include_facts=enabled("facts"), include_description=enabled("description"), include_benefits=enabled("benefits"), include_contacts=enabled("contacts"), photo_limit=photo_limit)
+        response = HttpResponse(content, content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+        response["Content-Disposition"] = f'attachment; filename="presentation-{property.landing_slug or property.pk}.docx"'
+        return response
+
+
 class PropertyDeleteView(LoginRequiredMixin, DeleteView):
     model = Property
 
@@ -331,6 +422,7 @@ class ClientListView(LoginRequiredMixin, ListView):
         source = self.request.GET.get("source", "")
         date_from = self.request.GET.get("date_from", "")
         date_to = self.request.GET.get("date_to", "")
+        sort = self.request.GET.get("sort", "newest")
         if query:
             queryset = queryset.filter(Q(name__icontains=query) | Q(phone__icontains=query) | Q(preferred_area__icontains=query))
         if status in dict(Client.STATUS_CHOICES):
@@ -341,7 +433,17 @@ class ClientListView(LoginRequiredMixin, ListView):
             queryset = queryset.filter(created_at__date__gte=date_from)
         if date_to:
             queryset = queryset.filter(created_at__date__lte=date_to)
-        return queryset
+        ordering = {
+            "newest": "-created_at",
+            "oldest": "created_at",
+            "updated": "-updated_at",
+            "name_asc": "name",
+            "name_desc": "-name",
+            "leads_desc": "-lead_count",
+        }
+        if sort == "leads_desc":
+            queryset = queryset.annotate(lead_count=Count("leads"))
+        return queryset.order_by(ordering.get(sort, ordering["newest"]))
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -362,6 +464,14 @@ class ClientListView(LoginRequiredMixin, ListView):
                 "status_choices": Client.STATUS_CHOICES,
                 "source_choices": Client.SOURCE_CHOICES,
                 "filters": self.request.GET,
+                "sort_choices": [
+                    ("newest", "Сначала новые"),
+                    ("oldest", "Сначала старые"),
+                    ("updated", "Недавно обновлённые"),
+                    ("name_asc", "Имя: А–Я"),
+                    ("name_desc", "Имя: Я–А"),
+                    ("leads_desc", "Больше заявок"),
+                ],
                 "metrics": {
                     "new_week": all_clients.filter(created_at__gte=timezone.now() - timedelta(days=7)).count(),
                     "active": all_clients.exclude(status__in=["won", "lost"]).count(),
@@ -372,6 +482,9 @@ class ClientListView(LoginRequiredMixin, ListView):
                 "today_reminders": pending_reminders.filter(due_at__gte=now, due_at__lt=start_tomorrow)[:5],
             }
         )
+        params = self.request.GET.copy()
+        params.pop("page", None)
+        context["pagination_query"] = params.urlencode()
         return context
 
 
@@ -593,7 +706,7 @@ class PropertyImageUploadView(LoginRequiredMixin, View):
         for image in request.FILES.getlist("images"):
             PropertyImage.objects.create(
                 property=property,
-                image=image,
+                image=optimize_property_image(image),
                 order=next_order,
                 is_primary=not has_primary,
             )
@@ -702,12 +815,12 @@ class PublicLandingView(View):
     def get(self, request, slug):
         property = self.get_property(slug)
         profile = RealtorProfile.objects.filter(user=property.owner).first()
-        return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm()))
+        return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(property=property)))
 
     def post(self, request, slug):
         property = self.get_property(slug)
         profile = RealtorProfile.objects.filter(user=property.owner).first()
-        form = LeadForm(request.POST)
+        form = LeadForm(request.POST, property=property)
         if form.is_valid():
             lead = form.save(commit=False)
             lead.property = property
@@ -726,9 +839,9 @@ class PublicLandingView(View):
                 client=client,
                 lead=lead,
                 interaction_type="note",
-                text=f"Новая заявка с лендинга «{property.title}» · {lead.get_interest_type_display()}.",
+                text=f"Новая заявка с лендинга «{property.title}» · {lead.get_contact_purpose_display()} · {lead.get_interest_type_display()}.",
             )
-            return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(), sent=True))
+            return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(property=property), sent=True))
         return render(request, self.get_template_name(property), self.get_context(property, profile, form))
 
 
@@ -737,7 +850,7 @@ class PropertyLandingPreviewView(LoginRequiredMixin, PublicLandingView):
     def get(self, request, pk):
         property = get_object_or_404(Property.objects.select_related("owner").prefetch_related("images"), pk=pk, owner=request.user)
         profile = RealtorProfile.objects.filter(user=request.user).first()
-        return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(), preview=True))
+        return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(property=property), preview=True))
 
     def post(self, request, pk):
         return self.get(request, pk)

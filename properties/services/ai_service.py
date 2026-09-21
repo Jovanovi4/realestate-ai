@@ -42,6 +42,19 @@ class AIService:
         "lead_reply": "Создай короткий профессиональный ответ клиенту до 500 символов.",
     }
 
+    INLINE_FIELD_INSTRUCTIONS = {
+        "marketing_headline": ("headline", "Создай один заголовок объявления длиной до 90 символов. Не добавляй кавычки."),
+        "short_description": ("short_description", "Создай короткое описание: один абзац, 250–450 символов."),
+        "description": ("full_description", "Создай полное продающее описание: 2–3 коротких абзаца, до 1 500 символов."),
+        "landing_title": ("landing_headline", "Создай заголовок первого экрана лендинга до 90 символов."),
+        "landing_subtitle": ("landing_subtitle", "Создай подзаголовок лендинга: один короткий абзац до 280 символов."),
+        "landing_about_title": ("landing_about", "Создай короткий заголовок для блока «Об объекте» до 70 символов."),
+        "landing_contact_title": ("cta", "Создай один короткий призыв оставить заявку или записаться на просмотр."),
+        "landing_trust_about": ("benefits", "Создай короткий текст для блока преимуществ риелтора: 1–2 предложения, без неподтверждённых обещаний."),
+        "seo_title": ("seo_title", "Создай SEO-заголовок страницы до 60 символов."),
+        "seo_description": ("seo_description", "Создай SEO-описание до 155 символов."),
+    }
+
     @staticmethod
     def clean_description(text):
         """Convert occasional Markdown formatting from a model to plain text."""
@@ -95,6 +108,29 @@ class AIService:
     def generate_content(cls, property, content_type, tone):
         prompt = cls.build_prompt(property, content_type, tone)
         return cls._run_prompt(prompt)
+
+    @classmethod
+    def generate_inline_content(cls, property, target, tone):
+        """Generate copy for a concrete editor field without exposing prompt details to the UI."""
+        content_type, instruction = cls.INLINE_FIELD_INSTRUCTIONS.get(target, (None, None))
+        is_benefit_field = target.startswith("landing_benefit_") and (
+            target.endswith("_title") or target.endswith("_description")
+        )
+        if (not content_type and not is_benefit_field) or tone not in cls.TONE_INSTRUCTIONS:
+            raise AIServiceError("Неизвестное поле или тон генерации.")
+        if is_benefit_field and target.endswith("_title"):
+            content_type = "benefits"
+            instruction = "Создай короткий заголовок одной карточки преимущества риелтора, до 80 символов. Не добавляй нумерацию."
+        elif is_benefit_field:
+            content_type = "benefits"
+            instruction = "Создай описание одной карточки преимущества риелтора: одно предложение до 180 символов. Не добавляй заголовок или нумерацию."
+        prompt = "\n\n".join((
+            instruction,
+            cls.TONE_INSTRUCTIONS[tone],
+            "Это долгосрочная аренда; используй только известные условия аренды." if property.deal_type == "rent" else "Это продажа объекта.",
+            "Данные объекта:\n" + cls._property_facts(property),
+        ))
+        return content_type, cls._run_prompt(prompt)
 
     @classmethod
     def _run_prompt(cls, prompt):

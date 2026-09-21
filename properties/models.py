@@ -77,6 +77,30 @@ class Property(models.Model):
         ("premium", "Премиальный"),
     ]
 
+    LANDING_ACCENT_CHOICES = [
+        ("template", "По шаблону"),
+        ("graphite", "Графитовый"),
+        ("blue", "Синий"),
+        ("emerald", "Изумрудный"),
+        ("terracotta", "Терракотовый"),
+    ]
+
+    LANDING_BUTTON_STYLE_CHOICES = [
+        ("template", "По шаблону"),
+        ("rounded", "Скруглённые"),
+        ("strict", "Строгие"),
+    ]
+
+    LANDING_HERO_LAYOUT_CHOICES = [
+        ("split", "Фото рядом с текстом"),
+        ("background", "Фото на фоне"),
+    ]
+
+    LANDING_GALLERY_STYLE_CHOICES = [
+        ("large", "Крупное фото"),
+        ("grid", "Сетка фото"),
+    ]
+
     LANDING_BLOCKS = [
         ("hero", "Первый экран"),
         ("facts", "Основные характеристики"),
@@ -247,6 +271,30 @@ class Property(models.Model):
         choices=LANDING_TEMPLATES,
         default="classic",
         verbose_name="Шаблон лендинга",
+    )
+    landing_accent = models.CharField(
+        max_length=20,
+        choices=LANDING_ACCENT_CHOICES,
+        default="template",
+        verbose_name="Акцентный цвет",
+    )
+    landing_button_style = models.CharField(
+        max_length=20,
+        choices=LANDING_BUTTON_STYLE_CHOICES,
+        default="template",
+        verbose_name="Форма кнопок",
+    )
+    landing_hero_layout = models.CharField(
+        max_length=20,
+        choices=LANDING_HERO_LAYOUT_CHOICES,
+        default="split",
+        verbose_name="Вид первого экрана",
+    )
+    landing_gallery_style = models.CharField(
+        max_length=20,
+        choices=LANDING_GALLERY_STYLE_CHOICES,
+        default="large",
+        verbose_name="Вид галереи",
     )
 
     created_at = models.DateTimeField(
@@ -491,6 +539,11 @@ class ClientReminder(models.Model):
 
 
 class Lead(models.Model):
+    CONTACT_PURPOSE_CHOICES = [
+        ("viewing", "Записаться на просмотр"),
+        ("presentation", "Получить презентацию"),
+        ("rent_terms", "Уточнить условия аренды"),
+    ]
     INTEREST_CHOICES = [
         ("buy", "Покупка"),
         ("long_rent", "Долгосрочная аренда"),
@@ -505,6 +558,12 @@ class Lead(models.Model):
     client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, related_name="leads")
     name = models.CharField(max_length=150, verbose_name="Имя")
     phone = models.CharField(max_length=30, verbose_name="Телефон")
+    contact_purpose = models.CharField(
+        max_length=20,
+        choices=CONTACT_PURPOSE_CHOICES,
+        default="viewing",
+        verbose_name="Повод обращения",
+    )
     message = models.TextField(blank=True, verbose_name="Комментарий")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Статус обработки")
     interest_type = models.CharField(max_length=20, choices=INTEREST_CHOICES, default="buy", verbose_name="Интерес клиента")

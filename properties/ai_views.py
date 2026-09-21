@@ -1,7 +1,8 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.conf import settings
-from django.http import Http404
+from django.http import Http404, JsonResponse
+from django.urls import reverse
 from django.core.paginator import Paginator
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.shortcuts import get_object_or_404, redirect, render
@@ -55,6 +56,16 @@ DEFAULT_TARGETS = {
     "cta": "landing_contact_title",
 }
 
+INLINE_TARGETS = set(AIService.INLINE_FIELD_INSTRUCTIONS)
+
+
+def is_inline_target(target):
+    return target in INLINE_TARGETS or (
+        target.startswith("landing_benefit_")
+        and target.rsplit("_", 1)[-1] in {"title", "description"}
+        and target.split("_")[2] in {"1", "2", "3"}
+    )
+
 
 class AIEnabledMixin:
     """Keep AI endpoints unavailable when a deployment disables the feature."""
@@ -63,6 +74,79 @@ class AIEnabledMixin:
         if not settings.AI_ENABLED:
             raise Http404
         return super().dispatch(request, *args, **kwargs)
+
+
+class AIInlineGenerateView(AIEnabledMixin, LoginRequiredMixin, View):
+    """Return one generated text for the inline editor without saving it to the property."""
+
+    def post(self, request, pk):
+        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        target = request.POST.get("target", "")
+        tone = request.POST.get("tone", "business")
+        mode = request.POST.get("mode", "generate")
+        source_text = request.POST.get("source_text", "").strip()
+        improvement = request.POST.get("improvement", "")
+
+        if not is_inline_target(target):
+            return JsonResponse({"error": "Для этого поля генерация пока недоступна."}, status=400)
+        if tone not in dict(AIContent.TONE_CHOICES):
+            return JsonResponse({"error": "Выберите корректный тон текста."}, status=400)
+
+        try:
+            if mode == "improve":
+                if not source_text:
+                    return JsonResponse({"error": "Введите текст, который нужно улучшить."}, status=400)
+                content_type = "benefits" if target.startswith("landing_benefit_") else AIService.INLINE_FIELD_INSTRUCTIONS[target][0]
+                result = AIService.improve_text(property, content_type, tone, improvement, source_text)
+            elif mode == "generate":
+                content_type, result = AIService.generate_inline_content(property, target, tone)
+            elif mode != "generate":
+                return JsonResponse({"error": "Неизвестное действие ИИ."}, status=400)
+        except AIServiceError as error:
+            return JsonResponse({"error": str(error)}, status=400)
+
+        apply_target = target if target in dict(AIContent.APPLY_TARGET_CHOICES) else ""
+        AIContent.objects.create(
+            property=property,
+            content_type=content_type,
+            tone=tone,
+            title=property.title,
+            apply_target=apply_target,
+            **result,
+        )
+        return JsonResponse({"content": result["content"]})
+
+
+class AIBundleGenerateView(AIEnabledMixin, LoginRequiredMixin, View):
+    """Generate a review-first set of texts for one property."""
+
+    def post(self, request, pk):
+        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        tone = request.POST.get("tone", "business")
+        bundle_type = request.POST.get("bundle", "package")
+        if tone not in dict(AIContent.TONE_CHOICES):
+            return JsonResponse({"error": "Выберите корректный тон текста."}, status=400)
+        if bundle_type not in {"package", "landing"}:
+            return JsonResponse({"error": "Неизвестный сценарий генерации."}, status=400)
+        try:
+            results = AIService.generate_bundle(property, tone, bundle_type)
+        except AIServiceError as error:
+            return JsonResponse({"error": str(error)}, status=400)
+
+        contents = []
+        for result in results:
+            content_type = result["content_type"]
+            content_payload = {key: value for key, value in result.items() if key != "content_type"}
+            AIContent.objects.create(
+                property=property,
+                content_type=content_type,
+                tone=tone,
+                title=property.title,
+                apply_target=DEFAULT_TARGETS[content_type],
+                **content_payload,
+            )
+            contents.append({"target": DEFAULT_TARGETS[content_type], "content": result["content"]})
+        return JsonResponse({"contents": contents})
 
 
 class AIAssistantView(AIEnabledMixin, LoginRequiredMixin, DetailView):
@@ -77,6 +161,16 @@ class AIAssistantView(AIEnabledMixin, LoginRequiredMixin, DetailView):
         if is_htmx(self.request) and self.request.GET.get("history_page"):
             return ["properties/includes/ai_history.html"]
         return [self.template_name]
+
+    def get(self, request, *args, **kwargs):
+        property = self.get_object()
+        messages.info(request, "ИИ-инструменты теперь находятся рядом с текстовыми полями объекта.")
+        return redirect(f"{reverse('edit_property', kwargs={'pk': property.pk})}#texts-pane")
+
+    def post(self, request, *args, **kwargs):
+        property = self.get_object()
+        messages.info(request, "ИИ-инструменты теперь находятся рядом с текстовыми полями объекта.")
+        return redirect(f"{reverse('edit_property', kwargs={'pk': property.pk})}#texts-pane")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -135,6 +229,16 @@ class AIContentEditView(AIEnabledMixin, LoginRequiredMixin, DetailView):
             return ["properties/includes/ai_content_editor.html"]
         return [self.template_name]
 
+    def get(self, request, *args, **kwargs):
+        ai_content = self.get_object()
+        messages.info(request, "История скрыта из рабочего интерфейса. Используйте ИИ непосредственно в поле текста.")
+        return redirect(f"{reverse('edit_property', kwargs={'pk': ai_content.property.pk})}#texts-pane")
+
+    def post(self, request, *args, **kwargs):
+        ai_content = self.get_object()
+        messages.info(request, "История скрыта из рабочего интерфейса. Используйте ИИ непосредственно в поле текста.")
+        return redirect(f"{reverse('edit_property', kwargs={'pk': ai_content.property.pk})}#texts-pane")
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["form"] = kwargs.get("form") or AIContentEditForm(instance=self.object)
@@ -176,15 +280,8 @@ class AIContentDeleteView(AIEnabledMixin, LoginRequiredMixin, View):
             pk=pk,
             property__owner=request.user,
         )
-        property = ai_content.property
-        property_pk = property.pk
-        ai_content.delete()
-        if is_htmx(request):
-            context = {"property": property}
-            context.update(get_ai_history_context(property, request.POST.get("history_page", 1)))
-            return render(request, "properties/includes/ai_content_deleted_response.html", context)
-        messages.success(request, "Запись удалена из истории генераций.")
-        return redirect("ai_assistant", pk=property_pk)
+        messages.info(request, "История генераций сохранена как служебный журнал и недоступна для удаления из интерфейса.")
+        return redirect(f"{reverse('edit_property', kwargs={'pk': ai_content.property.pk})}#texts-pane")
 
 
 class AILeadReplyView(AIEnabledMixin, LoginRequiredMixin, View):
@@ -224,9 +321,9 @@ class AILeadReplyView(AIEnabledMixin, LoginRequiredMixin, View):
 
 @login_required
 def generate_description(request, pk):
-    """Preserve the old URL, directing it to the review-first assistant workflow."""
-    get_object_or_404(Property, pk=pk, owner=request.user)
+    """Preserve the old URL while moving work to the inline text editor."""
+    property = get_object_or_404(Property, pk=pk, owner=request.user)
     if not settings.AI_ENABLED:
         messages.info(request, "ИИ-помощник отключён на этом стенде.")
         return redirect("property_detail", pk=pk)
-    return redirect("ai_assistant", pk=pk)
+    return redirect(f"{reverse('edit_property', kwargs={'pk': property.pk})}#texts-pane")

@@ -64,6 +64,10 @@ class PropertyForm(forms.ModelForm):
             "pets_allowed",
             "children_allowed",
             "landing_template",
+            "landing_accent",
+            "landing_button_style",
+            "landing_hero_layout",
+            "landing_gallery_style",
             "landing_published",
             "landing_title",
             "landing_subtitle",
@@ -108,6 +112,14 @@ class PropertyForm(forms.ModelForm):
                 field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
         self.fields["property_type"].widget.attrs["x-model"] = "propertyType"
         self.fields["deal_type"].widget.attrs["x-model"] = "dealType"
+        self._visual_landing_defaults = {
+            "landing_accent": "template",
+            "landing_button_style": "template",
+            "landing_hero_layout": "split",
+            "landing_gallery_style": "large",
+        }
+        for field_name in self._visual_landing_defaults:
+            self.fields[field_name].required = False
         benefits = self.instance.landing_benefits or []
         for index in range(1, 4):
             benefit = benefits[index - 1] if len(benefits) >= index else {}
@@ -131,6 +143,9 @@ class PropertyForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        for field_name, default in self._visual_landing_defaults.items():
+            if not cleaned_data.get(field_name):
+                cleaned_data[field_name] = getattr(self.instance, field_name, None) or default
         if cleaned_data.get("deal_type") == "rent":
             if cleaned_data.get("status") == "sold":
                 self.add_error("status", "Для аренды используйте статусы «Свободен», «Бронь» или «Сдан».")
@@ -186,14 +201,19 @@ class RealtorProfileForm(forms.ModelForm):
 class LeadForm(forms.ModelForm):
     class Meta:
         model = Lead
-        fields = ("name", "phone", "message")
-        widgets = {"message": forms.Textarea(attrs={"rows": 3})}
+        fields = ("contact_purpose", "name", "phone", "message")
+        widgets = {
+            "contact_purpose": forms.Select(),
+            "message": forms.Textarea(attrs={"rows": 3, "placeholder": "Необязательно: удобное время, вопрос или пожелание"}),
+        }
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, property=None, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
-            field.widget.attrs["class"] = "form-control"
+            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
         self.fields["phone"].widget.attrs.update(PHONE_MASK_ATTRS)
+        if property and property.deal_type == "rent":
+            self.initial.setdefault("contact_purpose", "rent_terms")
 
     def clean_phone(self):
         return normalize_phone(self.cleaned_data["phone"])

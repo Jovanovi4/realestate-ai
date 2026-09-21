@@ -1,0 +1,15 @@
+<section class="facts section" style="order:{{ landing_order.facts }}">
+  <div class="container">
+    <div class="property-facts">
+      {% if property.area %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">⌗</span><span class="fact-label">Площадь</span><strong>{{ property.area }} м²</strong></div>{% endif %}
+      {% if property.rooms %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">▦</span><span class="fact-label">Комнаты</span><strong>{{ property.rooms }}</strong></div>{% endif %}
+      {% if property.floor %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">⌂</span><span class="fact-label">Этаж</span><strong>{{ property.floor }}{% if property.floors_total %} / {{ property.floors_total }}{% endif %}</strong></div>{% endif %}
+      {% if property.land_area %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">⌁</span><span class="fact-label">Участок</span><strong>{{ property.land_area }} м²</strong></div>{% endif %}
+      {% if property.condition %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">✦</span><span class="fact-label">Состояние</span><strong>{{ property.get_condition_display }}</strong></div>{% endif %}
+      {% if property.deal_type == 'rent' and property.furnished %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">▣</span><span class="fact-label">Мебель</span><strong>Есть</strong></div>{% endif %}
+      {% if property.deal_type == 'rent' and property.min_lease_months %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">◷</span><span class="fact-label">Срок аренды</span><strong>от {{ property.min_lease_months }} мес.</strong></div>{% endif %}
+      {% if property.deal_type == 'rent' and property.rent_deposit %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">₽</span><span class="fact-label">Залог</span><strong>{{ property.rent_deposit }}</strong></div>{% endif %}
+      {% if property.deal_type == 'rent' and property.available_from %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">◉</span><span class="fact-label">Свободен с</span><strong>{{ property.available_from|date:"d.m.Y" }}</strong></div>{% endif %}
+    </div>
+  </div>
+</section>

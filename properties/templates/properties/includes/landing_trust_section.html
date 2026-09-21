@@ -13,7 +13,18 @@
         {% endif %}
       </div>
     </div>
-    <div class="row g-3">{% for benefit in property.landing_benefits %}<div class="col-md-4"><article class="trust-card"><span class="trust-number">{{ benefit.icon|default:"◆" }}</span><h3>{{ benefit.title }}</h3><p>{{ benefit.description }}</p></article></div>{% endfor %}</div>
+    <div class="row g-3">{% for benefit in property.landing_benefits %}<div class="col-md-4"><article class="trust-card"><span class="trust-icon" aria-hidden="true">{{ benefit.icon|default:"◆" }}</span><h3>{{ benefit.title }}</h3><p>{{ benefit.description }}</p></article></div>{% endfor %}</div>
+    <div class="row g-4 mt-3 mt-lg-4 align-items-stretch">
+      <div class="col-lg-5">
+        <aside class="trust-realtor h-100">
+          <div class="trust-realtor-photo" aria-hidden="true">{% if profile and profile.photo %}<img src="{{ profile.photo.url }}" alt="">{% else %}<span>{% if profile and profile.display_name %}{{ profile.display_name|first|upper }}{% else %}Р{% endif %}</span>{% endif %}</div>
+          <div class="trust-realtor-info"><p class="eyebrow mb-1">Ваш риелтор</p><h3 class="h4 mb-2">{% if profile and profile.display_name %}{{ profile.display_name }}{% else %}{{ property.owner.get_full_name|default:property.owner.username }}{% endif %}</h3><p class="trust-realtor-note mb-3">На связи по вопросам объекта и организации просмотра.</p><div class="trust-realtor-contacts">{% if profile and profile.phone %}<a href="tel:{{ profile.phone }}">{{ profile.phone }}</a>{% endif %}{% if profile and profile.telegram_username %}<a target="_blank" rel="noopener" href="https://t.me/{{ profile.telegram_username }}">Telegram</a>{% endif %}{% if profile and profile.email %}<a href="mailto:{{ profile.email }}">{{ profile.email }}</a>{% endif %}</div></div>
+        </aside>
+      </div>
+      <div class="col-lg-7">
+        <section class="trust-process h-100" aria-labelledby="process-title"><p class="eyebrow mb-1">Прозрачный процесс</p><h3 id="process-title" class="h4 mb-4">Как проходит {% if property.deal_type == 'rent' %}аренда{% else %}сделка{% endif %}</h3><ol class="trust-steps"><li><span>01</span><div><strong>Обсуждаем задачу</strong><p>Отвечаем на вопросы и уточняем важные для вас условия.</p></div></li><li><span>02</span><div><strong>Организуем просмотр</strong><p>Согласуем удобное время и покажем объект без спешки.</p></div></li><li><span>03</span><div><strong>{% if property.deal_type == 'rent' %}Оформляем договор{% else %}Сопровождаем решение{% endif %}</strong><p>{% if property.deal_type == 'rent' %}Фиксируем договорённости и условия аренды.{% else %}Помогаем уверенно пройти следующий этап сделки.{% endif %}</p></div></li></ol></section>
+      </div>
+    </div>
   </div>
 </section>
 {% endif %}

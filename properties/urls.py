@@ -1,10 +1,10 @@
 from django.contrib.auth import views as auth_views
 from django.urls import path, reverse_lazy
 
-from .ai_views import AIAssistantView, AIContentDeleteView, AIContentEditView, AILeadReplyView, generate_description
+from .ai_views import AIAssistantView, AIBundleGenerateView, AIContentDeleteView, AIContentEditView, AIInlineGenerateView, AILeadReplyView, generate_description
 from .forms import AccountPasswordChangeForm, PhoneAuthenticationForm
 from .views import (
-    AvitoExportView, CianExportView,
+    AvitoExportView, CianExportView, PropertyPresentationPDFView, PropertyPresentationDOCXView,
     PropertyCreateView,
     PropertyDetailView,
     PropertyDeleteView,
@@ -77,7 +77,11 @@ urlpatterns = [
     path("<int:pk>/delete/", PropertyDeleteView.as_view(), name="delete_property"),
     path("<int:pk>/status/", PropertyStatusUpdateView.as_view(), name="update_property_status"),
     path("<int:pk>/ai/", AIAssistantView.as_view(), name="ai_assistant"),
+    path("<int:pk>/ai/inline/", AIInlineGenerateView.as_view(), name="ai_inline_generate"),
+    path("<int:pk>/ai/bundle/", AIBundleGenerateView.as_view(), name="ai_bundle_generate"),
     path("<int:pk>/landing-preview/", PropertyLandingPreviewView.as_view(), name="property_landing_preview"),
+    path("<int:pk>/presentation.pdf", PropertyPresentationPDFView.as_view(), name="property_presentation_pdf"),
+    path("<int:pk>/presentation.docx", PropertyPresentationDOCXView.as_view(), name="property_presentation_docx"),
     path("<int:pk>/", PropertyDetailView.as_view(), name="property_detail"),
     path("<int:pk>/generate/", generate_description, name="generate_description"),
     path("ai/content/<int:pk>/", AIContentEditView.as_view(), name="ai_content_edit"),

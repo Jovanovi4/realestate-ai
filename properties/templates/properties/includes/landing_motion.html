@@ -1,0 +1,20 @@
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches || !('IntersectionObserver' in window)) return;
+
+    const targets = document.querySelectorAll('.hero, .landing-blocks > .section, .property-fact, .trust-card, .trust-realtor, .trust-process');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        entry.target.classList.add('is-visible');
+        observer.unobserve(entry.target);
+      });
+    }, { threshold: 0.08, rootMargin: '0px 0px -5% 0px' });
+
+    targets.forEach((target, index) => {
+      target.classList.add('landing-reveal');
+      target.style.setProperty('--reveal-delay', `${Math.min(index * 35, 210)}ms`);
+      observer.observe(target);
+    });
+  });
+</script>

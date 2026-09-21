@@ -29,9 +29,9 @@ class PropertyAdmin(admin.ModelAdmin):
 
 @admin.register(Lead)
 class LeadAdmin(admin.ModelAdmin):
-    list_display = ("name", "phone", "client", "property", "status", "created_at")
+    list_display = ("name", "phone", "contact_purpose", "client", "property", "status", "created_at")
     search_fields = ("name", "phone", "property__title")
-    list_filter = ("status",)
+    list_filter = ("contact_purpose", "status")
 
 
 @admin.register(Client)
