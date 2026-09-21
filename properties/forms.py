@@ -199,6 +199,13 @@ class RealtorProfileForm(forms.ModelForm):
 
 
 class LeadForm(forms.ModelForm):
+    website = forms.CharField(required=False, widget=forms.TextInput(attrs={"autocomplete": "off", "tabindex": "-1"}))
+    personal_data_consent = forms.BooleanField(
+        required=True,
+        label="Даю согласие на обработку персональных данных",
+        error_messages={"required": "Для отправки заявки необходимо согласие на обработку персональных данных."},
+    )
+
     class Meta:
         model = Lead
         fields = ("contact_purpose", "name", "phone", "message")
@@ -210,7 +217,12 @@ class LeadForm(forms.ModelForm):
     def __init__(self, *args, property=None, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
-            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            if isinstance(field.widget, forms.Select):
+                field.widget.attrs["class"] = "form-select"
+            elif isinstance(field.widget, forms.CheckboxInput):
+                field.widget.attrs["class"] = "form-check-input"
+            else:
+                field.widget.attrs["class"] = "form-control"
         self.fields["phone"].widget.attrs.update(PHONE_MASK_ATTRS)
         if property and property.deal_type == "rent":
             self.initial.setdefault("contact_purpose", "rent_terms")
@@ -352,11 +364,21 @@ class RegistrationForm(forms.Form):
     phone = forms.CharField(label="Телефон", max_length=30, widget=forms.TelInput(attrs=PHONE_MASK_ATTRS))
     password1 = forms.CharField(label="Пароль", widget=forms.PasswordInput())
     password2 = forms.CharField(label="Повторите пароль", widget=forms.PasswordInput())
+    terms_accepted = forms.BooleanField(
+        required=True,
+        label="Принимаю условия сервиса",
+        error_messages={"required": "Для создания аккаунта необходимо принять условия сервиса."},
+    )
+    personal_data_consent = forms.BooleanField(
+        required=True,
+        label="Даю согласие на обработку персональных данных",
+        error_messages={"required": "Для создания аккаунта необходимо согласие на обработку персональных данных."},
+    )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
-            field.widget.attrs["class"] = "form-control"
+            field.widget.attrs["class"] = "form-check-input" if isinstance(field.widget, forms.CheckboxInput) else "form-control"
 
     def clean_phone(self):
         phone = normalize_phone(self.cleaned_data["phone"])

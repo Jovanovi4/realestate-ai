@@ -5,6 +5,7 @@ from pathlib import Path
 from datetime import timedelta
 
 from PIL import Image, ImageOps, UnidentifiedImageError
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.mixins import LoginRequiredMixin
@@ -26,10 +27,11 @@ from .forms import (
     ClientDetailsForm, ClientForm, ClientInteractionForm, ClientReminderForm, LeadForm,
     PropertyForm, RegistrationForm, RealtorProfileForm,
 )
-from .models import AIContent, Client, ClientInteraction, ClientReminder, Lead, Property, PropertyImage, RealtorProfile
+from .models import AIContent, Client, ClientInteraction, ClientReminder, Lead, Property, PropertyImage, RealtorProfile, UserLegalAcceptance
 from .services.avito_service import AvitoExportService
 from .services.cian_service import CianExportService
 from .services.lead_notification_service import LeadNotificationService
+from .services.public_form_security import PublicLeadFormSecurity
 from .services.presentation_service import PresentationError, PresentationService
 from .services.presentation_docx_service import PresentationDocxService
 
@@ -770,10 +772,42 @@ def register(request):
 
     form = RegistrationForm(request.POST or None)
     if request.method == "POST" and form.is_valid():
-        user = form.save()
+        with transaction.atomic():
+            user = form.save()
+            UserLegalAcceptance.objects.create(
+                user=user,
+                terms_accepted_at=timezone.now(),
+                terms_version=settings.SERVICE_TERMS_VERSION,
+                personal_data_consent_at=timezone.now(),
+                personal_data_consent_version=settings.PERSONAL_DATA_CONSENT_VERSION,
+            )
         login(request, user)
         return redirect("property_list")
     return render(request, "registration/register.html", {"form": form})
+
+
+def legal_context(document_version):
+    return {
+        "operator_name": settings.LEGAL_OPERATOR_NAME,
+        "operator_inn": settings.LEGAL_OPERATOR_INN,
+        "operator_ogrn": settings.LEGAL_OPERATOR_OGRN,
+        "operator_address": settings.LEGAL_OPERATOR_ADDRESS,
+        "privacy_email": settings.LEGAL_PRIVACY_EMAIL,
+        "data_storage_location": settings.LEGAL_DATA_STORAGE_LOCATION,
+        "document_version": document_version,
+    }
+
+
+def privacy_policy(request):
+    return render(request, "properties/legal/privacy_policy.html", legal_context(settings.PERSONAL_DATA_POLICY_VERSION))
+
+
+def personal_data_consent(request):
+    return render(request, "properties/legal/personal_data_consent.html", legal_context(settings.PERSONAL_DATA_CONSENT_VERSION))
+
+
+def service_terms(request):
+    return render(request, "properties/legal/service_terms.html", legal_context(settings.SERVICE_TERMS_VERSION))
 
 
 class PublicLandingView(View):
@@ -803,6 +837,8 @@ class PublicLandingView(View):
             "form": form,
             "landing_order": self.get_landing_order(property),
             "landing_enabled": {key: bool(enabled.get(key, True)) for key in valid_keys},
+            "turnstile_enabled": settings.TURNSTILE_ENABLED,
+            "turnstile_site_key": settings.TURNSTILE_SITE_KEY,
             **extra,
         }
 
@@ -821,11 +857,22 @@ class PublicLandingView(View):
     def post(self, request, slug):
         property = self.get_property(slug)
         profile = RealtorProfile.objects.filter(user=property.owner).first()
+        if request.POST.get("website", "").strip():
+            return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(property=property), sent=True))
+        if not PublicLeadFormSecurity.allow_submission(request, property.pk):
+            form = LeadForm(request.POST, property=property)
+            form.add_error(None, "Слишком много попыток. Подождите несколько минут и попробуйте снова.")
+            return render(request, self.get_template_name(property), self.get_context(property, profile, form))
         form = LeadForm(request.POST, property=property)
         if form.is_valid():
+            if not PublicLeadFormSecurity.verify_turnstile(request):
+                form.add_error(None, "Не удалось подтвердить, что вы не робот. Попробуйте ещё раз.")
+                return render(request, self.get_template_name(property), self.get_context(property, profile, form))
             lead = form.save(commit=False)
             lead.property = property
             lead.interest_type = "long_rent" if property.deal_type == "rent" else "buy"
+            lead.personal_data_consent_at = timezone.now()
+            lead.personal_data_consent_version = settings.PERSONAL_DATA_CONSENT_VERSION
             client, created = Client.objects.get_or_create(
                 owner=property.owner,
                 phone=form.cleaned_data["phone"],

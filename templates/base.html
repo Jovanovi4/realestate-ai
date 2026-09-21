@@ -26,6 +26,24 @@
       .action-menu .dropdown-item { border-radius:.45rem; font-size:.875rem; font-weight:600; }
       .form-control, .form-select { border-color: #dbe3ee; border-radius: .55rem; }
       .form-control:focus, .form-select:focus { border-color: #94a3b8; box-shadow: 0 0 0 .2rem rgba(100,116,139,.13); }
+      .auth-page { display:grid; width:100vw; min-height:100vh; padding:2rem 1.25rem; margin:-3rem 0 -3rem calc(50% - 50vw); place-items:center; background:radial-gradient(circle at 50% 0, #fff 0, #f8fafc 42%, #eef2f7 100%); }
+      .auth-panel { width:min(100%, 29rem); }
+      .auth-brand { display:flex; align-items:center; justify-content:center; gap:.65rem; margin-bottom:1.5rem; color:#334155; font-size:1.05rem; font-weight:800; letter-spacing:-.03em; text-decoration:none; }
+      .auth-brand-mark { display:grid; width:2.2rem; height:2.2rem; place-items:center; border-radius:.65rem; color:#fff; background:#334155; font-size:.7rem; letter-spacing:.06em; }
+      .auth-card { overflow:hidden; border:1px solid #e2e8f0; border-radius:1rem; background:rgba(255,255,255,.94); box-shadow:0 1.25rem 3.5rem rgba(15,23,42,.09); }
+      .auth-card-body { padding:2rem; }
+      .auth-tabs { display:grid; grid-template-columns:repeat(2,1fr); gap:.25rem; padding:.28rem; margin-bottom:1.75rem; border-radius:.7rem; background:#f1f5f9; }
+      .auth-tabs a { padding:.55rem .75rem; border-radius:.5rem; color:#64748b; font-size:.875rem; font-weight:700; text-align:center; text-decoration:none; }
+      .auth-tabs a:hover { color:#334155; }
+      .auth-tabs a.is-active { color:#172033; background:#fff; box-shadow:0 .1rem .4rem rgba(15,23,42,.1); }
+      .auth-heading { margin:0 0 .35rem; color:#172033; font-size:1.5rem; font-weight:750; letter-spacing:-.035em; }
+      .auth-subtitle { margin:0 0 1.5rem; color:#64748b; font-size:.92rem; line-height:1.55; }
+      .auth-card .form-label { margin-bottom:.45rem; color:#475569; font-size:.84rem; font-weight:700; }
+      .auth-card .form-control { min-height:2.8rem; }
+      .auth-card .btn-primary { min-height:2.85rem; }
+      .auth-card .form-check-label { color:#64748b; line-height:1.45; }
+      .auth-card .form-check-label a { color:#475569; }
+      @media (max-width: 575.98px) { .auth-page { padding:1.25rem 1rem; } .auth-card-body { padding:1.5rem; } }
       .table > :not(caption) > * > * { padding: .9rem 1rem; }
       .table thead th { color: var(--muted); font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
       .app-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 1040; display: flex; flex-direction: column; width: var(--sidebar-width); padding: 1.25rem; color: #e7edf8; background: var(--sidebar); }
@@ -167,7 +185,7 @@
         </div>
       </aside>
     {% endif %}
-    <main class="{% if user.is_authenticated %}app-content{% else %}container py-5{% endif %}" {% if not user.is_authenticated %}style="max-width: 560px;"{% endif %}><div class="{% if user.is_authenticated %}content-inner{% endif %}">
+    <main class="{% if user.is_authenticated %}app-content{% else %}container py-5{% endif %}" {% block main_attributes %}{% if not user.is_authenticated %}style="max-width: 560px;"{% endif %}{% endblock %}><div class="{% if user.is_authenticated %}content-inner{% endif %}">
       {% if messages %}{% for message in messages %}<div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} {% if user.is_authenticated %}alert-dismissible fade show{% endif %}" role="alert">{{ message }}{% if user.is_authenticated %}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>{% endif %}</div>{% endfor %}{% endif %}
       {% block content %}{% endblock %}
     </div></main>

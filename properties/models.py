@@ -573,6 +573,8 @@ class Lead(models.Model):
     message = models.TextField(blank=True, verbose_name="Комментарий")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Статус обработки")
     interest_type = models.CharField(max_length=20, choices=INTEREST_CHOICES, default="buy", verbose_name="Интерес клиента")
+    personal_data_consent_at = models.DateTimeField(null=True, blank=True, verbose_name="Согласие на обработку данных получено")
+    personal_data_consent_version = models.CharField(max_length=32, blank=True, verbose_name="Версия согласия")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -580,3 +582,15 @@ class Lead(models.Model):
         ordering = ["-created_at"]
         verbose_name = "Заявка"
         verbose_name_plural = "Заявки"
+
+
+class UserLegalAcceptance(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="legal_acceptance")
+    terms_accepted_at = models.DateTimeField(verbose_name="Условия сервиса приняты")
+    terms_version = models.CharField(max_length=32, verbose_name="Версия условий")
+    personal_data_consent_at = models.DateTimeField(verbose_name="Согласие на обработку данных получено")
+    personal_data_consent_version = models.CharField(max_length=32, verbose_name="Версия согласия")
+
+    class Meta:
+        verbose_name = "Принятие юридических документов"
+        verbose_name_plural = "Принятие юридических документов"

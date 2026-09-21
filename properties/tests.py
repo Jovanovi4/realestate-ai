@@ -2,18 +2,22 @@ from io import BytesIO
 from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
+from django.core.cache import cache
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
-from .models import AIContent, Property, PropertyImage, RealtorProfile
+from .models import AIContent, Property, PropertyImage, RealtorProfile, UserLegalAcceptance
 from .services.ai_service import AIServiceError
 from .services.lead_notification_service import LeadNotificationService
 
 
 class AccountAndPropertyAccessTests(TestCase):
+    def setUp(self):
+        cache.clear()
+
     @staticmethod
     def image_upload():
         image = Image.new("RGB", (20, 20), color="white")
@@ -28,10 +32,13 @@ class AccountAndPropertyAccessTests(TestCase):
                 "phone": "+7 (999) 123-45-67",
                 "password1": "Secure-agent-password-123",
                 "password2": "Secure-agent-password-123",
+                "terms_accepted": "on",
+                "personal_data_consent": "on",
             },
         )
         self.assertRedirects(response, reverse("property_list"))
-        self.assertTrue(User.objects.filter(username="+79991234567").exists())
+        user = User.objects.get(username="+79991234567")
+        self.assertTrue(UserLegalAcceptance.objects.filter(user=user).exists())
 
     def test_agent_cannot_open_another_agents_property(self):
         owner = User.objects.create_user("owner", password="password")
@@ -127,11 +134,82 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertEqual(self.client.get(landing_url).status_code, 200)
         response = self.client.post(
             landing_url,
-            {"contact_purpose": "viewing", "name": "Мария", "phone": "+351900000000", "message": "Хочу посмотреть"},
+            {"contact_purpose": "viewing", "name": "Мария", "phone": "+351900000000", "message": "Хочу посмотреть", "personal_data_consent": "on"},
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(property.leads.count(), 1)
         self.assertEqual(property.leads.get().contact_purpose, "viewing")
+        self.assertEqual(property.leads.get().personal_data_consent_version, "2026-09-21")
+
+    def test_honeypot_submission_does_not_create_a_lead(self):
+        owner = User.objects.create_user("agent", password="password")
+        property = Property.objects.create(title="Публичный объект", owner=owner, landing_published=True)
+
+        response = self.client.post(
+            reverse("public_landing", args=[property.landing_slug]),
+            {
+                "contact_purpose": "viewing",
+                "name": "Спам-бот",
+                "phone": "+351900000000",
+                "website": "https://spam.example.com",
+                "personal_data_consent": "on",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["sent"])
+        self.assertEqual(property.leads.count(), 0)
+
+    @override_settings(PUBLIC_LEAD_RATE_LIMIT=10, PUBLIC_LEAD_RATE_LIMIT_PER_PROPERTY=1)
+    def test_public_landing_limits_submissions_for_one_object(self):
+        owner = User.objects.create_user("agent", password="password")
+        property = Property.objects.create(title="Публичный объект", owner=owner, landing_published=True)
+        landing_url = reverse("public_landing", args=[property.landing_slug])
+        payload = {"contact_purpose": "viewing", "name": "Мария", "phone": "+351900000000", "personal_data_consent": "on"}
+
+        self.assertEqual(self.client.post(landing_url, payload).status_code, 200)
+        response = self.client.post(landing_url, payload)
+
+        self.assertEqual(property.leads.count(), 1)
+        self.assertContains(response, "Слишком много попыток")
+
+    @override_settings(
+        TURNSTILE_ENABLED=True,
+        TURNSTILE_SECRET_KEY="test-secret",
+        TURNSTILE_ALLOWED_HOSTNAMES={"testserver"},
+    )
+    @patch("properties.services.public_form_security.requests.post")
+    def test_public_landing_validates_turnstile_before_creating_a_lead(self, post):
+        owner = User.objects.create_user("agent", password="password")
+        property = Property.objects.create(title="Публичный объект", owner=owner, landing_published=True)
+        verification_response = Mock()
+        verification_response.json.return_value = {"success": False}
+        post.return_value = verification_response
+
+        response = self.client.post(
+            reverse("public_landing", args=[property.landing_slug]),
+            {
+                "contact_purpose": "viewing",
+                "name": "Мария",
+                "phone": "+351900000000",
+                "cf-turnstile-response": "invalid-token",
+                "personal_data_consent": "on",
+            },
+        )
+
+        self.assertEqual(property.leads.count(), 0)
+        self.assertContains(response, "Не удалось подтвердить, что вы не робот")
+        self.assertEqual(post.call_args.kwargs["data"]["secret"], "test-secret")
+
+    @override_settings(TURNSTILE_ENABLED=True, TURNSTILE_SITE_KEY="site-key")
+    def test_public_landing_renders_turnstile_when_enabled(self):
+        owner = User.objects.create_user("agent", password="password")
+        property = Property.objects.create(title="Публичный объект", owner=owner, landing_published=True)
+
+        response = self.client.get(reverse("public_landing", args=[property.landing_slug]))
+
+        self.assertContains(response, "challenges.cloudflare.com/turnstile/v0/api.js")
+        self.assertContains(response, 'data-sitekey="site-key"')
 
     @patch("properties.views.LeadNotificationService.notify_new_lead")
     def test_published_landing_schedules_a_realtor_notification(self, notify_new_lead):
@@ -142,7 +220,7 @@ class AccountAndPropertyAccessTests(TestCase):
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
                 reverse("public_landing", args=[property.landing_slug]),
-                {"contact_purpose": "viewing", "name": "Мария", "phone": "+351900000000"},
+                {"contact_purpose": "viewing", "name": "Мария", "phone": "+351900000000", "personal_data_consent": "on"},
             )
 
         self.assertEqual(response.status_code, 200)
@@ -161,6 +239,23 @@ class AccountAndPropertyAccessTests(TestCase):
             response = self.client.get(landing_url)
             self.assertEqual(response.status_code, 200, template)
             self.assertContains(response, "Записаться на просмотр")
+            self.assertContains(response, reverse("privacy_policy"))
+
+    def test_public_landing_requires_personal_data_consent(self):
+        owner = User.objects.create_user("agent", password="password")
+        property = Property.objects.create(title="Публичный объект", owner=owner, landing_published=True)
+
+        response = self.client.post(
+            reverse("public_landing", args=[property.landing_slug]),
+            {"contact_purpose": "viewing", "name": "Мария", "phone": "+351900000000"},
+        )
+
+        self.assertEqual(property.leads.count(), 0)
+        self.assertContains(response, "необходимо согласие на обработку персональных данных")
+
+    def test_legal_documents_are_publicly_available(self):
+        for url_name in ("privacy_policy", "personal_data_consent", "service_terms"):
+            self.assertEqual(self.client.get(reverse(url_name)).status_code, 200, url_name)
 
     def test_landing_visual_settings_render_the_selected_variants(self):
         owner = User.objects.create_user("agent", password="password")

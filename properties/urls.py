@@ -34,10 +34,16 @@ from .views import (
     ClientBulkActionView,
     ClientExportView,
     ClientBoardView,
+    personal_data_consent,
+    privacy_policy,
     register,
+    service_terms,
 )
 
 urlpatterns = [
+    path("legal/privacy-policy/", privacy_policy, name="privacy_policy"),
+    path("legal/personal-data-consent/", personal_data_consent, name="personal_data_consent"),
+    path("legal/terms/", service_terms, name="service_terms"),
     path("register/", register, name="register"),
     path("login/", auth_views.LoginView.as_view(authentication_form=PhoneAuthenticationForm), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),

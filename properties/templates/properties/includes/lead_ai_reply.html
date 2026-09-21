@@ -6,6 +6,6 @@
       <button class="btn btn-outline-primary w-100">Подготовить ответ</button><div id="lead-ai-reply-indicator" class="htmx-indicator text-center text-primary small mt-2"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>ИИ готовит ответ…</div>
     </form>
     {% if error %}<div class="alert alert-danger small mt-3 mb-0">{{ error }}</div>{% endif %}
-    {% if ai_content %}<div class="border-top mt-4 pt-3"><textarea class="form-control small" rows="5" readonly x-ref="reply">{{ ai_content.edited_content|default:ai_content.content }}</textarea><button type="button" class="btn btn-sm btn-outline-secondary mt-2" @click="copyReply()" x-text="copied ? 'Скопировано' : 'Копировать'"></button></div>{% endif %}
+    {% if ai_content %}<div class="border-top mt-4 pt-3"><textarea class="form-control small" rows="5" readonly x-ref="reply">{{ ai_content.edited_content|default:ai_content.content }}</textarea><button type="button" class="btn btn-icon btn-sm btn-outline-secondary mt-2" @click="copyReply()" :title="copied ? 'Скопировано' : 'Скопировать ответ'" :aria-label="copied ? 'Скопировано' : 'Скопировать ответ'"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1"/><path d="M11 5V3.75A1.75 1.75 0 0 0 9.25 2H3.75A1.75 1.75 0 0 0 2 3.75v5.5A1.75 1.75 0 0 0 3.75 11H5"/></svg></button></div>{% endif %}
   </div>
 </div>

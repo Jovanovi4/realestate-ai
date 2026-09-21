@@ -1,14 +1,20 @@
 {% extends "base.html" %}
 {% block title %}Регистрация{% endblock %}
+{% block main_attributes %}style="max-width: none;"{% endblock %}
 {% block content %}
-<div class="row justify-content-center"><div class="col-md-7 col-lg-6"><div class="card shadow-sm"><div class="card-body p-4">
-  <h2 class="mb-2">Создать кабинет риелтора</h2><p class="text-muted mb-4">Управляйте объектами, лендингами и публикациями в одном месте.</p>
-  <form method="post">{% csrf_token %}
-    {% for field in form %}
-      <div class="mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}{% if field.help_text %}<div class="form-text">{{ field.help_text|safe }}</div>{% endif %}</div>
-    {% endfor %}
-    <button class="btn btn-primary w-100">Создать аккаунт</button>
-  </form>
-  <p class="text-center mt-3 mb-0">Уже есть аккаунт? <a href="{% url 'login' %}">Войти</a></p>
-</div></div></div></div>
+<section class="auth-page"><div class="auth-panel">
+  <a class="auth-brand" href="{% url 'login' %}"><span class="auth-brand-mark">RE</span><span>Rieltor AI</span></a>
+  <div class="auth-card"><div class="auth-card-body">
+    <nav class="auth-tabs" aria-label="Авторизация"><a href="{% url 'login' %}">Вход</a><a class="is-active" href="{% url 'register' %}">Регистрация</a></nav>
+    <h1 class="auth-heading">Создайте кабинет</h1><p class="auth-subtitle">Все объекты, лендинги и заявки — в одном рабочем пространстве.</p>
+    <form method="post">{% csrf_token %}
+      <div class="mb-3"><label class="form-label" for="{{ form.phone.id_for_label }}">{{ form.phone.label }}</label>{{ form.phone }}{% if form.phone.errors %}<div class="text-danger small mt-1">{{ form.phone.errors|striptags }}</div>{% endif %}</div>
+      <div class="mb-3"><label class="form-label" for="{{ form.password1.id_for_label }}">{{ form.password1.label }}</label>{{ form.password1 }}{% if form.password1.errors %}<div class="text-danger small mt-1">{{ form.password1.errors|striptags }}</div>{% endif %}</div>
+      <div class="mb-4"><label class="form-label" for="{{ form.password2.id_for_label }}">{{ form.password2.label }}</label>{{ form.password2 }}{% if form.password2.errors %}<div class="text-danger small mt-1">{{ form.password2.errors|striptags }}</div>{% endif %}</div>
+      <div class="form-check mb-3">{{ form.terms_accepted }}<label class="form-check-label small" for="{{ form.terms_accepted.id_for_label }}">Принимаю <a href="{% url 'service_terms' %}" target="_blank" rel="noopener">условия сервиса</a>.</label>{% if form.terms_accepted.errors %}<div class="text-danger small mt-1">{{ form.terms_accepted.errors|striptags }}</div>{% endif %}</div>
+      <div class="form-check mb-4">{{ form.personal_data_consent }}<label class="form-check-label small" for="{{ form.personal_data_consent.id_for_label }}">Даю <a href="{% url 'personal_data_consent' %}" target="_blank" rel="noopener">согласие на обработку персональных данных</a> и подтверждаю, что ознакомился(-ась) с <a href="{% url 'privacy_policy' %}" target="_blank" rel="noopener">политикой</a>.</label>{% if form.personal_data_consent.errors %}<div class="text-danger small mt-1">{{ form.personal_data_consent.errors|striptags }}</div>{% endif %}</div>
+      <button class="btn btn-primary w-100">Создать кабинет</button>
+    </form>
+  </div></div>
+</div></section>
 {% endblock %}

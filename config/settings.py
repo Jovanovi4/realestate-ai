@@ -172,6 +172,14 @@ MEDIA_URL = os.getenv("DJANGO_MEDIA_URL", "/media/")
 MEDIA_ROOT = Path(os.getenv("DJANGO_MEDIA_ROOT", BASE_DIR / "media"))
 SERVE_MEDIA = env_flag("DJANGO_SERVE_MEDIA", DEBUG)
 
+# Shared cache is recommended in production when several web processes run.
+CACHES = {
+    "default": {
+        "BACKEND": os.getenv("CACHE_BACKEND", "django.core.cache.backends.locmem.LocMemCache"),
+        "LOCATION": os.getenv("CACHE_LOCATION", "realestate-ai"),
+    }
+}
+
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "property_list"
 LOGOUT_REDIRECT_URL = "login"
@@ -189,6 +197,33 @@ DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "")
 
 TELEGRAM_NOTIFICATIONS_ENABLED = env_flag("TELEGRAM_NOTIFICATIONS_ENABLED", False)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+
+# Public landing lead form protections.
+PUBLIC_LEAD_RATE_LIMIT = int(os.getenv("PUBLIC_LEAD_RATE_LIMIT", "8"))
+PUBLIC_LEAD_RATE_LIMIT_PER_PROPERTY = int(os.getenv("PUBLIC_LEAD_RATE_LIMIT_PER_PROPERTY", "3"))
+PUBLIC_LEAD_RATE_WINDOW_SECONDS = int(os.getenv("PUBLIC_LEAD_RATE_WINDOW_SECONDS", "900"))
+PUBLIC_FORMS_TRUST_X_FORWARDED_FOR = env_flag("PUBLIC_FORMS_TRUST_X_FORWARDED_FOR", False)
+
+TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY", "")
+TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "")
+TURNSTILE_ENABLED = env_flag("TURNSTILE_ENABLED", bool(TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY))
+TURNSTILE_ALLOWED_HOSTNAMES = {
+    hostname.strip().lower()
+    for hostname in os.getenv("TURNSTILE_ALLOWED_HOSTNAMES", "").split(",")
+    if hostname.strip()
+}
+
+# Legal documents. Fill these values with the actual operator details before
+# publishing the service. The default values intentionally stay visible.
+LEGAL_OPERATOR_NAME = os.getenv("LEGAL_OPERATOR_NAME", "[Укажите полное наименование оператора]")
+LEGAL_OPERATOR_INN = os.getenv("LEGAL_OPERATOR_INN", "[Укажите ИНН]")
+LEGAL_OPERATOR_OGRN = os.getenv("LEGAL_OPERATOR_OGRN", "[Укажите ОГРНИП/ОГРН при наличии]")
+LEGAL_OPERATOR_ADDRESS = os.getenv("LEGAL_OPERATOR_ADDRESS", "[Укажите почтовый адрес]")
+LEGAL_PRIVACY_EMAIL = os.getenv("LEGAL_PRIVACY_EMAIL", "[Укажите email для обращений]")
+LEGAL_DATA_STORAGE_LOCATION = os.getenv("LEGAL_DATA_STORAGE_LOCATION", "[Укажите место хранения данных]")
+PERSONAL_DATA_POLICY_VERSION = os.getenv("PERSONAL_DATA_POLICY_VERSION", "2026-09-21")
+PERSONAL_DATA_CONSENT_VERSION = os.getenv("PERSONAL_DATA_CONSENT_VERSION", "2026-09-21")
+SERVICE_TERMS_VERSION = os.getenv("SERVICE_TERMS_VERSION", "2026-09-21")
 
 # AI provider settings. Values are read from the process environment so secrets
 # never need to be committed to the repository.
