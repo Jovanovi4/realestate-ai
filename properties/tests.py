@@ -1,14 +1,16 @@
 from io import BytesIO
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
+from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
-from .models import AIContent, Property, PropertyImage
+from .models import AIContent, Property, PropertyImage, RealtorProfile
 from .services.ai_service import AIServiceError
+from .services.lead_notification_service import LeadNotificationService
 
 
 class AccountAndPropertyAccessTests(TestCase):
@@ -130,6 +132,23 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(property.leads.count(), 1)
         self.assertEqual(property.leads.get().contact_purpose, "viewing")
+
+    @patch("properties.views.LeadNotificationService.notify_new_lead")
+    def test_published_landing_schedules_a_realtor_notification(self, notify_new_lead):
+        owner = User.objects.create_user("agent", password="password")
+        RealtorProfile.objects.create(user=owner, email="agent@example.com")
+        property = Property.objects.create(title="Публичный объект", owner=owner, landing_published=True)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("public_landing", args=[property.landing_slug]),
+                {"contact_purpose": "viewing", "name": "Мария", "phone": "+351900000000"},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        notify_new_lead.assert_called_once()
+        self.assertEqual(notify_new_lead.call_args.args[0].name, "Мария")
+        self.assertEqual(notify_new_lead.call_args.args[1].email, "agent@example.com")
 
     def test_all_landing_templates_render(self):
         owner = User.objects.create_user("agent", password="password")
@@ -393,3 +412,47 @@ class AccountAndPropertyAccessTests(TestCase):
             self.client.post(reverse("ai_bundle_generate", args=[property.pk]), {"tone": "business"}).status_code,
             404,
         )
+
+
+class LeadNotificationServiceTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user("agent", password="password")
+        self.profile = RealtorProfile.objects.create(
+            user=self.owner,
+            email="agent@example.com",
+            telegram_chat_id="123456",
+        )
+        self.property = Property.objects.create(title="Квартира у парка", owner=self.owner)
+        self.lead = self.property.leads.create(
+            name="Мария",
+            phone="+351900000000",
+            contact_purpose="viewing",
+            message="Хочу посмотреть объект.",
+        )
+
+    @override_settings(
+        EMAIL_NOTIFICATIONS_ENABLED=True,
+        EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
+        DEFAULT_FROM_EMAIL="notifications@example.com",
+    )
+    def test_sends_new_lead_email_to_realtor_profile(self):
+        LeadNotificationService.notify_new_lead(self.lead, self.profile, "https://app.example.com/leads/1/")
+
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["agent@example.com"])
+        self.assertIn("Квартира у парка", mail.outbox[0].body)
+        self.assertIn("https://app.example.com/leads/1/", mail.outbox[0].body)
+
+    @override_settings(TELEGRAM_NOTIFICATIONS_ENABLED=True, TELEGRAM_BOT_TOKEN="test-token")
+    @patch("properties.services.lead_notification_service.requests.post")
+    def test_sends_new_lead_to_realtor_telegram_chat(self, post):
+        response = Mock()
+        response.json.return_value = {"ok": True}
+        post.return_value = response
+
+        LeadNotificationService.notify_new_lead(self.lead, self.profile, "https://app.example.com/leads/1/")
+
+        post.assert_called_once()
+        self.assertEqual(post.call_args.args[0], "https://api.telegram.org/bottest-token/sendMessage")
+        self.assertEqual(post.call_args.kwargs["data"]["chat_id"], "123456")
+        self.assertIn("Мария", post.call_args.kwargs["data"]["text"])

@@ -29,6 +29,7 @@ from .forms import (
 from .models import AIContent, Client, ClientInteraction, ClientReminder, Lead, Property, PropertyImage, RealtorProfile
 from .services.avito_service import AvitoExportService
 from .services.cian_service import CianExportService
+from .services.lead_notification_service import LeadNotificationService
 from .services.presentation_service import PresentationError, PresentationService
 from .services.presentation_docx_service import PresentationDocxService
 
@@ -840,6 +841,12 @@ class PublicLandingView(View):
                 lead=lead,
                 interaction_type="note",
                 text=f"Новая заявка с лендинга «{property.title}» · {lead.get_contact_purpose_display()} · {lead.get_interest_type_display()}.",
+            )
+            lead_url = request.build_absolute_uri(reverse("lead_detail", kwargs={"pk": lead.pk}))
+            transaction.on_commit(
+                lambda lead=lead, profile=profile, lead_url=lead_url: LeadNotificationService.notify_new_lead(
+                    lead, profile, lead_url
+                )
             )
             return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(property=property), sent=True))
         return render(request, self.get_template_name(property), self.get_context(property, profile, form))

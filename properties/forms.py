@@ -183,7 +183,7 @@ class PropertyForm(forms.ModelForm):
 class RealtorProfileForm(forms.ModelForm):
     class Meta:
         model = RealtorProfile
-        fields = ("display_name", "photo", "phone", "telegram_username", "email")
+        fields = ("display_name", "photo", "phone", "telegram_username", "email", "telegram_chat_id")
         widgets = {
             "photo": forms.FileInput(attrs={"accept": "image/*"}),
         }

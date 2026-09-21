@@ -451,6 +451,12 @@ class RealtorProfile(models.Model):
     phone = models.CharField(max_length=30, blank=True, verbose_name="Телефон")
     telegram_username = models.CharField(max_length=100, blank=True, verbose_name="Telegram без @")
     email = models.EmailField(blank=True, verbose_name="Email")
+    telegram_chat_id = models.CharField(
+        max_length=64,
+        blank=True,
+        verbose_name="Telegram chat ID для уведомлений",
+        help_text="Приватный ID чата с ботом. Он не показывается посетителям лендингов.",
+    )
     benefits = models.JSONField(default=default_realtor_benefits, verbose_name="Преимущества риелтора")
     about = models.TextField(
         blank=True,
