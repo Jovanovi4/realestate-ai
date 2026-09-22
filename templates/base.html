@@ -94,13 +94,13 @@
     {% include "includes/ui_icon_sprite.html" %}
     {% if user.is_authenticated %}
       <header class="mobile-header">
-        <a class="app-brand mb-0" href="{% url 'property_list' %}" style="color:var(--ink)"><span class="app-brand-mark">RE</span>Rieltor AI</a>
+        <a class="app-brand mb-0" href="{% url 'property_list' %}" style="color:var(--ink)"><span class="app-brand-mark">RE</span>RealtorAI</a>
         <button class="btn btn-icon btn-outline-primary" type="button" @click="sidebarOpen = true" aria-label="Открыть меню"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-menu"></use></svg></button>
       </header>
       <div class="mobile-backdrop" x-cloak x-show="sidebarOpen" @click="sidebarOpen = false"></div>
       <aside class="app-sidebar" :class="{ 'is-open': sidebarOpen }">
         <div class="d-flex justify-content-between align-items-center d-lg-none mb-3"><span class="text-white-50 small">Меню</span><button class="btn btn-icon btn-sm btn-outline-light" type="button" @click="sidebarOpen = false" aria-label="Закрыть меню"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></button></div>
-        <a class="app-brand" href="{% url 'property_list' %}"><span class="app-brand-mark">RE</span>Rieltor AI</a>
+        <a class="app-brand" href="{% url 'property_list' %}"><span class="app-brand-mark">RE</span>RealtorAI</a>
         <p class="sidebar-label">Рабочее пространство</p>
         <nav>
           <a class="sidebar-link {% if request.resolver_match.url_name == 'property_list' %}active{% endif %}" href="{% url 'property_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-home"></use></svg></span>Объекты</a>

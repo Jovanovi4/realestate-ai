@@ -693,6 +693,7 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertRedirects(response, reverse("property_detail", args=[property.pk]))
         self.assertEqual(property.images.count(), 1)
         self.assertTrue(property.images.get().image.name.endswith(".jpg"))
+        self.assertTrue(property.images.get().is_primary)
 
     def test_property_readiness_lists_all_seven_requirements(self):
         owner = User.objects.create_user("owner", password="password")
@@ -703,8 +704,28 @@ class AccountAndPropertyAccessTests(TestCase):
 
         self.assertEqual(response.context["readiness_total"], 7)
         self.assertEqual(response.context["readiness_completed"], 0)
-        self.assertContains(response, "Назначьте главную фотографию")
+        photo_tasks = [task for task in response.context["readiness_tasks"] if "фото" in task["text"]]
+        self.assertEqual(photo_tasks, [
+            {"text": "Добавьте главное фото", "url": reverse("upload_images", args=[property.pk])},
+            {"text": "Добавьте ещё 3 фото", "url": reverse("upload_images", args=[property.pk])},
+        ])
         self.assertContains(response, "Укажите контакты риелтора")
+
+    def test_property_readiness_opens_photo_tab_when_primary_is_missing(self):
+        owner = User.objects.create_user("photo-owner", password="password")
+        property = Property.objects.create(title="Квартира", owner=owner)
+        PropertyImage.objects.create(property=property, image=self.image_upload(), is_primary=False)
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("property_detail", args=[property.pk]))
+        photo_tasks = [task for task in response.context["readiness_tasks"] if "фото" in task["text"]]
+
+        self.assertEqual(photo_tasks[0], {
+            "text": "Назначьте главную фотографию",
+            "url": f"{reverse('property_detail', args=[property.pk])}#photos-pane",
+        })
+        self.assertEqual(photo_tasks[1]["url"], reverse("upload_images", args=[property.pk]))
+        self.assertContains(response, "window.addEventListener('hashchange', showTabFromHash)")
 
     def test_property_detail_renders_preview_presentation_and_danger_action(self):
         owner = User.objects.create_user("detail-owner", password="password")

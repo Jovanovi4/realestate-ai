@@ -98,10 +98,13 @@
   window.addEventListener('DOMContentLoaded', () => {
     const tabs = document.getElementById('property-workspace-tabs');
     const validTargets = new Set(['#overview-pane', '#data-pane', '#photos-pane', '#texts-pane', '#landing-pane', '#publication-pane']);
-    if (validTargets.has(window.location.hash)) {
+    const showTabFromHash = () => {
+      if (!validTargets.has(window.location.hash)) return;
       const selected = tabs?.querySelector(`[data-bs-target="${window.location.hash}"]`);
       if (selected) bootstrap.Tab.getOrCreateInstance(selected).show();
-    }
+    };
+    showTabFromHash();
+    window.addEventListener('hashchange', showTabFromHash);
     tabs?.addEventListener('shown.bs.tab', (event) => {
       const target = event.target.dataset.bsTarget;
       if (target) history.replaceState(null, '', target);

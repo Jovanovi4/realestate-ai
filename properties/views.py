@@ -291,15 +291,19 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
         has_contacts = bool(profile and (profile.phone or profile.email or profile.telegram_username))
         detail_url = reverse("property_detail", kwargs={"pk": self.object.pk})
         edit_url = reverse("edit_property", kwargs={"pk": self.object.pk})
+        upload_url = reverse("upload_images", kwargs={"pk": self.object.pk})
         tasks = []
         if not self.object.price:
             tasks.append({"text": "Укажите цену объекта", "url": edit_url})
         if not self.object.address:
             tasks.append({"text": "Добавьте адрес объекта", "url": edit_url})
         if not has_primary_image:
-            tasks.append({"text": "Назначьте главную фотографию", "url": f"{detail_url}#photos-pane"})
+            tasks.append({
+                "text": "Добавьте главное фото" if image_count == 0 else "Назначьте главную фотографию",
+                "url": upload_url if image_count == 0 else f"{detail_url}#photos-pane",
+            })
         if image_count < 3:
-            tasks.append({"text": f"Добавьте ещё {3 - image_count} фото", "url": f"{detail_url}#photos-pane"})
+            tasks.append({"text": f"Добавьте ещё {3 - image_count} фото", "url": upload_url})
         if not (self.object.short_description or self.object.description):
             tasks.append({"text": "Добавьте описание объекта", "url": f"{edit_url}#texts-pane"})
         if not self.object.landing_published:
