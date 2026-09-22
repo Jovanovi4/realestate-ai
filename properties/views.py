@@ -30,6 +30,7 @@ from .forms import (
 from .models import AIContent, Client, ClientInteraction, ClientReminder, Lead, Property, PropertyImage, RealtorProfile, UserLegalAcceptance
 from .services.avito_service import AvitoExportService
 from .services.cian_service import CianExportService
+from .services.demo_data_service import DemoDataService
 from .services.lead_notification_service import LeadNotificationService
 from .services.public_form_security import PublicLeadFormSecurity
 from .services.presentation_service import PresentationError, PresentationService
@@ -114,6 +115,44 @@ class PropertyListView(LoginRequiredMixin, ListView):
         params = self.request.GET.copy()
         params.pop("page", None)
         context["pagination_query"] = params.urlencode()
+        profile = RealtorProfile.objects.filter(user=self.request.user).first()
+        user_properties = Property.objects.filter(owner=self.request.user)
+        onboarding_items = [
+            {
+                "label": "Укажите контакты для заявок",
+                "done": bool(profile and (profile.phone or profile.email or profile.telegram_username)),
+                "url": reverse("edit_profile"),
+            },
+            {
+                "label": "Создайте или откройте объект",
+                "done": user_properties.exists(),
+                "url": reverse("create_property"),
+            },
+            {
+                "label": "Добавьте фотографию объекта",
+                "done": PropertyImage.objects.filter(property__owner=self.request.user).exists(),
+                "url": reverse("property_list"),
+            },
+            {
+                "label": "Заполните описание",
+                "done": user_properties.exclude(description="").exists(),
+                "url": reverse("property_list"),
+            },
+            {
+                "label": "Опубликуйте лендинг",
+                "done": user_properties.filter(landing_published=True).exists(),
+                "url": reverse("landing_list"),
+            },
+        ]
+        has_properties = user_properties.exists()
+        context["show_welcome"] = not has_properties and not (profile and profile.onboarding_started)
+        context["onboarding"] = {
+            "visible": not profile or not profile.onboarding_dismissed,
+            "items": onboarding_items,
+            "completed": sum(item["done"] for item in onboarding_items),
+            "total": len(onboarding_items),
+            "can_create_demo": not has_properties and not (profile and profile.demo_data_created),
+        }
         return context
 
 
@@ -123,9 +162,48 @@ class PropertyCreateView(LoginRequiredMixin, CreateView):
     template_name = "properties/create_property.html"
     success_url = reverse_lazy("property_list")
 
+    def get(self, request, *args, **kwargs):
+        """Start a saved draft so AI tools have a property to work with."""
+        draft = Property.objects.create(
+            owner=request.user,
+            title="Новый объект",
+            status="draft",
+        )
+        return redirect("edit_property", pk=draft.pk)
+
     def form_valid(self, form):
         form.instance.owner = self.request.user
         return super().form_valid(form)
+
+    def get_success_url(self):
+        return reverse("edit_property", kwargs={"pk": self.object.pk})
+
+
+class DemoDataCreateView(LoginRequiredMixin, View):
+    def post(self, request):
+        property = DemoDataService.create_for_user(request.user)
+        if property:
+            messages.success(request, "Демо-кабинет готов: объект, лендинг, заявки и клиент уже созданы.")
+        else:
+            messages.info(request, "Демо-данные уже были созданы для этого кабинета.")
+        return redirect("property_list")
+
+
+class OnboardingStartManualView(LoginRequiredMixin, View):
+    def post(self, request):
+        profile, _ = RealtorProfile.objects.get_or_create(user=request.user)
+        profile.onboarding_started = True
+        profile.save(update_fields=["onboarding_started"])
+        return redirect("create_property")
+
+
+class OnboardingDismissView(LoginRequiredMixin, View):
+    def post(self, request):
+        profile, _ = RealtorProfile.objects.get_or_create(user=request.user)
+        profile.onboarding_dismissed = True
+        profile.onboarding_started = True
+        profile.save(update_fields=["onboarding_dismissed", "onboarding_started"])
+        return redirect("property_list")
 
 
 class PropertyUpdateView(LoginRequiredMixin, UpdateView):
@@ -139,6 +217,12 @@ class PropertyUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_success_url(self):
         return reverse_lazy("property_detail", kwargs={"pk": self.object.pk})
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["show_text_hint"] = not bool(self.object.description or self.object.short_description)
+        context["show_landing_hint"] = not self.object.landing_published
+        return context
 
 
 class PropertyDetailView(LoginRequiredMixin, DetailView):
@@ -176,6 +260,7 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
         context["readiness_total"] = 7
         context["readiness_completed"] = context["readiness_total"] - len(tasks)
         context["image_count"] = image_count
+        context["property_setup_hint"] = not (self.object.price and self.object.address and has_primary_image)
         return context
 
 
@@ -644,6 +729,10 @@ class LeadListView(LoginRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         context["status_choices"] = Lead.STATUS_CHOICES
         context["selected_status"] = self.request.GET.get("status", "")
+        context["demo_test_completed"] = (
+            self.request.GET.get("demo_test") == "1"
+            and Lead.objects.filter(property__owner=self.request.user, is_demo=True).exists()
+        )
         return context
 
 
@@ -839,6 +928,7 @@ class PublicLandingView(View):
             "landing_enabled": {key: bool(enabled.get(key, True)) for key in valid_keys},
             "turnstile_enabled": settings.TURNSTILE_ENABLED,
             "turnstile_site_key": settings.TURNSTILE_SITE_KEY,
+            "demo_landing": property.is_demo,
             **extra,
         }
 
@@ -873,6 +963,7 @@ class PublicLandingView(View):
             lead.interest_type = "long_rent" if property.deal_type == "rent" else "buy"
             lead.personal_data_consent_at = timezone.now()
             lead.personal_data_consent_version = settings.PERSONAL_DATA_CONSENT_VERSION
+            lead.is_demo = property.is_demo
             client, created = Client.objects.get_or_create(
                 owner=property.owner,
                 phone=form.cleaned_data["phone"],
@@ -890,12 +981,23 @@ class PublicLandingView(View):
                 text=f"Новая заявка с лендинга «{property.title}» · {lead.get_contact_purpose_display()} · {lead.get_interest_type_display()}.",
             )
             lead_url = request.build_absolute_uri(reverse("lead_detail", kwargs={"pk": lead.pk}))
-            transaction.on_commit(
-                lambda lead=lead, profile=profile, lead_url=lead_url: LeadNotificationService.notify_new_lead(
-                    lead, profile, lead_url
+            if not property.is_demo:
+                transaction.on_commit(
+                    lambda lead=lead, profile=profile, lead_url=lead_url: LeadNotificationService.notify_new_lead(
+                        lead, profile, lead_url
+                    )
                 )
+            return render(
+                request,
+                self.get_template_name(property),
+                self.get_context(
+                    property,
+                    profile,
+                    LeadForm(property=property),
+                    sent=True,
+                    demo_test_completed=property.is_demo and request.user == property.owner,
+                ),
             )
-            return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(property=property), sent=True))
         return render(request, self.get_template_name(property), self.get_context(property, profile, form))
 
 

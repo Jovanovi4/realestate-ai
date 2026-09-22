@@ -9,7 +9,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from PIL import Image
 
-from .models import AIContent, Property, PropertyImage, RealtorProfile, UserLegalAcceptance
+from .models import AIContent, Client, Property, PropertyImage, RealtorProfile, UserLegalAcceptance
 from .services.ai_service import AIServiceError
 from .services.lead_notification_service import LeadNotificationService
 
@@ -47,6 +47,118 @@ class AccountAndPropertyAccessTests(TestCase):
         self.client.force_login(visitor)
         response = self.client.get(reverse("property_detail", args=[property.pk]))
         self.assertEqual(response.status_code, 404)
+
+    def test_incomplete_property_shows_one_setup_hint(self):
+        owner = User.objects.create_user("agent", password="password")
+        property = Property.objects.create(title="Черновик", owner=owner)
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("property_detail", args=[property.pk]))
+
+        self.assertContains(response, "Начните с цены, адреса и главной фотографии")
+
+    def test_empty_text_and_landing_sections_show_contextual_hints(self):
+        owner = User.objects.create_user("agent", password="password")
+        property = Property.objects.create(title="Черновик", owner=owner)
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("edit_property", args=[property.pk]))
+
+        self.assertContains(response, "Можно написать текст вручную или получить черновик от ИИ")
+        self.assertContains(response, "Предпросмотр покажет лендинг так, как его увидит клиент")
+
+    def test_owner_can_upload_a_logo_for_the_public_landing(self):
+        owner = User.objects.create_user("agent", password="password")
+        property = Property.objects.create(title="Черновик", owner=owner, landing_published=True)
+        self.client.force_login(owner)
+
+        response = self.client.post(
+            reverse("edit_property", args=[property.pk]),
+            {
+                "title": property.title,
+                "property_type": property.property_type,
+                "deal_type": property.deal_type,
+                "status": property.status,
+                "avito_operation": property.avito_operation,
+                "currency": property.currency,
+                "landing_template": property.landing_template,
+                "landing_published": "on",
+                "landing_logo": self.image_upload(),
+            },
+        )
+
+        self.assertRedirects(response, reverse("property_detail", args=[property.pk]))
+        property.refresh_from_db()
+        self.assertTrue(property.landing_logo)
+        response = self.client.get(reverse("public_landing", args=[property.landing_slug]))
+        self.assertContains(response, property.landing_logo.url)
+
+    def test_public_landing_has_no_brand_when_a_logo_is_not_uploaded(self):
+        owner = User.objects.create_user("agent", password="password")
+        property = Property.objects.create(title="Черновик", owner=owner, landing_published=True)
+
+        response = self.client.get(reverse("public_landing", args=[property.landing_slug]))
+
+        self.assertNotContains(response, '<img class="landing-brand-logo"', html=False)
+        self.assertNotContains(response, "REAL ESTATE")
+
+    def test_new_user_sees_the_welcome_screen(self):
+        user = User.objects.create_user("new-agent", password="password")
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("property_list"))
+
+        self.assertContains(response, "Объект, лендинг и заявки — в одном месте")
+        self.assertContains(response, "Начать с демо")
+        self.assertContains(response, "Создать свой объект")
+
+    def test_new_user_can_start_with_a_manual_property(self):
+        user = User.objects.create_user("new-agent", password="password")
+        self.client.force_login(user)
+
+        response = self.client.post(reverse("onboarding_start_manual"))
+
+        self.assertRedirects(response, reverse("create_property"), fetch_redirect_response=False)
+        self.assertTrue(RealtorProfile.objects.get(user=user).onboarding_started)
+
+    def test_starting_a_property_opens_a_saved_draft_with_ai_tools(self):
+        user = User.objects.create_user("new-agent", password="password")
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("create_property"))
+
+        draft = Property.objects.get(owner=user)
+        self.assertEqual(draft.title, "Новый объект")
+        self.assertEqual(draft.status, "draft")
+        self.assertRedirects(response, reverse("edit_property", args=[draft.pk]))
+
+        response = self.client.get(reverse("edit_property", args=[draft.pk]))
+        self.assertContains(response, "data-ai-bundle-trigger")
+        self.assertContains(response, 'id="ai-inline-config"')
+
+    def test_new_user_can_create_personal_demo_data(self):
+        user = User.objects.create_user("new-agent", password="password")
+        self.client.force_login(user)
+
+        response = self.client.post(reverse("onboarding_demo_create"))
+
+        self.assertRedirects(response, reverse("property_list"))
+        demo_property = Property.objects.get(owner=user, is_demo=True)
+        self.assertTrue(demo_property.landing_published)
+        self.assertEqual(demo_property.images.count(), 3)
+        self.assertIn("demo-demo-living-room", demo_property.images.get(is_primary=True).image.name)
+        self.assertEqual(demo_property.leads.filter(is_demo=True).count(), 2)
+        self.assertEqual(Client.objects.filter(owner=user, is_demo=True).count(), 2)
+        self.assertTrue(RealtorProfile.objects.get(user=user).demo_data_created)
+
+    def test_user_can_hide_the_first_steps_checklist(self):
+        user = User.objects.create_user("new-agent", password="password")
+        self.client.force_login(user)
+
+        self.assertRedirects(self.client.post(reverse("onboarding_dismiss")), reverse("property_list"))
+        response = self.client.get(reverse("property_list"))
+
+        self.assertNotContains(response, "Первые 10 минут")
 
     def test_owner_can_edit_all_property_card_fields(self):
         owner = User.objects.create_user("owner", password="password")
@@ -140,6 +252,29 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertEqual(property.leads.count(), 1)
         self.assertEqual(property.leads.get().contact_purpose, "viewing")
         self.assertEqual(property.leads.get().personal_data_consent_version, "2026-09-21")
+
+    @patch("properties.views.LeadNotificationService.notify_new_lead")
+    def test_demo_landing_creates_a_demo_lead_without_notifications(self, notify_new_lead):
+        owner = User.objects.create_user("agent", password="password")
+        property = Property.objects.create(
+            title="Демо-объект", owner=owner, landing_published=True, is_demo=True
+        )
+        self.client.force_login(owner)
+
+        response = self.client.post(
+            reverse("public_landing", args=[property.landing_slug]),
+            {
+                "contact_purpose": "viewing",
+                "name": "Тестовый клиент",
+                "phone": "+70000000003",
+                "personal_data_consent": "on",
+            },
+        )
+
+        lead = property.leads.get()
+        self.assertTrue(lead.is_demo)
+        notify_new_lead.assert_not_called()
+        self.assertContains(response, "Вы прошли путь от лендинга до обращения клиента")
 
     def test_honeypot_submission_does_not_create_a_lead(self):
         owner = User.objects.create_user("agent", password="password")

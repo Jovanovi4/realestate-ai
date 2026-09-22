@@ -43,6 +43,33 @@
       .auth-card .btn-primary { min-height:2.85rem; }
       .auth-card .form-check-label { color:#64748b; line-height:1.45; }
       .auth-card .form-check-label a { color:#475569; }
+      .onboarding-card { border:1px solid #dbe3ee !important; background:linear-gradient(135deg,#fff 0%,#f8fafc 100%); }
+      .onboarding-progress { height:.35rem; overflow:hidden; border-radius:999px; background:#e2e8f0; }
+      .onboarding-progress span { display:block; height:100%; border-radius:inherit; background:#475569; transition:width .2s ease; }
+      .onboarding-step { display:flex; align-items:center; gap:.55rem; min-height:3.4rem; padding:.65rem .75rem; border:1px solid #e2e8f0; border-radius:.65rem; color:#475569; background:#fff; font-size:.8rem; font-weight:650; line-height:1.25; text-decoration:none; }
+      .onboarding-step:hover { border-color:#cbd5e1; color:#172033; background:#f8fafc; }
+      .onboarding-step-mark { display:grid; flex:0 0 1.4rem; width:1.4rem; height:1.4rem; place-items:center; border-radius:50%; color:#64748b; background:#eef2f7; font-size:.68rem; font-weight:800; }
+      .onboarding-step.is-done { color:#526b5b; border-color:#d6e6d9; background:#fbfefb; }
+      .onboarding-step.is-done .onboarding-step-mark { color:#29723d; background:#dff1e3; }
+      .welcome-screen { display:grid; min-height:calc(100vh - 5rem); place-items:center; }
+      .welcome-panel { width:min(100%, 760px); padding:2rem 0; }
+      .welcome-mark { display:grid; width:3rem; height:3rem; place-items:center; margin:0 auto; border-radius:.85rem; color:#fff; background:#334155; font-size:.85rem; font-weight:800; letter-spacing:.08em; }
+      .welcome-panel .lead { max-width:620px; font-size:1.05rem; line-height:1.6; }
+      .welcome-choice-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1rem; margin-top:1.75rem; text-align:left; }
+      .welcome-choice { position:relative; display:grid; width:100%; min-height:220px; padding:1.35rem; border:1px solid #dbe3ee; border-radius:1rem; color:#334155; background:#fff; text-align:left; transition:border-color .15s ease, box-shadow .15s ease, transform .15s ease; }
+      .welcome-choice:hover { border-color:#94a3b8; box-shadow:0 .8rem 1.8rem rgba(15,23,42,.08); transform:translateY(-2px); }
+      .welcome-choice.is-recommended { border-color:#aab8ca; background:linear-gradient(145deg,#fff,#f5f8fc); box-shadow:0 .45rem 1.2rem rgba(15,23,42,.06); }
+      .welcome-choice-badge { position:absolute; top:1rem; right:1rem; padding:.24rem .48rem; border-radius:999px; color:#fff; background:#475569; font-size:.66rem; font-weight:800; }
+      .welcome-choice-icon { display:grid; width:2.25rem; height:2.25rem; place-items:center; margin-bottom:1.1rem; border-radius:.65rem; color:#475569; background:#e8edf3; font-size:1.15rem; font-weight:700; }
+      .welcome-choice strong { margin-bottom:.45rem; color:#172033; font-size:1rem; }
+      .welcome-choice small { color:#64748b; font-size:.82rem; line-height:1.45; }
+      .welcome-choice-action { align-self:end; margin-top:1.25rem; color:#475569; font-size:.82rem; font-weight:750; }
+      .contextual-hint { display:flex; align-items:flex-start; gap:.7rem; padding:.8rem .9rem; border:1px solid #dbe3ee; border-radius:.7rem; color:#52606f; background:#f8fafc; font-size:.86rem; line-height:1.45; }
+      .contextual-hint-mark { display:grid; flex:0 0 1.45rem; width:1.45rem; height:1.45rem; place-items:center; border-radius:50%; color:#475569; background:#e2e8f0; font-size:.76rem; font-weight:800; }
+      .demo-path-card { border-color:#d9e5dc !important; background:linear-gradient(135deg,#fff,#fbfefb); }
+      .demo-path-step { display:flex; align-items:flex-start; gap:.6rem; color:#52606f; font-size:.84rem; line-height:1.4; }
+      .demo-path-step span { display:grid; flex:0 0 1.4rem; width:1.4rem; height:1.4rem; place-items:center; border-radius:50%; color:#29723d; background:#dff1e3; font-size:.68rem; font-weight:800; }
+      @media (max-width: 575.98px) { .welcome-choice-row { grid-template-columns:1fr; } .welcome-screen { min-height:auto; } }
       @media (max-width: 575.98px) { .auth-page { padding:1.25rem 1rem; } .auth-card-body { padding:1.5rem; } }
       .table > :not(caption) > * > * { padding: .9rem 1rem; }
       .table thead th { color: var(--muted); font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
@@ -92,6 +119,14 @@
       .ai-improvement.is-active { border-color:#334155; color:#fff; background:#334155; }
       .history-delete { display:inline-grid; width:2rem; height:2rem; place-items:center; border:1px solid #f1c7c3; border-radius:.5rem; color:#b42318; background:#fff; }
       .history-delete:hover { border-color:#e7a7a1; color:#8f1d16; background:#fff7f6; }
+      .confirm-modal-icon { display:grid; flex:0 0 2.35rem; width:2.35rem; height:2.35rem; place-items:center; border-radius:.7rem; color:#a63a32; background:#fff0ef; font-size:1.1rem; font-weight:800; }
+      .landing-logo-settings { padding:1rem 1.1rem; border:1px solid #e2e8f0; border-radius:.8rem; background:#fff; }
+      .landing-logo-upload { position:relative; display:grid; flex:0 0 112px; width:112px; height:56px; padding:0; place-items:center; overflow:hidden; border:1px solid #dbe3ee; border-radius:.6rem; background:#f8fafc; cursor:pointer; }
+      .landing-logo-upload img { width:100%; height:100%; padding:.35rem; object-fit:contain; }
+      .landing-logo-placeholder { color:#64748b; font-size:.72rem; font-weight:800; letter-spacing:.12em; }
+      .landing-logo-upload-overlay { position:absolute; inset:0; display:grid; place-items:center; color:#fff; background:rgba(15,23,42,.65); font-size:.68rem; font-weight:750; line-height:1.15; opacity:0; transition:opacity .15s ease; }
+      .landing-logo-upload:hover .landing-logo-upload-overlay, .landing-logo-upload:focus-visible .landing-logo-upload-overlay { opacity:1; }
+      .landing-logo-upload:focus-visible { outline:3px solid rgba(51,65,85,.35); outline-offset:3px; }
       .workspace-tabs { gap:.4rem; padding:.35rem; border:1px solid #e2e8f0; border-radius:.8rem; background:#fff; }
       .workspace-tabs .nav-link { padding:.48rem .8rem; border:0; border-radius:.55rem; color:#64748b; font-size:.875rem; font-weight:700; white-space:nowrap; }
       .workspace-tabs .nav-link:hover { color:#172033; background:#f1f5f9; }
@@ -189,6 +224,22 @@
       {% if messages %}{% for message in messages %}<div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} {% if user.is_authenticated %}alert-dismissible fade show{% endif %}" role="alert">{{ message }}{% if user.is_authenticated %}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>{% endif %}</div>{% endfor %}{% endif %}
       {% block content %}{% endblock %}
     </div></main>
+    <div class="modal fade" id="action-confirmation-modal" tabindex="-1" aria-labelledby="action-confirmation-title" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-content border-0 shadow">
+          <div class="modal-body p-4">
+            <div class="d-flex align-items-start gap-3">
+              <span class="confirm-modal-icon" aria-hidden="true">!</span>
+              <div><h2 class="h5 mb-2" id="action-confirmation-title">Подтвердите действие</h2><p class="text-muted small mb-0" id="action-confirmation-message"></p></div>
+            </div>
+          </div>
+          <div class="modal-footer border-0 pt-0 px-4 pb-4 gap-2">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+            <button type="button" class="btn btn-danger" id="action-confirmation-submit">Удалить</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
     <script>
       const showAppToast = (message) => {
@@ -203,6 +254,50 @@
         if (!event.detail.successful) return;
         const message = event.detail.elt?.dataset?.successMessage;
         if (message) showAppToast(message);
+      });
+      const confirmationModalElement = document.getElementById('action-confirmation-modal');
+      const confirmationModal = confirmationModalElement ? new bootstrap.Modal(confirmationModalElement) : null;
+      const confirmationTitle = document.getElementById('action-confirmation-title');
+      const confirmationMessage = document.getElementById('action-confirmation-message');
+      const confirmationSubmit = document.getElementById('action-confirmation-submit');
+      let confirmationTarget = null;
+      let confirmationSubmitter = null;
+      const openConfirmation = (source, form, submitter = null) => {
+        if (!confirmationModal || !form) return;
+        confirmationTarget = form;
+        confirmationSubmitter = submitter;
+        confirmationTitle.textContent = source.dataset.confirmTitle || 'Подтвердите действие';
+        confirmationMessage.textContent = source.dataset.confirm || 'Это действие нельзя отменить.';
+        confirmationSubmit.textContent = source.dataset.confirmButton || 'Удалить';
+        confirmationModal.show();
+      };
+      document.addEventListener('click', (event) => {
+        const trigger = event.target.closest('button[data-confirm]');
+        if (!trigger) return;
+        event.preventDefault();
+        openConfirmation(trigger, trigger.form || trigger.closest('form'), trigger);
+      });
+      document.addEventListener('submit', (event) => {
+        const form = event.target;
+        if (!form.matches('form[data-confirm]')) return;
+        if (form.dataset.confirmed === 'true') {
+          delete form.dataset.confirmed;
+          return;
+        }
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        openConfirmation(form, form, event.submitter);
+      }, true);
+      confirmationSubmit?.addEventListener('click', () => {
+        if (!confirmationTarget) return;
+        confirmationTarget.dataset.confirmed = 'true';
+        const form = confirmationTarget;
+        const submitter = confirmationSubmitter;
+        confirmationModal.hide();
+        if (form.requestSubmit) form.requestSubmit(submitter || undefined);
+        else form.submit();
+        confirmationTarget = null;
+        confirmationSubmitter = null;
       });
       document.querySelectorAll('[data-phone-mask="true"]').forEach((input) => {
         const formatPhone = () => {

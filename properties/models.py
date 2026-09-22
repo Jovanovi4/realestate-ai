@@ -256,6 +256,7 @@ class Property(models.Model):
     landing_contact_title = models.CharField(max_length=255, blank=True, verbose_name="Заголовок блока заявки")
     landing_trust_about = models.TextField(blank=True, verbose_name="Текст блока преимуществ")
     landing_benefits = models.JSONField(default=default_realtor_benefits, verbose_name="Карточки преимуществ лендинга")
+    landing_logo = models.ImageField(upload_to="landing_logos/", blank=True, verbose_name="Логотип в шапке лендинга")
     seo_title = models.CharField(max_length=255, blank=True, verbose_name="SEO-заголовок")
     seo_description = models.CharField(max_length=300, blank=True, verbose_name="SEO-описание")
     landing_block_order = models.JSONField(
@@ -296,6 +297,7 @@ class Property(models.Model):
         default="large",
         verbose_name="Вид галереи",
     )
+    is_demo = models.BooleanField(default=False, verbose_name="Демонстрационный объект")
 
     created_at = models.DateTimeField(
         auto_now_add=True
@@ -463,6 +465,9 @@ class RealtorProfile(models.Model):
         verbose_name="О риелторе",
         help_text="Коротко расскажите об опыте, подходе к работе или преимуществах. Этот текст появится на лендингах.",
     )
+    demo_data_created = models.BooleanField(default=False, verbose_name="Демо-данные созданы")
+    onboarding_started = models.BooleanField(default=False, verbose_name="Онбординг начат")
+    onboarding_dismissed = models.BooleanField(default=False, verbose_name="Онбординг скрыт")
 
     def __str__(self):
         return self.display_name or self.user.get_full_name() or self.user.username
@@ -496,6 +501,7 @@ class Client(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Этап воронки")
     outcome_reason = models.CharField(max_length=255, blank=True, verbose_name="Причина результата")
     first_contacted_at = models.DateTimeField(null=True, blank=True, verbose_name="Первый контакт")
+    is_demo = models.BooleanField(default=False, verbose_name="Демонстрационный клиент")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -575,6 +581,7 @@ class Lead(models.Model):
     interest_type = models.CharField(max_length=20, choices=INTEREST_CHOICES, default="buy", verbose_name="Интерес клиента")
     personal_data_consent_at = models.DateTimeField(null=True, blank=True, verbose_name="Согласие на обработку данных получено")
     personal_data_consent_version = models.CharField(max_length=32, blank=True, verbose_name="Версия согласия")
+    is_demo = models.BooleanField(default=False, verbose_name="Демонстрационная заявка")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -74,6 +74,7 @@ class PropertyForm(forms.ModelForm):
             "landing_about_title",
             "landing_contact_title",
             "landing_trust_about",
+            "landing_logo",
             "seo_title",
             "seo_description",
             "landing_block_order",
@@ -112,6 +113,10 @@ class PropertyForm(forms.ModelForm):
                 field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
         self.fields["property_type"].widget.attrs["x-model"] = "propertyType"
         self.fields["deal_type"].widget.attrs["x-model"] = "dealType"
+        self.fields["landing_logo"].widget.attrs.update({
+            "x-ref": "logoInput",
+            "@change": "selectLogo($event)",
+        })
         self._visual_landing_defaults = {
             "landing_accent": "template",
             "landing_button_style": "template",

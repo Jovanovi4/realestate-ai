@@ -8,5 +8,5 @@
     {% for value, label in status_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
   </select>
   <button class="btn btn-sm btn-primary" name="action" value="status" type="submit">Применить</button>
-  <button class="btn btn-sm btn-outline-danger" name="action" value="delete" type="submit" formnovalidate onclick="return confirm('Удалить выбранные заявки без возможности восстановления?');">Удалить</button>
+  <button class="btn btn-sm btn-outline-danger" name="action" value="delete" type="submit" formnovalidate data-confirm="Удалить выбранные заявки без возможности восстановления?" data-confirm-title="Удалить заявки?" data-confirm-button="Удалить">Удалить</button>
 </form>

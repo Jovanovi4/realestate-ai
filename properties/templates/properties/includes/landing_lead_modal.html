@@ -23,4 +23,5 @@
     </div>
   </div>
 </div>
+{% if demo_test_completed %}<div class="container mt-4"><div class="alert alert-success mb-0"><strong>Готово!</strong> Вы прошли путь от лендинга до обращения клиента. Заявка отмечена как демо и уже находится в CRM. <a href="{% url 'lead_list' %}?demo_test=1">Перейти к заявкам</a>.</div></div>{% endif %}
 {% if not sent %}<button class="mobile-lead-cta d-md-none" type="button" data-bs-toggle="modal" data-bs-target="#leadModal">Оставить заявку</button>{% endif %}
