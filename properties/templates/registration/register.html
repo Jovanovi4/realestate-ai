@@ -5,15 +5,18 @@
 <section class="auth-page"><div class="auth-panel">
   <a class="auth-brand" href="{% url 'login' %}"><span class="auth-brand-mark">RE</span><span>Rieltor AI</span></a>
   <div class="auth-card"><div class="auth-card-body">
-    <nav class="auth-tabs" aria-label="Авторизация"><a href="{% url 'login' %}">Вход</a><a class="is-active" href="{% url 'register' %}">Регистрация</a></nav>
+    <nav class="auth-tabs" aria-label="Авторизация"><a href="{% url 'login' %}">Вход</a><a class="is-active" href="{% url 'register' %}" aria-current="page">Регистрация</a></nav>
     <h1 class="auth-heading">Создайте кабинет</h1><p class="auth-subtitle">Все объекты, лендинги и заявки — в одном рабочем пространстве.</p>
-    <form method="post">{% csrf_token %}
-      <div class="mb-3"><label class="form-label" for="{{ form.phone.id_for_label }}">{{ form.phone.label }}</label>{{ form.phone }}{% if form.phone.errors %}<div class="text-danger small mt-1">{{ form.phone.errors|striptags }}</div>{% endif %}</div>
-      <div class="mb-3"><label class="form-label" for="{{ form.password1.id_for_label }}">{{ form.password1.label }}</label>{{ form.password1 }}{% if form.password1.errors %}<div class="text-danger small mt-1">{{ form.password1.errors|striptags }}</div>{% endif %}</div>
-      <div class="mb-4"><label class="form-label" for="{{ form.password2.id_for_label }}">{{ form.password2.label }}</label>{{ form.password2 }}{% if form.password2.errors %}<div class="text-danger small mt-1">{{ form.password2.errors|striptags }}</div>{% endif %}</div>
-      <div class="form-check mb-3">{{ form.terms_accepted }}<label class="form-check-label small" for="{{ form.terms_accepted.id_for_label }}">Принимаю <a href="{% url 'service_terms' %}" target="_blank" rel="noopener">условия сервиса</a>.</label>{% if form.terms_accepted.errors %}<div class="text-danger small mt-1">{{ form.terms_accepted.errors|striptags }}</div>{% endif %}</div>
-      <div class="form-check mb-4">{{ form.personal_data_consent }}<label class="form-check-label small" for="{{ form.personal_data_consent.id_for_label }}">Даю <a href="{% url 'personal_data_consent' %}" target="_blank" rel="noopener">согласие на обработку персональных данных</a> и подтверждаю, что ознакомился(-ась) с <a href="{% url 'privacy_policy' %}" target="_blank" rel="noopener">политикой</a>.</label>{% if form.personal_data_consent.errors %}<div class="text-danger small mt-1">{{ form.personal_data_consent.errors|striptags }}</div>{% endif %}</div>
-      <button class="btn btn-primary w-100">Создать кабинет</button>
+    <form method="post" class="app-form" novalidate>{% csrf_token %}
+      {% if form.non_field_errors %}<div class="app-form-error-summary" role="alert">{{ form.non_field_errors|striptags }}</div>{% endif %}
+      <div class="app-field">{% include "includes/form_field.html" with field=form.phone %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.password1 %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.password2 %}</div>
+      <div class="app-form-consents">
+        <div class="app-check-field"><div class="form-check">{{ form.terms_accepted }}<label class="form-check-label" for="{{ form.terms_accepted.id_for_label }}">Принимаю <a href="{% url 'service_terms' %}" target="_blank" rel="noopener noreferrer">условия сервиса</a><span class="app-required" aria-hidden="true">*</span></label></div>{% if form.terms_accepted.errors %}<div class="app-field-error text-danger" role="alert">{{ form.terms_accepted.errors|striptags }}</div>{% endif %}</div>
+        <div class="app-check-field"><div class="form-check">{{ form.personal_data_consent }}<label class="form-check-label" for="{{ form.personal_data_consent.id_for_label }}">Даю <a href="{% url 'personal_data_consent' %}" target="_blank" rel="noopener noreferrer">согласие на обработку персональных данных</a> и подтверждаю, что ознакомился(-ась) с <a href="{% url 'privacy_policy' %}" target="_blank" rel="noopener noreferrer">политикой</a><span class="app-required" aria-hidden="true">*</span></label></div>{% if form.personal_data_consent.errors %}<div class="app-field-error text-danger" role="alert">{{ form.personal_data_consent.errors|striptags }}</div>{% endif %}</div>
+      </div>
+      <button class="btn btn-primary w-100" type="submit">Создать кабинет</button>
     </form>
   </div></div>
 </div></section>

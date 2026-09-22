@@ -1,15 +1,21 @@
 from io import BytesIO
+from datetime import timedelta
+from urllib.parse import parse_qs, urlsplit
 from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
 from django.core.cache import cache
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase, override_settings
-from django.urls import reverse
+from django.template.loader import render_to_string
+from django.test import RequestFactory, TestCase, override_settings
+from django.urls import resolve, reverse
+from django.utils import timezone
 from PIL import Image
 
-from .models import AIContent, Client, Property, PropertyImage, RealtorProfile, UserLegalAcceptance
+from .models import AIContent, Client, ClientReminder, Lead, Property, PropertyImage, RealtorProfile, UserLegalAcceptance
+from .forms import AIContentEditForm, AIRequestForm
+from .ai_views import get_ai_history_context
 from .services.ai_service import AIServiceError
 from .services.lead_notification_service import LeadNotificationService
 
@@ -67,6 +73,66 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertContains(response, "Можно написать текст вручную или получить черновик от ИИ")
         self.assertContains(response, "Предпросмотр покажет лендинг так, как его увидит клиент")
 
+    def test_property_editor_uses_light_sections_and_highlights_invalid_fields(self):
+        owner = User.objects.create_user("form-owner", password="password")
+        property = Property.objects.create(title="Черновик", owner=owner)
+        self.client.force_login(owner)
+
+        response = self.client.post(reverse("edit_property", args=[property.pk]), {"title": ""})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'class="app-form property-editor"')
+        self.assertContains(response, 'class="app-form-error-summary"')
+        self.assertContains(response, 'aria-invalid="true"')
+        self.assertContains(response, 'class="upload-control upload-control--logo"')
+
+    def test_client_and_profile_forms_share_field_and_upload_feedback(self):
+        owner = User.objects.create_user("form-owner", password="password")
+        self.client.force_login(owner)
+
+        client_response = self.client.post(reverse("client_create"), {"name": "", "phone": "bad"})
+        self.assertEqual(client_response.status_code, 200)
+        self.assertContains(client_response, 'class="app-form app-form-panel"')
+        self.assertContains(client_response, 'class="app-field-error text-danger"')
+        self.assertContains(client_response, 'aria-invalid="true"')
+
+        profile_response = self.client.post(reverse("edit_profile"), {"email": "not-an-email"})
+        self.assertEqual(profile_response.status_code, 200)
+        self.assertContains(profile_response, 'class="upload-control upload-control--avatar"')
+        self.assertContains(profile_response, 'aria-invalid="true"')
+
+    def test_auth_and_password_forms_use_shared_validation_styles(self):
+        owner = User.objects.create_user("+79990000000", password="Secure-password-123")
+
+        login_response = self.client.post(reverse("login"), {"username": "+79990000000", "password": "wrong"})
+        self.assertEqual(login_response.status_code, 200)
+        self.assertContains(login_response, 'class="app-form-error-summary"')
+
+        register_response = self.client.post(reverse("register"), {"phone": "bad", "password1": "weak", "password2": "mismatch"})
+        self.assertEqual(register_response.status_code, 200)
+        self.assertContains(register_response, 'class="app-required"')
+        self.assertContains(register_response, 'aria-invalid="true"')
+
+        self.client.force_login(owner)
+        password_response = self.client.post(reverse("password_change"), {
+            "old_password": "wrong", "new_password1": "Another-secure-password-456", "new_password2": "Another-secure-password-456",
+        })
+        self.assertEqual(password_response.status_code, 200)
+        self.assertTemplateUsed(password_response, "properties/password_change_form.html")
+        self.assertContains(password_response, 'class="app-form app-form-panel"')
+        self.assertContains(password_response, 'aria-invalid="true"')
+
+    def test_photo_upload_requires_a_selected_file(self):
+        owner = User.objects.create_user("form-owner", password="password")
+        property = Property.objects.create(title="Черновик", owner=owner)
+        self.client.force_login(owner)
+
+        response = self.client.post(reverse("upload_images", args=[property.pk]), {})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertContains(response, "Выберите хотя бы одну фотографию", status_code=400)
+        self.assertContains(response, 'class="upload-dropzone"', status_code=400)
+
     def test_owner_can_upload_a_logo_for_the_public_landing(self):
         owner = User.objects.create_user("agent", password="password")
         property = Property.objects.create(title="Черновик", owner=owner, landing_published=True)
@@ -111,6 +177,170 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertContains(response, "Объект, лендинг и заявки — в одном месте")
         self.assertContains(response, "Начать с демо")
         self.assertContains(response, "Создать свой объект")
+
+    def test_workspace_loads_the_shared_design_system_layer(self):
+        user = User.objects.create_user("new-agent", password="password")
+        self.client.force_login(user)
+
+        response = self.client.get(reverse("property_list"))
+
+        self.assertContains(response, "css/rieltor-ui.css")
+        self.assertContains(response, 'id="ui-icon-home"')
+
+    def test_lead_status_filter_counts_and_keeps_owner_scope(self):
+        owner = User.objects.create_user("lead-owner", password="password")
+        other = User.objects.create_user("other-agent", password="password")
+        property = Property.objects.create(title="Квартира у парка", owner=owner)
+        other_property = Property.objects.create(title="Чужой объект", owner=other)
+        new_lead = Lead.objects.create(property=property, name="Новый клиент", phone="+79990000001")
+        Lead.objects.create(property=property, name="Прочитанный клиент", phone="+79990000002", status="read")
+        Lead.objects.create(property=other_property, name="Чужой клиент", phone="+79990000003")
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("lead_list"), {"status": "new"}, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["selected_status"], "new")
+        self.assertEqual(
+            [(tab["value"], tab["count"]) for tab in response.context["status_tabs"]],
+            [("", 2), ("new", 1), ("read", 1), ("archived", 0)],
+        )
+        self.assertEqual(list(response.context["leads"]), [new_lead])
+        self.assertContains(response, 'hx-push-url="true"')
+        self.assertContains(response, 'class="mobile-records lead-mobile-list"')
+        self.assertContains(response, 'class="lead-table__name"')
+        self.assertContains(response, 'formnovalidate')
+        self.assertNotContains(response, "Чужой клиент")
+
+    def test_empty_lead_status_does_not_show_first_use_hint(self):
+        owner = User.objects.create_user("lead-owner", password="password")
+        property = Property.objects.create(title="Квартира у парка", owner=owner)
+        Lead.objects.create(property=property, name="Новый клиент", phone="+79990000001")
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("lead_list"), {"status": "archived"})
+
+        self.assertContains(response, "В этом статусе заявок нет")
+        self.assertNotContains(response, "Откройте лендинг объекта и отправьте тестовую заявку")
+
+    def test_client_list_keeps_filters_in_chips_and_pagination(self):
+        owner = User.objects.create_user("client-owner", password="password")
+        other = User.objects.create_user("other-client-owner", password="password")
+        for index in range(11):
+            Client.objects.create(owner=owner, name=f"Анна {index:02d}", phone=f"+7999000{index:04d}", status="in_progress", source="landing")
+        Client.objects.create(owner=owner, name="Борис", phone="+79995550000", status="new")
+        Client.objects.create(owner=other, name="Анна чужая", phone="+79995550001", status="in_progress")
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("client_list"), {
+            "q": "Анна", "status": "in_progress", "source": "landing", "sort": "name_asc", "page": "2",
+        })
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["page_obj"].paginator.count, 11)
+        self.assertEqual(len(response.context["clients"]), 1)
+        self.assertContains(response, "Этап: В работе")
+        self.assertContains(response, "Источник: Лендинг")
+        self.assertContains(response, "Сортировка: Имя: А–Я")
+        self.assertContains(response, 'class="lead-table-shell desktop-records"')
+        self.assertContains(response, 'class="lead-mobile-card client-mobile-card"')
+        self.assertIn("status=in_progress", response.context["pagination_query"])
+        self.assertIn("source=landing", response.context["pagination_query"])
+        search_chip = next(item for item in response.context["active_filters"] if item["label"] == "Поиск: Анна")
+        query = parse_qs(urlsplit(search_chip["url"]).query)
+        self.assertNotIn("q", query)
+        self.assertNotIn("page", query)
+        self.assertEqual(query["status"], ["in_progress"])
+
+    def test_client_reminder_card_shows_full_count_and_only_first_five(self):
+        owner = User.objects.create_user("client-owner", password="password")
+        client = Client.objects.create(owner=owner, name="Анна", phone="+79990000000")
+        for index in range(6):
+            ClientReminder.objects.create(client=client, text=f"Напоминание {index}", due_at=timezone.now() - timedelta(days=1, minutes=index))
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("client_list"))
+
+        self.assertEqual(response.context["overdue_reminder_count"], 6)
+        self.assertContains(response, "Напоминание 5")
+        self.assertNotContains(response, "Напоминание 0")
+        self.assertContains(response, 'class="client-reminder-group is-overdue"')
+
+    def test_client_board_has_status_counts_and_only_own_clients(self):
+        owner = User.objects.create_user("client-owner", password="password")
+        other = User.objects.create_user("other-client-owner", password="password")
+        Client.objects.create(owner=owner, name="Анна", phone="+79990000000", status="new")
+        Client.objects.create(owner=owner, name="Борис", phone="+79990000001", status="won")
+        Client.objects.create(owner=other, name="Чужой клиент", phone="+79990000002", status="new")
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("client_board"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([(status, len(clients)) for status, _, clients in response.context["columns"]],
+                         [("new", 1), ("in_progress", 0), ("viewing", 0), ("negotiation", 0), ("won", 1), ("lost", 0)])
+        self.assertContains(response, 'class="client-board__column is-new"')
+        self.assertNotContains(response, "Чужой клиент")
+
+    def test_client_bulk_delete_keeps_safe_filter_url(self):
+        owner = User.objects.create_user("client-owner", password="password")
+        other = User.objects.create_user("other-client-owner", password="password")
+        own_client = Client.objects.create(owner=owner, name="Анна", phone="+79990000000", status="new")
+        other_client = Client.objects.create(owner=other, name="Чужой клиент", phone="+79990000001", status="new")
+        self.client.force_login(owner)
+
+        response = self.client.post(reverse("client_bulk_action"), {
+            "action": "delete", "client_ids": [own_client.pk, other_client.pk], "next": f"{reverse('client_list')}?status=new",
+        })
+
+        self.assertRedirects(response, f"{reverse('client_list')}?status=new")
+        self.assertFalse(Client.objects.filter(pk=own_client.pk).exists())
+        self.assertTrue(Client.objects.filter(pk=other_client.pk).exists())
+
+    def test_property_filter_chips_remove_one_filter_and_keep_the_rest(self):
+        owner = User.objects.create_user("agent", password="password")
+        matching = Property.objects.create(title="Дом у леса", owner=owner, status="draft", price=100000)
+        Property.objects.create(title="Студия у парка", owner=owner, status="draft", price=150000)
+        Property.objects.create(title="Квартира в городе", owner=owner, status="published", price=200000)
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("property_list"), {
+            "q": "лес", "status": "draft", "sort": "price_desc", "page": "1",
+        })
+
+        self.assertContains(response, "Поиск: лес")
+        self.assertContains(response, "Статус: Черновик")
+        self.assertContains(response, "Сортировка: Цена: по убыванию")
+        self.assertContains(response, matching.title)
+        self.assertNotContains(response, "Студия у парка")
+        self.assertNotContains(response, "Квартира в городе")
+        search_chip = next(item for item in response.context["active_filters"] if item["label"] == "Поиск: лес")
+        query = parse_qs(urlsplit(search_chip["url"]).query)
+        self.assertNotIn("q", query)
+        self.assertNotIn("page", query)
+        self.assertEqual(query["status"], ["draft"])
+        self.assertEqual(query["sort"], ["price_desc"])
+
+        filtered_response = self.client.get(search_chip["url"])
+        self.assertContains(filtered_response, "Студия у парка")
+        self.assertNotContains(filtered_response, "Квартира в городе")
+        self.assertContains(filtered_response, "Дом у леса")
+
+    def test_property_htmx_results_include_chips_and_filtered_empty_state(self):
+        owner = User.objects.create_user("agent", password="password")
+        Property.objects.create(title="Дом у леса", owner=owner)
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("property_list"), {"q": "моря"}, HTTP_HX_REQUEST="true")
+
+        self.assertContains(response, "Поиск: моря")
+        self.assertContains(response, "По выбранным условиям объектов нет")
+        self.assertContains(response, "Сбросить фильтры")
+        self.assertNotContains(response, 'id="property-filters"')
+
+        invalid_price_response = self.client.get(reverse("property_list"), {"min_price": "not-a-price"})
+        self.assertEqual(invalid_price_response.status_code, 200)
+        self.assertContains(invalid_price_response, "Дом у леса")
 
     def test_new_user_can_start_with_a_manual_property(self):
         user = User.objects.create_user("new-agent", password="password")
@@ -390,7 +620,19 @@ class AccountAndPropertyAccessTests(TestCase):
 
     def test_legal_documents_are_publicly_available(self):
         for url_name in ("privacy_policy", "personal_data_consent", "service_terms"):
-            self.assertEqual(self.client.get(reverse(url_name)).status_code, 200, url_name)
+            response = self.client.get(reverse(url_name))
+            self.assertEqual(response.status_code, 200, url_name)
+            self.assertContains(response, 'class="legal-page"')
+            self.assertContains(response, 'class="legal-nav"')
+
+    def test_export_pages_share_ready_and_empty_states(self):
+        owner = User.objects.create_user("export-owner", password="password")
+        self.client.force_login(owner)
+        for url_name in ("avito_export", "cian_export"):
+            response = self.client.get(reverse(url_name))
+            self.assertEqual(response.status_code, 200, url_name)
+            self.assertContains(response, 'class="export-summary"')
+            self.assertContains(response, 'class="app-empty-state export-empty"')
 
     def test_landing_visual_settings_render_the_selected_variants(self):
         owner = User.objects.create_user("agent", password="password")
@@ -464,6 +706,69 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertContains(response, "Назначьте главную фотографию")
         self.assertContains(response, "Укажите контакты риелтора")
 
+    def test_property_detail_renders_preview_presentation_and_danger_action(self):
+        owner = User.objects.create_user("detail-owner", password="password")
+        property = Property.objects.create(title="Квартира", owner=owner)
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("property_detail", args=[property.pk]))
+
+        self.assertContains(response, 'id="property-workspace-tabs"')
+        self.assertContains(response, 'id="gallery-card"')
+        self.assertContains(response, 'data-preview-frame')
+        self.assertContains(response, reverse("property_landing_preview", args=[property.pk]))
+        self.assertContains(response, reverse("property_presentation_pdf", args=[property.pk]))
+        self.assertContains(response, reverse("property_presentation_docx", args=[property.pk]))
+        self.assertContains(response, 'class="detail-danger"')
+
+    def test_lead_detail_keeps_client_and_property_navigation(self):
+        owner = User.objects.create_user("detail-owner", password="password")
+        property = Property.objects.create(title="Квартира", owner=owner)
+        client = Client.objects.create(owner=owner, name="Анна", phone="+79990000000")
+        lead = Lead.objects.create(property=property, client=client, name="Анна", phone=client.phone, message="Хочу посмотреть")
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("lead_detail", args=[lead.pk]))
+
+        self.assertContains(response, 'class="detail-two-column"')
+        self.assertContains(response, "Хочу посмотреть")
+        self.assertContains(response, reverse("client_detail", args=[client.pk]))
+        self.assertContains(response, reverse("property_detail", args=[property.pk]))
+        self.assertContains(response, 'data-confirm-title="Удалить заявку?"')
+
+    def test_client_detail_shows_next_reminder_and_history_entry_stays_on_tab(self):
+        owner = User.objects.create_user("detail-owner", password="password")
+        client = Client.objects.create(owner=owner, name="Анна", phone="+79990000000")
+        ClientReminder.objects.create(client=client, text="Позвонить завтра", due_at=timezone.now() + timedelta(days=1))
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("client_detail", args=[client.pk]))
+
+        self.assertContains(response, 'class="detail-summary-bar"')
+        self.assertContains(response, "Позвонить завтра")
+        self.assertContains(response, f'id="client-status-{client.pk}"')
+        self.assertContains(response, 'id="client-history"')
+
+        interaction_response = self.client.post(reverse("client_interaction_create", args=[client.pk]), {
+            "interaction_type": "note", "text": "Обсудили условия",
+        })
+        self.assertRedirects(interaction_response, f"{reverse('client_detail', args=[client.pk])}#client-history", fetch_redirect_response=False)
+        self.assertContains(self.client.get(reverse("client_detail", args=[client.pk])), "Обсудили условия")
+
+    def test_client_status_quick_action_keeps_htmx_control(self):
+        owner = User.objects.create_user("detail-owner", password="password")
+        client = Client.objects.create(owner=owner, name="Анна", phone="+79990000000")
+        self.client.force_login(owner)
+
+        response = self.client.post(reverse("client_status_update", args=[client.pk]),
+                                    {"status": "in_progress"}, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'id="client-status-{client.pk}"')
+        self.assertContains(response, 'class="detail-status-control"')
+        client.refresh_from_db()
+        self.assertEqual(client.status, "in_progress")
+
     def test_legacy_ai_history_routes_redirect_to_inline_text_editor(self):
         owner = User.objects.create_user("owner", password="password")
         property = Property.objects.create(title="Квартира", owner=owner)
@@ -477,6 +782,28 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertRedirects(self.client.get(reverse("ai_content_edit", args=[ai_content.pk])), editor_url)
         self.assertRedirects(self.client.post(reverse("ai_content_delete", args=[ai_content.pk])), editor_url)
         self.assertTrue(AIContent.objects.filter(pk=ai_content.pk).exists())
+
+    def test_legacy_ai_templates_render_with_shared_panels(self):
+        owner = User.objects.create_user("ai-owner", password="password")
+        property = Property.objects.create(title="Квартира", owner=owner)
+        ai_content = AIContent.objects.create(
+            property=property, content_type="headline", tone="business", title=property.title, content="Текст"
+        )
+        request = RequestFactory().get(reverse("property_list"))
+        request.user = owner
+        request.resolver_match = resolve(reverse("property_list"))
+        history_context = get_ai_history_context(property)
+
+        assistant_html = render_to_string("properties/ai_assistant.html", {
+            "property": property, "form": AIRequestForm(), **history_context,
+        }, request=request)
+        editor_html = render_to_string("properties/ai_content_edit.html", {
+            "ai_content": ai_content, "form": AIContentEditForm(instance=ai_content),
+        }, request=request)
+
+        self.assertIn('class="ai-workspace"', assistant_html)
+        self.assertIn('class="ai-panel ai-history"', assistant_html)
+        self.assertIn('class="ai-panel ai-content-editor"', editor_html)
 
     @patch("properties.ai_views.AIService.generate_inline_content")
     def test_inline_ai_returns_text_without_overwriting_property(self, generate_inline_content):

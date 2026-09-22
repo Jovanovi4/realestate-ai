@@ -1,5 +1,6 @@
 import json
 import csv
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from pathlib import Path
 from datetime import timedelta
@@ -16,6 +17,7 @@ from django.core.files.base import ContentFile
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
+from django.utils.dateparse import parse_date
 from django.utils.decorators import method_decorator
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import reverse, reverse_lazy
@@ -63,6 +65,14 @@ class PropertyListView(LoginRequiredMixin, ListView):
     context_object_name = "properties"
     paginate_by = 10
 
+    @staticmethod
+    def price_filter(value):
+        try:
+            amount = Decimal(value)
+        except (InvalidOperation, TypeError):
+            return None
+        return amount if amount.is_finite() and amount >= 0 else None
+
     def get_template_names(self):
         if self.request.headers.get("HX-Request") == "true":
             return ["properties/includes/property_cards.html"]
@@ -74,21 +84,23 @@ class PropertyListView(LoginRequiredMixin, ListView):
         property_type = self.request.GET.get("property_type")
         deal_type = self.request.GET.get("deal_type")
         status = self.request.GET.get("status")
-        min_price = self.request.GET.get("min_price")
-        max_price = self.request.GET.get("max_price")
+        min_price = self.price_filter(self.request.GET.get("min_price"))
+        max_price = self.price_filter(self.request.GET.get("max_price"))
         sort = self.request.GET.get("sort", "newest")
 
         if query:
-            queryset = queryset.filter(Q(title__icontains=query) | Q(address__icontains=query))
+            queryset = queryset.filter(
+                Q(title__icontains=query) | Q(marketing_headline__icontains=query) | Q(address__icontains=query)
+            )
         if property_type in dict(Property.PROPERTY_TYPES):
             queryset = queryset.filter(property_type=property_type)
         if deal_type in dict(Property.DEAL_TYPE_CHOICES):
             queryset = queryset.filter(deal_type=deal_type)
         if status in dict(Property.STATUS_CHOICES):
             queryset = queryset.filter(status=status)
-        if min_price:
+        if min_price is not None:
             queryset = queryset.filter(price__gte=min_price)
-        if max_price:
+        if max_price is not None:
             queryset = queryset.filter(price__lte=max_price)
         ordering = {
             "newest": "-created_at",
@@ -112,11 +124,47 @@ class PropertyListView(LoginRequiredMixin, ListView):
             ("price_asc", "Цена: по возрастанию"),
             ("price_desc", "Цена: по убыванию"),
         ]
+        filter_labels = {
+            "q": lambda value: f"Поиск: {value.strip()}",
+            "property_type": lambda value: f"Тип: {dict(Property.PROPERTY_TYPES)[value]}",
+            "deal_type": lambda value: f"Сделка: {dict(Property.DEAL_TYPE_CHOICES)[value]}",
+            "status": lambda value: f"Статус: {dict(Property.STATUS_CHOICES)[value]}",
+            "min_price": lambda value: f"Цена от: {value}",
+            "max_price": lambda value: f"Цена до: {value}",
+            "sort": lambda value: f"Сортировка: {dict(context['sort_choices'])[value]}",
+        }
+        active_filters = []
+        for key, label_for in filter_labels.items():
+            value = self.request.GET.get(key, "")
+            if not value or (key == "sort" and value == "newest"):
+                continue
+            if key == "property_type" and value not in dict(Property.PROPERTY_TYPES):
+                continue
+            if key == "deal_type" and value not in dict(Property.DEAL_TYPE_CHOICES):
+                continue
+            if key == "status" and value not in dict(Property.STATUS_CHOICES):
+                continue
+            if key == "sort" and value not in dict(context["sort_choices"]):
+                continue
+            if key in {"min_price", "max_price"} and self.price_filter(value) is None:
+                continue
+            if key == "q" and not value.strip():
+                continue
+            remaining = self.request.GET.copy()
+            remaining.pop(key, None)
+            remaining.pop("page", None)
+            query_string = remaining.urlencode()
+            active_filters.append({
+                "label": label_for(value),
+                "url": f"{reverse('property_list')}?{query_string}" if query_string else reverse("property_list"),
+            })
+        context["active_filters"] = active_filters
         params = self.request.GET.copy()
         params.pop("page", None)
         context["pagination_query"] = params.urlencode()
         profile = RealtorProfile.objects.filter(user=self.request.user).first()
         user_properties = Property.objects.filter(owner=self.request.user)
+        first_property = user_properties.order_by("-created_at").first()
         onboarding_items = [
             {
                 "label": "Укажите контакты для заявок",
@@ -125,31 +173,33 @@ class PropertyListView(LoginRequiredMixin, ListView):
             },
             {
                 "label": "Создайте или откройте объект",
-                "done": user_properties.exists(),
-                "url": reverse("create_property"),
+                "done": bool(first_property),
+                "url": reverse("property_detail", args=[first_property.pk]) if first_property else reverse("create_property"),
             },
             {
                 "label": "Добавьте фотографию объекта",
                 "done": PropertyImage.objects.filter(property__owner=self.request.user).exists(),
-                "url": reverse("property_list"),
+                "url": reverse("upload_images", args=[first_property.pk]) if first_property else reverse("create_property"),
             },
             {
                 "label": "Заполните описание",
                 "done": user_properties.exclude(description="").exists(),
-                "url": reverse("property_list"),
+                "url": f"{reverse('edit_property', args=[first_property.pk])}#texts-pane" if first_property else reverse("create_property"),
             },
             {
                 "label": "Опубликуйте лендинг",
                 "done": user_properties.filter(landing_published=True).exists(),
-                "url": reverse("landing_list"),
+                "url": f"{reverse('edit_property', args=[first_property.pk])}#landing-pane" if first_property else reverse("create_property"),
             },
         ]
-        has_properties = user_properties.exists()
+        has_properties = bool(first_property)
+        context["has_any_properties"] = has_properties
         context["show_welcome"] = not has_properties and not (profile and profile.onboarding_started)
+        completed_steps = sum(item["done"] for item in onboarding_items)
         context["onboarding"] = {
-            "visible": not profile or not profile.onboarding_dismissed,
+            "visible": (not profile or not profile.onboarding_dismissed) and completed_steps < len(onboarding_items),
             "items": onboarding_items,
-            "completed": sum(item["done"] for item in onboarding_items),
+            "completed": completed_steps,
             "total": len(onboarding_items),
             "can_create_demo": not has_properties and not (profile and profile.demo_data_created),
         }
@@ -503,6 +553,15 @@ class ClientListView(LoginRequiredMixin, ListView):
     context_object_name = "clients"
     paginate_by = 10
 
+    @staticmethod
+    def valid_date(value):
+        if not value:
+            return None
+        try:
+            return parse_date(value)
+        except ValueError:
+            return None
+
     def get_queryset(self):
         queryset = Client.objects.filter(owner=self.request.user).prefetch_related("leads")
         query = self.request.GET.get("q", "").strip()
@@ -517,9 +576,9 @@ class ClientListView(LoginRequiredMixin, ListView):
             queryset = queryset.filter(status=status)
         if source in dict(Client.SOURCE_CHOICES):
             queryset = queryset.filter(source=source)
-        if date_from:
+        if self.valid_date(date_from):
             queryset = queryset.filter(created_at__date__gte=date_from)
-        if date_to:
+        if self.valid_date(date_to):
             queryset = queryset.filter(created_at__date__lte=date_to)
         ordering = {
             "newest": "-created_at",
@@ -539,6 +598,8 @@ class ClientListView(LoginRequiredMixin, ListView):
         now = timezone.now()
         start_tomorrow = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
         pending_reminders = ClientReminder.objects.filter(client__owner=self.request.user, is_done=False).select_related("client")
+        overdue_reminders = pending_reminders.filter(due_at__lt=now)
+        today_reminders = pending_reminders.filter(due_at__gte=now, due_at__lt=start_tomorrow)
         contacted = [client for client in all_clients.exclude(first_contacted_at__isnull=True) if client.first_contacted_at]
         response_hours = [
             (client.first_contacted_at - client.created_at).total_seconds() / 3600
@@ -566,13 +627,42 @@ class ClientListView(LoginRequiredMixin, ListView):
                     "conversion": round(won / total * 100) if total else 0,
                     "response_hours": round(sum(response_hours) / len(response_hours), 1) if response_hours else None,
                 },
-                "overdue_reminders": pending_reminders.filter(due_at__lt=now)[:5],
-                "today_reminders": pending_reminders.filter(due_at__gte=now, due_at__lt=start_tomorrow)[:5],
+                "overdue_reminders": overdue_reminders[:5],
+                "today_reminders": today_reminders[:5],
+                "overdue_reminder_count": overdue_reminders.count(),
+                "today_reminder_count": today_reminders.count(),
             }
         )
         params = self.request.GET.copy()
         params.pop("page", None)
         context["pagination_query"] = params.urlencode()
+        filters = self.request.GET
+        status_labels = dict(Client.STATUS_CHOICES)
+        source_labels = dict(Client.SOURCE_CHOICES)
+        sort_labels = dict(context["sort_choices"])
+        filter_items = [
+            ("q", f"Поиск: {filters.get('q', '').strip()}" if filters.get("q", "").strip() else None),
+            ("status", f"Этап: {status_labels[filters['status']]}" if filters.get("status") in status_labels else None),
+            ("source", f"Источник: {source_labels[filters['source']]}" if filters.get("source") in source_labels else None),
+            ("date_from", f"С даты: {filters['date_from']}" if self.valid_date(filters.get("date_from")) else None),
+            ("date_to", f"По дату: {filters['date_to']}" if self.valid_date(filters.get("date_to")) else None),
+            ("sort", f"Сортировка: {sort_labels[filters['sort']]}" if filters.get("sort") in sort_labels and filters.get("sort") != "newest" else None),
+        ]
+        active_filters = []
+        for key, label in filter_items:
+            if not label:
+                continue
+            remaining = filters.copy()
+            remaining.pop(key, None)
+            remaining.pop("page", None)
+            query_string = remaining.urlencode()
+            active_filters.append({
+                "label": label,
+                "url": f"{reverse('client_list')}?{query_string}" if query_string else reverse("client_list"),
+            })
+        context["active_filters"] = active_filters
+        context["extra_filters_open"] = bool(filters.get("source") or filters.get("date_from") or filters.get("date_to"))
+        context["has_any_clients"] = total > 0
         return context
 
 
@@ -608,12 +698,16 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
         context["reminder_form"] = ClientReminderForm(initial={"due_at": (timezone.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")})
         interaction_queryset = self.object.interactions.select_related("lead", "lead__property")
         reminder_queryset = self.object.reminders.all()
+        pending_reminders = reminder_queryset.filter(is_done=False)
         lead_queryset = self.object.leads.select_related("property")
         context["interactions"] = Paginator(interaction_queryset, 10).get_page(self.request.GET.get("history_page", 1))
         context["reminders"] = Paginator(reminder_queryset, 10).get_page(self.request.GET.get("reminders_page", 1))
         context["client_leads"] = Paginator(lead_queryset, 10).get_page(self.request.GET.get("leads_page", 1))
         context["interactions_total"] = interaction_queryset.count()
         context["reminders_total"] = reminder_queryset.count()
+        context["pending_reminders_count"] = pending_reminders.count()
+        context["next_reminder"] = pending_reminders.order_by("due_at").first()
+        context["next_reminder_overdue"] = bool(context["next_reminder"] and context["next_reminder"].due_at < timezone.now())
         context["client_leads_total"] = lead_queryset.count()
         for page_param in ("history_page", "reminders_page", "leads_page"):
             params = self.request.GET.copy()
@@ -654,7 +748,7 @@ class ClientInteractionCreateView(LoginRequiredMixin, View):
             if interaction.interaction_type in {"call", "message"} and not client.first_contacted_at:
                 client.first_contacted_at = interaction.created_at
                 client.save(update_fields=["first_contacted_at", "updated_at"])
-        return redirect("client_detail", pk=client.pk)
+        return redirect(f"{reverse('client_detail', kwargs={'pk': client.pk})}#client-history")
 
 
 class ClientReminderCreateView(LoginRequiredMixin, View):
@@ -685,6 +779,9 @@ class ClientBulkActionView(LoginRequiredMixin, View):
         action = request.POST.get("action")
         if action == "delete":
             clients.delete()
+        next_url = request.POST.get("next")
+        if next_url and url_has_allowed_host_and_scheme(next_url, {request.get_host()}):
+            return redirect(next_url)
         return redirect("client_list")
 
 
@@ -728,7 +825,25 @@ class LeadListView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["status_choices"] = Lead.STATUS_CHOICES
-        context["selected_status"] = self.request.GET.get("status", "")
+        requested_status = self.request.GET.get("status", "")
+        selected_status = requested_status if requested_status in dict(Lead.STATUS_CHOICES) else ""
+        counts = {
+            row["status"]: row["total"]
+            for row in Lead.objects.filter(property__owner=self.request.user)
+            .values("status")
+            .annotate(total=Count("id"))
+        }
+        total_leads = sum(counts.values())
+        context["selected_status"] = selected_status
+        context["status_tabs"] = [
+            {"value": "", "label": "Все", "count": total_leads},
+            *[
+                {"value": value, "label": label, "count": counts.get(value, 0)}
+                for value, label in Lead.STATUS_CHOICES
+            ],
+        ]
+        context["has_any_leads"] = total_leads > 0
+        context["pagination_query"] = f"status={selected_status}" if selected_status else ""
         context["demo_test_completed"] = (
             self.request.GET.get("demo_test") == "1"
             and Lead.objects.filter(property__owner=self.request.user, is_demo=True).exists()
@@ -793,9 +908,15 @@ class PropertyImageUploadView(LoginRequiredMixin, View):
 
     def post(self, request, pk):
         property = get_object_or_404(Property, pk=pk, owner=request.user)
+        uploads = request.FILES.getlist("images")
+        if not uploads:
+            return render(request, self.template_name, {
+                "property": property,
+                "upload_error": "Выберите хотя бы одну фотографию.",
+            }, status=400)
         next_order = (property.images.aggregate(max_order=Max("order"))["max_order"] or -1) + 1
         has_primary = property.images.filter(is_primary=True).exists()
-        for image in request.FILES.getlist("images"):
+        for image in uploads:
             PropertyImage.objects.create(
                 property=property,
                 image=optimize_property_image(image),

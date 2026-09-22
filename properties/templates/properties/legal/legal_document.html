@@ -1,11 +1,8 @@
 {% extends "base.html" %}
-{% block main_attributes %}style="max-width: 920px;"{% endblock %}
+{% block main_attributes %}{% if not user.is_authenticated %}style="max-width: 100%;"{% endif %}{% endblock %}
 {% block content %}
-<article class="card shadow-sm border-0"><div class="card-body p-4 p-md-5">
-  <p class="text-uppercase text-muted small fw-semibold mb-2">Rieltor AI · юридический документ</p>
-  <h1 class="h2 mb-2">{% block document_title %}{% endblock %}</h1>
-  <p class="text-muted small border-bottom pb-4 mb-4">Версия {{ document_version }} · действует с момента публикации на этой странице.</p>
-  {% block document_content %}{% endblock %}
-  <hr class="my-5"><p class="small text-muted mb-0">Перед публикацией заполните реквизиты оператора в переменных окружения. Шаблон адаптирован под типовой сервис, но не заменяет индивидуальную юридическую проверку.</p>
-</div></article>
+<div class="legal-page">
+  <header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Документы сервиса</p><h1 class="ui-page-header__title">{% block document_title %}{% endblock %}</h1><p class="ui-page-header__description">Версия {{ document_version }} · действует с момента публикации на этой странице.</p></div></header>
+  <div class="legal-layout"><article class="legal-document">{% block document_content %}{% endblock %}<div class="legal-document__notice">Перед публикацией заполните реквизиты оператора в переменных окружения. Этот шаблон не заменяет индивидуальную юридическую проверку.</div></article><aside class="legal-nav" aria-label="Другие документы"><h2>Документы</h2><a href="{% url 'privacy_policy' %}" {% if request.resolver_match.url_name == 'privacy_policy' %}aria-current="page"{% endif %}>Политика обработки данных</a><a href="{% url 'personal_data_consent' %}" {% if request.resolver_match.url_name == 'personal_data_consent' %}aria-current="page"{% endif %}>Согласие на обработку данных</a><a href="{% url 'service_terms' %}" {% if request.resolver_match.url_name == 'service_terms' %}aria-current="page"{% endif %}>Условия сервиса</a></aside></div>
+</div>
 {% endblock %}

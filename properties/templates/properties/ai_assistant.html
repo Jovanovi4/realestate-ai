@@ -1,57 +1,26 @@
 {% extends "base.html" %}
-
 {% block title %}ИИ-помощник — {{ property.title }}{% endblock %}
-
 {% block content %}
-<div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
-  <div><p class="small text-muted mb-1">Объект</p><h1 class="h2 mb-1">ИИ-помощник</h1><p class="text-muted mb-0">{{ property.title }} · использует только данные карточки объекта.</p></div>
-  <a href="{% url 'property_detail' property.pk %}" class="btn btn-outline-secondary">К объекту</a>
-</div>
+<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Объект · ИИ</p><h1 class="ui-page-header__title">ИИ-помощник</h1><p class="ui-page-header__description">{{ property.title }} · ИИ использует данные карточки объекта.</p></div><div class="ui-page-header__actions"><a href="{% url 'property_detail' property.pk %}" class="btn btn-neutral">К объекту</a></div></header>
 
-<div class="row g-4">
-  <div class="col-lg-5">
-    <div class="card shadow-sm border-0"><div class="card-body p-4" x-data="{ mode: '{{ form.mode.value|default:'package' }}', tone: '{{ form.tone.value|default:'business' }}' }">
-      <h2 class="h5 mb-1">Что нужно сделать?</h2><p class="small text-muted mb-3">Выберите сценарий — покажем только нужные параметры.</p>
-      <form method="post" hx-post="{% url 'ai_assistant' property.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" hx-indicator="#ai-generation-indicator" hx-disabled-elt="find button">
-        {% csrf_token %}
-        <input type="hidden" name="mode" x-model="mode">
-        <input type="hidden" name="tone" x-model="tone">
-        <div class="row g-2 mb-4">
-          <div class="col-sm-6"><button type="button" class="ai-scenario" :class="{ 'is-active': mode === 'package' }" @click="mode = 'package'"><span class="ai-scenario-icon">✦</span><strong class="d-block">Создать объявление</strong><span class="small text-muted d-block mt-1">Заголовок и описания.</span></button></div>
-          <div class="col-sm-6"><button type="button" class="ai-scenario" :class="{ 'is-active': mode === 'landing' }" @click="mode = 'landing'"><span class="ai-scenario-icon">◫</span><strong class="d-block">Подготовить лендинг</strong><span class="small text-muted d-block mt-1">Первый экран, SEO и CTA.</span></button></div>
-          <div class="col-sm-6"><button type="button" class="ai-scenario" :class="{ 'is-active': mode === 'improve' }" @click="mode = 'improve'"><span class="ai-scenario-icon">↗</span><strong class="d-block">Улучшить текст</strong><span class="small text-muted d-block mt-1">Сократить или изменить подачу.</span></button></div>
-          <div class="col-sm-6"><button type="button" class="ai-scenario" :class="{ 'is-active': mode === 'audit' }" @click="mode = 'audit'"><span class="ai-scenario-icon">✓</span><strong class="d-block">Проверить готовность</strong><span class="small text-muted d-block mt-1">Фото, цена, адрес и контакты.</span></button></div>
-        </div>
-
-        <div x-show="mode !== 'audit'" x-cloak class="mb-4">
-          <label class="form-label d-block mb-2">Тон текста</label>
-          <div class="d-flex flex-wrap gap-2" role="group" aria-label="Тон текста">
-            <button type="button" class="ai-tone" :class="{ 'is-active': tone === 'business' }" @click="tone = 'business'">Деловой</button>
-            <button type="button" class="ai-tone" :class="{ 'is-active': tone === 'premium' }" @click="tone = 'premium'">Премиальный</button>
-            <button type="button" class="ai-tone" :class="{ 'is-active': tone === 'concise' }" @click="tone = 'concise'">Лаконичный</button>
-            <button type="button" class="ai-tone" :class="{ 'is-active': tone === 'emotional' }" @click="tone = 'emotional'">Эмоциональный</button>
-          </div>
-        </div>
-
-        <div x-show="mode === 'improve'" x-cloak>
-          <div class="mb-3"><label class="form-label" for="{{ form.content_type.id_for_label }}">{{ form.content_type.label }}</label>{{ form.content_type }}{% if form.content_type.errors %}<div class="text-danger small mt-1">{{ form.content_type.errors|striptags }}</div>{% endif %}</div>
-          <div class="mb-3"><label class="form-label" for="{{ form.improvement.id_for_label }}">{{ form.improvement.label }}</label>{{ form.improvement }}</div>
-          <div class="mb-3"><label class="form-label" for="{{ form.source_text.id_for_label }}">{{ form.source_text.label }}</label>{{ form.source_text }}{% if form.source_text.errors %}<div class="text-danger small mt-1">{{ form.source_text.errors|striptags }}</div>{% endif %}</div>
-        </div>
-
-        <p class="small text-muted mb-3" x-show="mode === 'package'">Создадим полный комплект объявления. Результаты можно отредактировать перед применением.</p>
-        <p class="small text-muted mb-3" x-show="mode === 'landing'">Подготовим тексты для первого экрана, блока об объекте, SEO и формы заявки.</p>
-        <p class="small text-muted mb-3" x-show="mode === 'audit'">Проверим, хватает ли данных для публикации объекта и лендинга.</p>
-        <button class="btn btn-primary w-100" x-text="mode === 'audit' ? 'Проверить объект' : 'Сгенерировать'"></button>
-        <div id="ai-generation-indicator" class="htmx-indicator text-center text-primary small mt-3"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>ИИ готовит результат…</div>
-      </form>
-    </div></div>
-    <div class="card border-0 shadow-sm mt-3"><div class="card-body py-3 d-flex justify-content-between align-items-center"><span class="small text-muted">История генераций</span><strong>{{ usage.total }}</strong></div></div>
-  </div>
-
-  <div class="col-lg-7">
-    {% include "properties/includes/ai_editor_placeholder.html" %}
-    <div class="mt-4">{% include "properties/includes/ai_history.html" %}</div>
-  </div>
+<div class="ai-workspace">
+  <section class="ai-panel" x-data="{ mode: '{{ form.mode.value|default:'package' }}', tone: '{{ form.tone.value|default:'business' }}' }" aria-labelledby="ai-task-title">
+    <div class="ai-panel__heading"><h2 id="ai-task-title">Что нужно сделать?</h2><p>Выберите сценарий — покажем только нужные параметры.</p></div>
+    <form method="post" hx-post="{% url 'ai_assistant' property.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" hx-indicator="#ai-generation-indicator" hx-disabled-elt="find button" class="app-form">
+      {% csrf_token %}<input type="hidden" name="mode" x-model="mode"><input type="hidden" name="tone" x-model="tone">
+      {% if form.non_field_errors %}<div class="app-form-error-summary" role="alert">{{ form.non_field_errors|striptags }}</div>{% endif %}
+      <div class="ai-scenario-grid" role="group" aria-label="Сценарий ИИ">
+        <button type="button" class="ai-scenario" :class="{ 'is-active': mode === 'package' }" :aria-pressed="(mode === 'package').toString()" @click="mode = 'package'"><span class="ai-scenario-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-sparkles"></use></svg></span><strong>Создать объявление</strong><small>Заголовок и описания.</small></button>
+        <button type="button" class="ai-scenario" :class="{ 'is-active': mode === 'landing' }" :aria-pressed="(mode === 'landing').toString()" @click="mode = 'landing'"><span class="ai-scenario-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-layout"></use></svg></span><strong>Подготовить лендинг</strong><small>Первый экран, SEO и CTA.</small></button>
+        <button type="button" class="ai-scenario" :class="{ 'is-active': mode === 'improve' }" :aria-pressed="(mode === 'improve').toString()" @click="mode = 'improve'"><span class="ai-scenario-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-edit"></use></svg></span><strong>Улучшить текст</strong><small>Сократить или изменить подачу.</small></button>
+        <button type="button" class="ai-scenario" :class="{ 'is-active': mode === 'audit' }" :aria-pressed="(mode === 'audit').toString()" @click="mode = 'audit'"><span class="ai-scenario-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-star"></use></svg></span><strong>Проверить готовность</strong><small>Фото, цена, адрес и контакты.</small></button>
+      </div>
+      <div x-show="mode !== 'audit'" x-cloak class="ai-workspace__tones"><span class="form-label">Тон текста</span><div class="d-flex flex-wrap gap-2" role="group" aria-label="Тон текста"><button type="button" class="ai-tone" :class="{ 'is-active': tone === 'business' }" :aria-pressed="(tone === 'business').toString()" @click="tone = 'business'">Деловой</button><button type="button" class="ai-tone" :class="{ 'is-active': tone === 'premium' }" :aria-pressed="(tone === 'premium').toString()" @click="tone = 'premium'">Премиальный</button><button type="button" class="ai-tone" :class="{ 'is-active': tone === 'concise' }" :aria-pressed="(tone === 'concise').toString()" @click="tone = 'concise'">Лаконичный</button><button type="button" class="ai-tone" :class="{ 'is-active': tone === 'emotional' }" :aria-pressed="(tone === 'emotional').toString()" @click="tone = 'emotional'">Эмоциональный</button></div></div>
+      <div x-show="mode === 'improve'" x-cloak class="ai-workspace__fields"><div class="app-field">{% include "includes/form_field.html" with field=form.content_type %}</div><div class="app-field">{% include "includes/form_field.html" with field=form.improvement %}</div><div class="app-field">{% include "includes/form_field.html" with field=form.source_text %}</div></div>
+      <p class="ai-workspace__hint" x-show="mode === 'package'">Создадим комплект объявления. Результаты можно отредактировать перед применением.</p><p class="ai-workspace__hint" x-show="mode === 'landing'">Подготовим тексты для первого экрана, блока об объекте, SEO и формы заявки.</p><p class="ai-workspace__hint" x-show="mode === 'audit'">Проверим, хватает ли данных для публикации объекта и лендинга.</p>
+      <button class="btn btn-primary w-100" type="submit" x-text="mode === 'audit' ? 'Проверить объект' : 'Сгенерировать'"></button><div id="ai-generation-indicator" class="htmx-indicator ai-workspace__loading" role="status"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span>ИИ готовит результат…</div>
+    </form>
+  </section>
+  <div class="ai-workspace__results">{% include "properties/includes/ai_editor_placeholder.html" %}{% include "properties/includes/ai_history.html" %}</div>
 </div>
 {% endblock %}

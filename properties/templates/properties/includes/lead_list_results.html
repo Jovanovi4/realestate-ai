@@ -1,7 +1,102 @@
-<div id="leads-results">
+<div id="leads-results" class="lead-results">
   {% if leads %}
-    <div class="desktop-records card shadow-sm border-0 overflow-hidden"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th><input class="form-check-input" type="checkbox" aria-label="Выбрать все заявки на странице" @change="selected = $event.target.checked ? [{% for lead in leads %}'{{ lead.pk }}'{% if not forloop.last %}, {% endif %}{% endfor %}] : []" :checked="selected.length === {{ leads|length }}"></th><th>Клиент</th><th>Объект</th><th>Обработка</th><th>Этап клиента</th><th>Получена</th><th class="text-end"></th></tr></thead><tbody>{% for lead in leads %}<tr :class="{ 'table-active': selected.includes('{{ lead.pk }}') }"><td><input class="form-check-input" type="checkbox" name="lead_ids" value="{{ lead.pk }}" form="lead-bulk-form" aria-label="Выбрать заявку от {{ lead.name }}" x-model="selected"></td><td><strong class="d-block">{{ lead.name }}</strong><a href="tel:{{ lead.phone }}" class="text-decoration-none small text-muted">{{ lead.phone }}</a>{% if lead.message %}<p class="small text-muted text-truncate mb-0 mt-2" style="max-width:260px;" title="{{ lead.message }}">{{ lead.message|truncatechars:90 }}</p>{% endif %}{% if lead.client and lead.client.leads.count > 1 %}<span class="d-block small text-muted mt-2">Повторное обращение</span>{% endif %}</td><td><span class="d-block fw-semibold small">{{ lead.property.title }}</span><span class="small text-muted">{{ lead.property.get_property_type_display }}</span></td><td>{% include "properties/includes/lead_status_badge.html" %}</td><td>{% if lead.client %}{% include "properties/includes/client_status_badge.html" with client=lead.client %}{% else %}<span class="text-muted small">—</span>{% endif %}</td><td class="text-muted small text-nowrap">{{ lead.created_at|date:"d.m.Y" }}<br>{{ lead.created_at|date:"H:i" }}</td><td class="text-end"><a class="btn btn-icon btn-sm btn-outline-secondary" href="{% url 'lead_detail' lead.pk %}" title="Открыть заявку" aria-label="Открыть заявку от {{ lead.name }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></td></tr>{% endfor %}</tbody></table></div></div>
-    <div class="mobile-records">{% for lead in leads %}<article class="mobile-record-card" :class="{ 'is-selected': selected.includes('{{ lead.pk }}') }"><div class="d-flex align-items-start gap-3"><input class="form-check-input mt-1" type="checkbox" name="lead_ids" value="{{ lead.pk }}" form="lead-bulk-form" aria-label="Выбрать заявку от {{ lead.name }}" x-model="selected"><div class="flex-grow-1 min-w-0"><div class="d-flex justify-content-between gap-2"><div><strong class="d-block">{{ lead.name }}</strong><a href="tel:{{ lead.phone }}" class="small text-muted text-decoration-none">{{ lead.phone }}</a></div>{% include "properties/includes/lead_status_badge.html" %}</div>{% if lead.message %}<p class="small text-muted mb-0 mt-2">{{ lead.message|truncatechars:120 }}</p>{% endif %}<dl class="mobile-record-meta"><div><dt>Объект</dt><dd>{{ lead.property.title }}</dd></div><div><dt>Получена</dt><dd>{{ lead.created_at|date:"d.m · H:i" }}</dd></div></dl><div class="d-flex justify-content-end align-items-center mt-3"><a class="btn btn-icon btn-sm btn-outline-secondary" href="{% url 'lead_detail' lead.pk %}" title="Открыть заявку" aria-label="Открыть заявку от {{ lead.name }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a></div></div></div></article>{% endfor %}</div>
-    {% if is_paginated %}<nav class="mt-4"><ul class="pagination">{% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?status={{ selected_status }}&page={{ page_obj.previous_page_number }}">Назад</a></li>{% endif %}<li class="page-item disabled"><span class="page-link">{{ page_obj.number }} из {{ paginator.num_pages }}</span></li>{% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?status={{ selected_status }}&page={{ page_obj.next_page_number }}">Вперёд</a></li>{% endif %}</ul></nav>{% endif %}
-  {% else %}<div class="card border-0 shadow-sm"><div class="card-body p-5 text-center"><div class="fs-3 mb-2">○</div><h2 class="h5">Заявок пока нет</h2><p class="text-muted mb-0">Обращения появятся здесь после заполнения формы на опубликованном лендинге.</p></div></div>{% endif %}
+    <div class="lead-table-shell desktop-records">
+      <div class="table-responsive">
+        <table class="table lead-table align-middle mb-0">
+          <thead>
+            <tr>
+              <th scope="col" class="lead-table__selection">
+                <input class="form-check-input" type="checkbox" aria-label="Выбрать все заявки на странице" @change="selected = $event.target.checked ? [{% for lead in leads %}'{{ lead.pk }}'{% if not forloop.last %}, {% endif %}{% endfor %}] : []" :checked="selected.length === {{ leads|length }}">
+              </th>
+              <th scope="col">Клиент</th>
+              <th scope="col">Объект</th>
+              <th scope="col">Статус</th>
+              <th scope="col">Получена</th>
+              <th scope="col"><span class="visually-hidden">Действия</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for lead in leads %}
+              <tr class="lead-table__row {% if lead.status == 'new' %}is-new{% endif %}" :class="{ 'is-selected': selected.includes('{{ lead.pk }}') }">
+                <td class="lead-table__selection">
+                  <input class="form-check-input" type="checkbox" name="lead_ids" value="{{ lead.pk }}" form="lead-bulk-form" aria-label="Выбрать заявку от {{ lead.name }}" x-model="selected">
+                </td>
+                <td>
+                  <a class="lead-table__name" href="{% url 'lead_detail' lead.pk %}">{{ lead.name }}</a>
+                  <a class="lead-table__phone" href="tel:{{ lead.phone }}">{{ lead.phone }}</a>
+                  {% if lead.message %}<p class="lead-table__message" title="{{ lead.message }}">{{ lead.message|truncatechars:80 }}</p>{% endif %}
+                  {% if lead.client and lead.client.leads.count > 1 %}<span class="lead-table__repeat">Повторное обращение</span>{% endif %}
+                </td>
+                <td>
+                  <span class="lead-table__property">{{ lead.property.title }}</span>
+                  <span class="lead-table__type">{{ lead.property.get_property_type_display }}</span>
+                </td>
+                <td>
+                  {% include "properties/includes/lead_status_badge.html" %}
+                  {% if lead.client %}<span class="lead-table__stage">Этап клиента: {{ lead.client.get_status_display }}</span>{% endif %}
+                </td>
+                <td>
+                  <time class="lead-table__date" datetime="{{ lead.created_at|date:'c' }}">{{ lead.created_at|date:"d.m.Y" }}<span>{{ lead.created_at|date:"H:i" }}</span></time>
+                </td>
+                <td class="lead-table__actions">
+                  <a class="btn btn-icon btn-sm btn-text lead-table__open" href="{% url 'lead_detail' lead.pk %}" title="Открыть заявку" aria-label="Открыть заявку от {{ lead.name }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mobile-records lead-mobile-list">
+      {% for lead in leads %}
+        <article class="lead-mobile-card {% if lead.status == 'new' %}is-new{% endif %}" :class="{ 'is-selected': selected.includes('{{ lead.pk }}') }">
+          <div class="lead-mobile-card__head">
+            <input class="form-check-input" type="checkbox" name="lead_ids" value="{{ lead.pk }}" form="lead-bulk-form" aria-label="Выбрать заявку от {{ lead.name }}" x-model="selected">
+            <div class="lead-mobile-card__person">
+              <a class="lead-mobile-card__name" href="{% url 'lead_detail' lead.pk %}">{{ lead.name }}</a>
+              <a class="lead-mobile-card__phone" href="tel:{{ lead.phone }}">{{ lead.phone }}</a>
+            </div>
+            {% include "properties/includes/lead_status_badge.html" %}
+          </div>
+          <div class="lead-mobile-card__body">
+            <p class="lead-mobile-card__object"><span>Объект</span><strong>{{ lead.property.title }}</strong></p>
+            {% if lead.message %}<p class="lead-mobile-card__message">{{ lead.message|truncatechars:120 }}</p>{% endif %}
+          </div>
+          <div class="lead-mobile-card__footer">
+            <div>
+              <time datetime="{{ lead.created_at|date:'c' }}">{{ lead.created_at|date:"d.m.Y · H:i" }}</time>
+              {% if lead.client %}<span class="lead-mobile-card__stage">Этап клиента: {{ lead.client.get_status_display }}</span>{% endif %}
+            </div>
+            <a class="btn btn-icon btn-sm btn-outline-secondary lead-mobile-card__open" href="{% url 'lead_detail' lead.pk %}" title="Открыть заявку" aria-label="Открыть заявку от {{ lead.name }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>
+          </div>
+        </article>
+      {% endfor %}
+    </div>
+
+    {% if is_paginated %}
+      <nav class="mt-4" aria-label="Страницы заявок">
+        <ul class="pagination">
+          {% if page_obj.has_previous %}
+            <li class="page-item"><a class="page-link" href="?{{ pagination_query }}{% if pagination_query %}&amp;{% endif %}page={{ page_obj.previous_page_number }}" hx-get="?{{ pagination_query }}{% if pagination_query %}&amp;{% endif %}page={{ page_obj.previous_page_number }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true" aria-label="Предыдущая страница">‹</a></li>
+          {% endif %}
+          <li class="page-item active"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+          {% if page_obj.has_next %}
+            <li class="page-item"><a class="page-link" href="?{{ pagination_query }}{% if pagination_query %}&amp;{% endif %}page={{ page_obj.next_page_number }}" hx-get="?{{ pagination_query }}{% if pagination_query %}&amp;{% endif %}page={{ page_obj.next_page_number }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true" aria-label="Следующая страница">›</a></li>
+          {% endif %}
+        </ul>
+      </nav>
+    {% endif %}
+  {% else %}
+    <section class="empty-state">
+      {% if has_any_leads and selected_status %}
+        <h2>В этом статусе заявок нет</h2>
+        <p>Выберите другой статус или покажите все обращения.</p>
+        <a class="btn btn-neutral" href="{% url 'lead_list' %}">Показать все</a>
+      {% else %}
+        <h2>Заявок пока нет</h2>
+        <p>Обращения клиентов с опубликованных лендингов появятся здесь.</p>
+      {% endif %}
+    </section>
+  {% endif %}
 </div>

@@ -3,17 +3,5 @@
 {% block title %}Проверка текста — {{ ai_content.property.title }}{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-start mb-4">
-  <div>
-    <h1 class="h2 mb-1">Проверка ИИ-текста</h1>
-    <p class="text-muted mb-0">{{ ai_content.get_content_type_display }} · {{ ai_content.get_tone_display }} · {{ ai_content.property.title }}</p>
-  </div>
-  <a href="{% url 'ai_assistant' ai_content.property.pk %}" class="btn btn-outline-secondary">← К истории</a>
-</div>
-
-<div class="row justify-content-center">
-  <div class="col-xl-9">
-    {% include "properties/includes/ai_content_editor.html" %}
-  </div>
-</div>
+<div class="app-form-page app-form-page--narrow"><header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Объект · ИИ</p><h1 class="ui-page-header__title">Проверка ИИ-текста</h1><p class="ui-page-header__description">{{ ai_content.get_content_type_display }} · {{ ai_content.get_tone_display }} · {{ ai_content.property.title }}</p></div><div class="ui-page-header__actions"><a href="{% url 'ai_assistant' ai_content.property.pk %}" class="btn btn-neutral">К истории</a></div></header>{% include "properties/includes/ai_content_editor.html" %}</div>
 {% endblock %}

@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-
 {% block title %}Фотографии — {{ property.title }}{% endblock %}
-
 {% block content %}
-<div class="row justify-content-center"><div class="col-lg-8"><div class="card border-0 shadow-sm"><div class="card-body p-4 p-lg-5" x-data="{ previews: [], setFiles(event) { this.previews = Array.from(event.target.files).map((file) => ({ name: file.name, url: URL.createObjectURL(file) })); } }">
-  <div class="d-flex justify-content-between align-items-start gap-3 mb-4"><div><p class="small text-muted mb-1">Галерея объекта</p><h1 class="h3 mb-1">Загрузка фотографий</h1><p class="text-muted mb-0">{{ property.title }}</p></div><a href="{% url 'property_detail' property.pk %}" class="btn btn-outline-secondary">Отмена</a></div>
-  <form method="post" enctype="multipart/form-data">{% csrf_token %}<label class="form-label" for="images">Выберите фотографии</label><input id="images" type="file" name="images" multiple accept="image/*" class="form-control" @change="setFiles($event)"><div class="form-text">Можно выбрать несколько изображений. Первое фото станет главным, если в галерее ещё нет фотографий.</div>
-    <template x-if="previews.length"><div class="row g-3 mt-2"><template x-for="preview in previews" :key="preview.url"><div class="col-6 col-md-4"><div class="card h-100"><img :src="preview.url" :alt="preview.name" class="card-img-top" style="height:150px;object-fit:cover;"><div class="card-body p-2"><small class="text-muted text-truncate d-block" x-text="preview.name"></small></div></div></div></template></div></template>
-    <button class="btn btn-primary mt-4">Загрузить фотографии</button>
+<div class="app-form-page app-form-page--narrow" x-data="{ previews: [], setFiles(event) { this.previews.forEach((item) => URL.revokeObjectURL(item.url)); this.previews = Array.from(event.target.files).map((file) => ({ name: file.name, url: URL.createObjectURL(file) })); } }">
+  <header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Галерея объекта</p><h1 class="ui-page-header__title">Загрузка фотографий</h1><p class="ui-page-header__description">{{ property.title }}</p></div><div class="ui-page-header__actions"><a href="{% url 'property_detail' property.pk %}#photos-pane" class="btn btn-neutral">К галерее</a></div></header>
+  <form method="post" enctype="multipart/form-data" class="app-form app-form-panel">{% csrf_token %}
+    {% if upload_error %}<div class="app-form-error-summary" role="alert">{{ upload_error }}</div>{% endif %}
+    <div class="upload-control upload-control--multiple"><label class="upload-dropzone" for="images"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-image"></use></svg><strong>Выберите фотографии</strong><span>Можно загрузить несколько изображений сразу</span></label><input id="images" type="file" name="images" multiple accept="image/*" class="visually-hidden" required @change="setFiles($event)"><p class="upload-control__hint">Первое фото станет главным, если в галерее пока нет изображений.</p></div>
+    <template x-if="previews.length"><div class="upload-preview-grid"><template x-for="preview in previews" :key="preview.url"><figure class="upload-preview"><img :src="preview.url" :alt="preview.name"><figcaption x-text="preview.name"></figcaption></figure></template></div></template>
+    <div class="app-form-actions"><button class="btn btn-primary" type="submit">Загрузить фотографии</button></div>
   </form>
-</div></div></div></div>
+</div>
 {% endblock %}

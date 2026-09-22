@@ -60,7 +60,7 @@ urlpatterns = [
         "profile/password/",
         auth_views.PasswordChangeView.as_view(
             form_class=AccountPasswordChangeForm,
-            template_name="registration/password_change_form.html",
+            template_name="properties/password_change_form.html",
             success_url=reverse_lazy("edit_profile"),
         ),
         name="password_change",

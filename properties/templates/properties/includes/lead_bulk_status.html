@@ -1,12 +1,16 @@
-<form id="lead-bulk-form" method="post" action="{% url 'lead_bulk_status_update' %}" class="lead-bulk-toolbar mb-3" x-cloak x-show="selected.length" x-transition>
+<form id="lead-bulk-form" method="post" action="{% url 'lead_bulk_status_update' %}" class="lead-bulk-toolbar" x-cloak x-show="selected.length" x-transition>
   {% csrf_token %}
   <input type="hidden" name="next" value="{{ request.get_full_path }}">
-  <span class="small fw-semibold" x-text="`Выбрано: ${selected.length}`"></span>
+  <span class="lead-bulk-toolbar__count" x-text="`Выбрано: ${selected.length}`" aria-live="polite"></span>
   <label class="visually-hidden" for="lead-bulk-status">Новый статус обработки</label>
   <select id="lead-bulk-status" name="status" class="form-select form-select-sm" required>
     <option value="" selected disabled>Изменить статус на…</option>
     {% for value, label in status_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
   </select>
   <button class="btn btn-sm btn-primary" name="action" value="status" type="submit">Применить</button>
-  <button class="btn btn-sm btn-outline-danger" name="action" value="delete" type="submit" formnovalidate data-confirm="Удалить выбранные заявки без возможности восстановления?" data-confirm-title="Удалить заявки?" data-confirm-button="Удалить">Удалить</button>
+  <button class="btn btn-sm btn-text" type="button" @click="selected = []">Снять выбор</button>
+  <div class="dropdown action-menu lead-bulk-toolbar__more">
+    <button class="btn btn-icon btn-sm btn-neutral dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Дополнительные действия с выбранными заявками">•••</button>
+    <ul class="dropdown-menu dropdown-menu-end"><li><button class="dropdown-item text-danger" name="action" value="delete" type="submit" formnovalidate data-confirm="Удалить выбранные заявки без возможности восстановления?" data-confirm-title="Удалить заявки?" data-confirm-button="Удалить">Удалить выбранные</button></li></ul>
+  </div>
 </form>

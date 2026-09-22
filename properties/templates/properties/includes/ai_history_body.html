@@ -1,35 +1,6 @@
-<div class="card shadow-sm border-0">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <h2 class="h5 mb-0">История генераций</h2>
-      {% if history_total %}<span class="badge text-bg-light border text-secondary">{{ history_total }}</span>{% endif %}
-    </div>
-    {% if history %}
-      <div class="list-group list-group-flush">
-        {% for item in history %}
-          <div class="list-group-item px-0">
-            <div class="d-flex justify-content-between gap-3 align-items-start">
-              <a href="{% url 'ai_content_edit' item.pk %}" hx-get="{% url 'ai_content_edit' item.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" class="text-decoration-none text-body flex-grow-1">
-                <strong>{{ item.get_content_type_display }}</strong>
-                <span class="text-muted">· {{ item.get_tone_display }}</span>
-                {% if item.is_applied %}<span class="badge text-bg-success ms-1">Применён</span>{% endif %}
-                <p class="text-body-secondary mb-0 mt-2 small">{{ item.edited_content|default:item.content|truncatechars:180 }}</p>
-              </a>
-              <div class="text-end text-nowrap">
-                <small class="text-muted d-block mb-2">{{ item.created_at|date:"d.m.Y H:i" }}</small>
-                <form method="post" action="{% url 'ai_content_delete' item.pk %}" hx-post="{% url 'ai_content_delete' item.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" data-success-message="Запись удалена" data-confirm="Удалить эту запись из истории генераций?" data-confirm-title="Удалить запись?" data-confirm-button="Удалить">
-                  {% csrf_token %}
-                  <input type="hidden" name="history_page" value="{{ history.number }}">
-                  <button class="history-delete" title="Удалить запись" aria-label="Удалить запись «{{ item.get_content_type_display }}»"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v5M14 11v5"/></svg></button>
-                </form>
-              </div>
-            </div>
-          </div>
-        {% endfor %}
-      </div>
-      {% if history.paginator.num_pages > 1 %}<nav class="mt-4" aria-label="Страницы истории"><ul class="pagination pagination-sm mb-0">{% if history.has_previous %}<li class="page-item"><a class="page-link" href="?history_page={{ history.previous_page_number }}" hx-get="?history_page={{ history.previous_page_number }}" hx-target="#ai-history" hx-swap="outerHTML">Назад</a></li>{% endif %}<li class="page-item disabled"><span class="page-link">{{ history.number }} / {{ history.paginator.num_pages }}</span></li>{% if history.has_next %}<li class="page-item"><a class="page-link" href="?history_page={{ history.next_page_number }}" hx-get="?history_page={{ history.next_page_number }}" hx-target="#ai-history" hx-swap="outerHTML">Вперёд</a></li>{% endif %}</ul></nav>{% endif %}
-    {% else %}
-      <p class="text-muted mb-0">Генераций ещё не было.</p>
-    {% endif %}
-  </div>
-</div>
+<section class="ai-panel ai-history" aria-labelledby="ai-history-title">
+  <div class="ai-panel__heading ai-history__heading"><div><h2 id="ai-history-title">История генераций</h2><p>Черновики, созданные для этого объекта.</p></div>{% if history_total %}<span class="ui-count">{{ history_total }}</span>{% endif %}</div>
+  {% if history %}<div class="ai-history__list">{% for item in history %}<article class="ai-history__item"><a href="{% url 'ai_content_edit' item.pk %}" hx-get="{% url 'ai_content_edit' item.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" class="ai-history__link"><span class="ai-history__title">{{ item.get_content_type_display }}{% if item.is_applied %}<span class="badge text-bg-success">Применён</span>{% endif %}</span><span class="ai-history__meta">{{ item.get_tone_display }} · {{ item.created_at|date:"d.m.Y H:i" }}</span><span class="ai-history__excerpt">{{ item.edited_content|default:item.content|truncatechars:180 }}</span></a><form method="post" action="{% url 'ai_content_delete' item.pk %}" hx-post="{% url 'ai_content_delete' item.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" data-success-message="Запись удалена" data-confirm="Удалить эту запись из истории генераций?" data-confirm-title="Удалить запись?" data-confirm-button="Удалить">{% csrf_token %}<input type="hidden" name="history_page" value="{{ history.number }}"><button class="btn btn-icon btn-sm btn-text" type="submit" title="Удалить запись" aria-label="Удалить запись «{{ item.get_content_type_display }}»"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-trash"></use></svg></button></form></article>{% endfor %}</div>
+    {% if history.paginator.num_pages > 1 %}<nav class="ai-history__pagination" aria-label="Страницы истории"><ul class="pagination pagination-sm mb-0">{% if history.has_previous %}<li class="page-item"><a class="page-link" href="?history_page={{ history.previous_page_number }}" hx-get="?history_page={{ history.previous_page_number }}" hx-target="#ai-history" hx-swap="outerHTML">Назад</a></li>{% endif %}<li class="page-item disabled"><span class="page-link">{{ history.number }} / {{ history.paginator.num_pages }}</span></li>{% if history.has_next %}<li class="page-item"><a class="page-link" href="?history_page={{ history.next_page_number }}" hx-get="?history_page={{ history.next_page_number }}" hx-target="#ai-history" hx-swap="outerHTML">Вперёд</a></li>{% endif %}</ul></nav>{% endif %}
+  {% else %}<div class="ai-history__empty"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-sparkles"></use></svg><p>Генераций ещё не было. Первый результат появится здесь.</p></div>{% endif %}
+</section>

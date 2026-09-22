@@ -1,6 +1,15 @@
-<div class="lead-filter-bar mb-4">
-  <span class="small fw-semibold text-muted me-2">Показать</span>
-  <a class="lead-filter-option {% if not selected_status %}is-active{% endif %}" href="{% url 'lead_list' %}" hx-get="{% url 'lead_list' %}" hx-target="#lead-workspace" hx-swap="outerHTML">Все</a>
-  {% for value, label in status_choices %}<a class="lead-filter-option {% if value == selected_status %}is-active{% endif %}" href="?status={{ value }}" hx-get="{% url 'lead_list' %}?status={{ value }}" hx-target="#lead-workspace" hx-swap="outerHTML">{{ label }}</a>{% endfor %}
-  <span class="htmx-indicator small text-muted ms-2">Обновляем…</span>
-</div>
+<nav class="lead-status-filter" aria-label="Фильтр заявок по статусу">
+  <span class="lead-status-filter__label">Статус</span>
+  <div class="lead-status-filter__options">
+    {% for tab in status_tabs %}
+      <a class="lead-status-filter__option {% if tab.value == selected_status %}is-active{% endif %}"
+         href="{% url 'lead_list' %}{% if tab.value %}?status={{ tab.value }}{% endif %}"
+         hx-get="{% url 'lead_list' %}{% if tab.value %}?status={{ tab.value }}{% endif %}"
+         hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"
+         {% if tab.value == selected_status %}aria-current="page"{% endif %}>
+        {{ tab.label }} <span class="lead-status-filter__count">{{ tab.count }}</span>
+      </a>
+    {% endfor %}
+  </div>
+  <span class="htmx-indicator lead-status-filter__loading" role="status">Обновляем…</span>
+</nav>

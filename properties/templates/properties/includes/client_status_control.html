@@ -1,11 +1,11 @@
-<div id="client-status-{{ client.pk }}" class="d-flex flex-wrap align-items-center gap-2">
+<div id="client-status-{{ client.pk }}" class="detail-status-control">
   {% include "properties/includes/client_status_badge.html" %}
-  <form method="post" action="{% url 'client_status_update' client.pk %}" hx-post="{% url 'client_status_update' client.pk %}" hx-target="#client-status-{{ client.pk }}" hx-swap="outerHTML" data-success-message="Этап клиента обновлён" class="d-flex flex-wrap gap-2 align-items-center">
+  <form method="post" action="{% url 'client_status_update' client.pk %}" hx-post="{% url 'client_status_update' client.pk %}" hx-target="#client-status-{{ client.pk }}" hx-swap="outerHTML" data-success-message="Этап клиента обновлён" class="detail-status-control__form">
     {% csrf_token %}
     <label class="visually-hidden" for="client-status-select-{{ client.pk }}">Этап клиента</label>
     <select id="client-status-select-{{ client.pk }}" name="status" class="form-select form-select-sm">
       {% for value, label in client.STATUS_CHOICES %}<option value="{{ value }}" {% if client.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
     </select>
-    <button class="btn btn-sm btn-outline-secondary">Сохранить этап</button>
+    <button class="btn btn-sm btn-neutral" type="submit">Сохранить этап</button>
   </form>
 </div>

@@ -1,3 +1,28 @@
 {% extends "base.html" %}
 {% block title %}Воронка клиентов{% endblock %}
-{% block content %}<div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4"><div><p class="small text-muted mb-1">CRM</p><h1 class="h2 mb-1">Воронка клиентов</h1><p class="text-muted mb-0">Распределение клиентов по этапам работы.</p></div><a href="{% url 'client_list' %}" class="btn btn-outline-secondary">Список клиентов</a></div><div class="row g-3 flex-nowrap overflow-auto pb-3">{% for status,label,clients in columns %}<div class="col-10 col-sm-7 col-lg-4 col-xl-3"><div class="card border-0 shadow-sm h-100"><div class="card-body"><div class="d-flex justify-content-between align-items-center mb-3"><h2 class="h6 mb-0">{{ label }}</h2><span class="badge text-bg-light border text-secondary">{{ clients|length }}</span></div>{% for client in clients %}<a href="{% url 'client_detail' client.pk %}" class="d-block text-decoration-none text-body border rounded-3 p-3 mb-2"><strong>{{ client.name }}</strong><span class="d-block small text-muted mt-1">{{ client.phone }}</span>{% if client.preferred_area %}<span class="d-block small text-muted">{{ client.preferred_area }}</span>{% endif %}</a>{% empty %}<p class="small text-muted mb-0">Пока нет клиентов.</p>{% endfor %}</div></div></div>{% endfor %}</div>{% endblock %}
+{% block content %}
+<header class="ui-page-header">
+  <div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Воронка клиентов</h1><p class="ui-page-header__description">Клиенты по этапам работы — от первого контакта до результата.</p></div>
+  <div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Список клиентов</a></div>
+</header>
+
+<div class="client-board" aria-label="Этапы работы с клиентами">
+  {% for status, label, clients in columns %}
+    <section class="client-board__column is-{{ status }}" aria-labelledby="client-board-{{ status }}">
+      <header class="client-board__heading"><h2 id="client-board-{{ status }}">{{ label }}</h2><span class="client-board__count" aria-label="Клиентов на этапе: {{ clients|length }}">{{ clients|length }}</span></header>
+      <div class="client-board__items">
+        {% for client in clients %}
+          <a href="{% url 'client_detail' client.pk %}" class="client-board__card">
+            <strong>{{ client.name }}</strong>
+            <span class="client-board__phone">{{ client.phone }}</span>
+            {% if client.preferred_area %}<span class="client-board__area">{{ client.preferred_area }}</span>{% endif %}
+            <span class="client-board__source">{{ client.get_source_display }}</span>
+          </a>
+        {% empty %}
+          <p class="client-board__empty">Пока нет клиентов</p>
+        {% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+</div>
+{% endblock %}

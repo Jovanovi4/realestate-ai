@@ -1,3 +1,5 @@
+{% load static %}
+{% get_static_prefix as static_prefix %}
 <!doctype html>
 <html lang="ru">
   <head>
@@ -8,24 +10,6 @@
     <script defer src="https://unpkg.com/htmx.org@2.0.6"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
     <style>
-      [x-cloak] { display: none !important; }
-      :root { --sidebar-width: 264px; --ink: #172033; --muted: #64748b; --canvas: #f8fafc; --sidebar: #111827; --accent: #334155; }
-      body { min-height: 100vh; color: var(--ink); background: var(--canvas); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      h1, h2, h3, h4, h5, h6 { letter-spacing: -.025em; }
-      .card { border-radius: .8rem; }
-      .card.shadow-sm { box-shadow: 0 .25rem 1.25rem rgba(15, 23, 42, .06) !important; }
-      .btn { border-radius: .55rem; font-weight: 600; }
-      .btn-primary { --bs-btn-bg: #1f2937; --bs-btn-border-color: #1f2937; --bs-btn-hover-bg: #111827; --bs-btn-hover-border-color: #111827; --bs-btn-active-bg: #111827; --bs-btn-active-border-color: #111827; }
-      .btn-outline-primary { --bs-btn-color: #334155; --bs-btn-border-color: #cbd5e1; --bs-btn-hover-bg: #f1f5f9; --bs-btn-hover-border-color: #cbd5e1; --bs-btn-hover-color: #172033; --bs-btn-active-bg: #e2e8f0; --bs-btn-active-border-color: #cbd5e1; --bs-btn-active-color: #172033; }
-      .btn-outline-secondary { --bs-btn-color: #475569; --bs-btn-border-color: #d6dde7; --bs-btn-hover-bg: #f1f5f9; --bs-btn-hover-border-color: #d6dde7; --bs-btn-hover-color: #172033; }
-      .btn-outline-danger { --bs-btn-color: #9f2d25; --bs-btn-border-color: #e8c3be; --bs-btn-hover-bg: #fff6f5; --bs-btn-hover-border-color: #dca9a2; --bs-btn-hover-color: #7f211b; }
-      .btn-icon { display:inline-grid; width:2.15rem; height:2.15rem; padding:0; place-items:center; }
-      .btn-icon svg { width:1rem; height:1rem; }
-      .action-menu .dropdown-toggle::after { display:none; }
-      .action-menu .dropdown-menu { min-width:12rem; padding:.4rem; border-color:#e2e8f0; border-radius:.7rem; box-shadow:0 .6rem 1.5rem rgba(15,23,42,.12); }
-      .action-menu .dropdown-item { border-radius:.45rem; font-size:.875rem; font-weight:600; }
-      .form-control, .form-select { border-color: #dbe3ee; border-radius: .55rem; }
-      .form-control:focus, .form-select:focus { border-color: #94a3b8; box-shadow: 0 0 0 .2rem rgba(100,116,139,.13); }
       .auth-page { display:grid; width:100vw; min-height:100vh; padding:2rem 1.25rem; margin:-3rem 0 -3rem calc(50% - 50vw); place-items:center; background:radial-gradient(circle at 50% 0, #fff 0, #f8fafc 42%, #eef2f7 100%); }
       .auth-panel { width:min(100%, 29rem); }
       .auth-brand { display:flex; align-items:center; justify-content:center; gap:.65rem; margin-bottom:1.5rem; color:#334155; font-size:1.05rem; font-weight:800; letter-spacing:-.03em; text-decoration:none; }
@@ -43,14 +27,6 @@
       .auth-card .btn-primary { min-height:2.85rem; }
       .auth-card .form-check-label { color:#64748b; line-height:1.45; }
       .auth-card .form-check-label a { color:#475569; }
-      .onboarding-card { border:1px solid #dbe3ee !important; background:linear-gradient(135deg,#fff 0%,#f8fafc 100%); }
-      .onboarding-progress { height:.35rem; overflow:hidden; border-radius:999px; background:#e2e8f0; }
-      .onboarding-progress span { display:block; height:100%; border-radius:inherit; background:#475569; transition:width .2s ease; }
-      .onboarding-step { display:flex; align-items:center; gap:.55rem; min-height:3.4rem; padding:.65rem .75rem; border:1px solid #e2e8f0; border-radius:.65rem; color:#475569; background:#fff; font-size:.8rem; font-weight:650; line-height:1.25; text-decoration:none; }
-      .onboarding-step:hover { border-color:#cbd5e1; color:#172033; background:#f8fafc; }
-      .onboarding-step-mark { display:grid; flex:0 0 1.4rem; width:1.4rem; height:1.4rem; place-items:center; border-radius:50%; color:#64748b; background:#eef2f7; font-size:.68rem; font-weight:800; }
-      .onboarding-step.is-done { color:#526b5b; border-color:#d6e6d9; background:#fbfefb; }
-      .onboarding-step.is-done .onboarding-step-mark { color:#29723d; background:#dff1e3; }
       .welcome-screen { display:grid; min-height:calc(100vh - 5rem); place-items:center; }
       .welcome-panel { width:min(100%, 760px); padding:2rem 0; }
       .welcome-mark { display:grid; width:3rem; height:3rem; place-items:center; margin:0 auto; border-radius:.85rem; color:#fff; background:#334155; font-size:.85rem; font-weight:800; letter-spacing:.08em; }
@@ -66,40 +42,10 @@
       .welcome-choice-action { align-self:end; margin-top:1.25rem; color:#475569; font-size:.82rem; font-weight:750; }
       .contextual-hint { display:flex; align-items:flex-start; gap:.7rem; padding:.8rem .9rem; border:1px solid #dbe3ee; border-radius:.7rem; color:#52606f; background:#f8fafc; font-size:.86rem; line-height:1.45; }
       .contextual-hint-mark { display:grid; flex:0 0 1.45rem; width:1.45rem; height:1.45rem; place-items:center; border-radius:50%; color:#475569; background:#e2e8f0; font-size:.76rem; font-weight:800; }
-      .demo-path-card { border-color:#d9e5dc !important; background:linear-gradient(135deg,#fff,#fbfefb); }
-      .demo-path-step { display:flex; align-items:flex-start; gap:.6rem; color:#52606f; font-size:.84rem; line-height:1.4; }
-      .demo-path-step span { display:grid; flex:0 0 1.4rem; width:1.4rem; height:1.4rem; place-items:center; border-radius:50%; color:#29723d; background:#dff1e3; font-size:.68rem; font-weight:800; }
       @media (max-width: 575.98px) { .welcome-choice-row { grid-template-columns:1fr; } .welcome-screen { min-height:auto; } }
       @media (max-width: 575.98px) { .auth-page { padding:1.25rem 1rem; } .auth-card-body { padding:1.5rem; } }
       .table > :not(caption) > * > * { padding: .9rem 1rem; }
       .table thead th { color: var(--muted); font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
-      .app-sidebar { position: fixed; inset: 0 auto 0 0; z-index: 1040; display: flex; flex-direction: column; width: var(--sidebar-width); padding: 1.25rem; color: #e7edf8; background: var(--sidebar); }
-      .app-brand { display: flex; align-items: center; gap: .7rem; margin-bottom: 2rem; color: #fff; font-size: 1.05rem; font-weight: 750; letter-spacing: -.03em; text-decoration: none; }
-      .app-brand-mark { display: grid; width: 2.15rem; height: 2.15rem; place-items: center; border: 1px solid rgba(255,255,255,.18); border-radius: .6rem; background: rgba(255,255,255,.08); font-size: .72rem; font-weight: 800; letter-spacing: .04em; }
-      .sidebar-label { margin: 0 0 .5rem .75rem; color: #7f8ba0; font-size: .68rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-      .sidebar-link { display: flex; align-items: center; gap: .7rem; padding: .7rem .75rem; margin-bottom: .2rem; border-radius: .55rem; color: #aeb9c9; font-size: .94rem; font-weight: 600; text-decoration: none; transition: background .15s, color .15s; }
-      .sidebar-link:hover, .sidebar-link.active { color: #fff; background: rgba(255,255,255,.08); }
-      .sidebar-link .nav-icon { display:inline-grid; width:1.25rem; height:1.25rem; place-items:center; }
-      .sidebar-link .nav-icon svg { width:1.12rem; height:1.12rem; }
-      .sidebar-counter { display:grid; min-width:1.25rem; height:1.25rem; padding:0 .3rem; place-items:center; margin-left:auto; border-radius:999px; color:#fff; background:#dc3545; font-size:.68rem; font-weight:800; line-height:1; }
-      .sidebar-bottom { padding-top: 1.25rem; margin-top: auto; border-top: 1px solid rgba(255,255,255,.12); }
-      .profile-link { display: flex; align-items: center; gap: .7rem; padding: .55rem; color: #fff; text-decoration: none; border-radius: .7rem; }
-      .profile-link:hover { color: #fff; background: rgba(255,255,255,.08); }
-      .profile-avatar { display: grid; flex: 0 0 2.35rem; width: 2.35rem; height: 2.35rem; place-items: center; overflow: hidden; border-radius: 50%; background: #314158; color: #fff; font-weight: 700; }
-      .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
-      .profile-photo-upload { position:relative; flex:0 0 88px; width:88px; height:88px; padding:0; overflow:hidden; border:1px solid #dbe3ee; border-radius:50%; background:#f8fafc; cursor:pointer; }
-      .profile-photo-upload img { width:100%; height:100%; object-fit:cover; }
-      .profile-photo-upload-overlay { position:absolute; inset:0; display:grid; place-items:center; padding:.5rem; color:#fff; background:rgba(15,23,42,.62); font-size:.7rem; font-weight:750; line-height:1.15; text-align:center; opacity:0; transition:opacity .15s ease; }
-      .profile-photo-upload:hover .profile-photo-upload-overlay, .profile-photo-upload:focus-visible .profile-photo-upload-overlay { opacity:1; }
-      .profile-photo-upload:focus-visible { outline:3px solid rgba(51,65,85,.35); outline-offset:3px; }
-      .htmx-indicator { opacity: 0; transition: opacity .15s ease; }
-      .htmx-request .htmx-indicator, .htmx-request.htmx-indicator { opacity: 1; }
-      .lead-filter-bar { display:flex; flex-wrap:wrap; align-items:center; gap:.45rem; padding:.75rem; border:1px solid #e2e8f0; border-radius:.8rem; background:#fff; }
-      .lead-filter-option { padding:.38rem .7rem; border-radius:.5rem; color:#64748b; font-size:.875rem; font-weight:600; text-decoration:none; }
-      .lead-filter-option:hover { color:#172033; background:#f1f5f9; }
-      .lead-filter-option.is-active { color:#fff; background:#334155; }
-      .lead-bulk-toolbar { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem; padding:.75rem 1rem; border:1px solid #dbe3ee; border-radius:.75rem; background:#fff; box-shadow:0 .2rem .75rem rgba(15,23,42,.04); }
-      .lead-bulk-toolbar .form-select { width:auto; min-width:210px; }
       .ai-scenario { width:100%; min-height:112px; padding:1rem; border:1px solid #dbe3ee; border-radius:.75rem; color:var(--ink); background:#fff; text-align:left; transition:border-color .15s ease, background .15s ease, box-shadow .15s ease; }
       .ai-scenario:hover { border-color:#94a3b8; background:#f8fafc; }
       .ai-scenario.is-active { border-color:#334155; background:#f1f5f9; box-shadow:inset 0 0 0 1px #334155; }
@@ -119,26 +65,6 @@
       .ai-improvement.is-active { border-color:#334155; color:#fff; background:#334155; }
       .history-delete { display:inline-grid; width:2rem; height:2rem; place-items:center; border:1px solid #f1c7c3; border-radius:.5rem; color:#b42318; background:#fff; }
       .history-delete:hover { border-color:#e7a7a1; color:#8f1d16; background:#fff7f6; }
-      .confirm-modal-icon { display:grid; flex:0 0 2.35rem; width:2.35rem; height:2.35rem; place-items:center; border-radius:.7rem; color:#a63a32; background:#fff0ef; font-size:1.1rem; font-weight:800; }
-      .landing-logo-settings { padding:1rem 1.1rem; border:1px solid #e2e8f0; border-radius:.8rem; background:#fff; }
-      .landing-logo-upload { position:relative; display:grid; flex:0 0 112px; width:112px; height:56px; padding:0; place-items:center; overflow:hidden; border:1px solid #dbe3ee; border-radius:.6rem; background:#f8fafc; cursor:pointer; }
-      .landing-logo-upload img { width:100%; height:100%; padding:.35rem; object-fit:contain; }
-      .landing-logo-placeholder { color:#64748b; font-size:.72rem; font-weight:800; letter-spacing:.12em; }
-      .landing-logo-upload-overlay { position:absolute; inset:0; display:grid; place-items:center; color:#fff; background:rgba(15,23,42,.65); font-size:.68rem; font-weight:750; line-height:1.15; opacity:0; transition:opacity .15s ease; }
-      .landing-logo-upload:hover .landing-logo-upload-overlay, .landing-logo-upload:focus-visible .landing-logo-upload-overlay { opacity:1; }
-      .landing-logo-upload:focus-visible { outline:3px solid rgba(51,65,85,.35); outline-offset:3px; }
-      .workspace-tabs { gap:.4rem; padding:.35rem; border:1px solid #e2e8f0; border-radius:.8rem; background:#fff; }
-      .workspace-tabs .nav-link { padding:.48rem .8rem; border:0; border-radius:.55rem; color:#64748b; font-size:.875rem; font-weight:700; white-space:nowrap; }
-      .workspace-tabs .nav-link:hover { color:#172033; background:#f1f5f9; }
-      .workspace-tabs .nav-link.active { color:#fff; background:#334155; box-shadow:0 .1rem .35rem rgba(15,23,42,.14); }
-      .form-section { margin-bottom:1rem; overflow:hidden; border:1px solid #e2e8f0; border-radius:.8rem; background:#fff; }
-      .form-section > summary { display:flex; align-items:center; gap:.75rem; padding:1rem 1.1rem; cursor:pointer; font-weight:750; list-style:none; }
-      .form-section > summary::-webkit-details-marker { display:none; }
-      .form-section > summary::after { margin-left:auto; color:#64748b; content:'⌄'; transition:transform .15s ease; }
-      .form-section[open] > summary { border-bottom:1px solid #edf1f5; }
-      .form-section[open] > summary::after { transform:rotate(180deg); }
-      .form-section-body { padding:1.1rem; }
-      .form-section-number { display:grid; flex:0 0 1.75rem; width:1.75rem; height:1.75rem; place-items:center; border-radius:50%; color:#475569; background:#eef2f7; font-size:.75rem; font-weight:800; }
       .visual-settings-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:1.25rem; }
       .visual-setting { min-width:0; padding:0; margin:0; border:0; }
       .visual-setting-label { display:block; margin-bottom:.65rem; color:#334155; font-size:.83rem; font-weight:750; }
@@ -150,35 +76,8 @@
       .visual-option { display:grid; flex:1 1 8rem; gap:.45rem; min-height:5.25rem; padding:.65rem; border:1px solid #dbe3ee; border-radius:.7rem; color:#64748b; background:#fff; cursor:pointer; font-size:.78rem; font-weight:700; transition:border-color .15s ease, box-shadow .15s ease, background .15s ease; }
       .visual-option-preview { display:block; height:2rem; overflow:hidden; border-radius:.35rem; background:#e8edf3; }.visual-option-preview::before, .visual-option-preview::after { display:block; content:''; }.preview-button-rounded::before, .preview-button-strict::before { width:48%; height:.65rem; margin:.68rem auto; background:#475569; }.preview-button-rounded::before { border-radius:999px; }.preview-button-strict::before { border-radius:.08rem; }.preview-hero-split { background:linear-gradient(90deg,#dce4ee 46%,#64748b 46%); }.preview-hero-background { background:linear-gradient(90deg,rgba(23,32,51,.72),rgba(23,32,51,.12)),#64748b; }.preview-gallery-large { background:linear-gradient(90deg,#64748b 72%,#dce4ee 72%); }.preview-gallery-grid { background:linear-gradient(90deg,#64748b 49%,transparent 49% 52%,#b6c1cf 52%),linear-gradient(#64748b 49%,transparent 49% 52%,#b6c1cf 52%); background-size:100% 100%,50% 100%; }
       .visual-radio-input:checked + .visual-option, .visual-radio-input:focus-visible + .visual-option { border-color:#64748b; color:#172033; background:#f8fafc; box-shadow:0 0 0 2px #e2e8f0; }
-      .gallery-image-card { position:relative; overflow:hidden; border:1px solid #e2e8f0; border-radius:.75rem; background:#fff; transition:border-color .15s ease, box-shadow .15s ease; }
-      .gallery-image-card:hover { border-color:#cbd5e1; box-shadow:0 .35rem 1rem rgba(15,23,42,.08); }
-      .gallery-image-card.is-primary { border-color:#64748b; box-shadow:0 0 0 1px #64748b; }
-      .gallery-image { display:block; width:100%; height:210px; object-fit:cover; }
-      .gallery-image-actions { position:absolute; inset:.65rem .65rem auto; display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
-      .gallery-primary-label { padding:.28rem .5rem; border-radius:.4rem; color:#fff; background:rgba(15,23,42,.78); font-size:.7rem; font-weight:700; backdrop-filter:blur(5px); }
-      .gallery-action { display:inline-flex; align-items:center; justify-content:center; min-width:2rem; height:2rem; border:1px solid rgba(255,255,255,.82); border-radius:.48rem; color:#172033; background:rgba(255,255,255,.93); font-size:.75rem; font-weight:700; line-height:1; box-shadow:0 .1rem .4rem rgba(15,23,42,.12); }
-      .gallery-action:hover:not(:disabled) { color:#172033; background:#fff; }
-      .gallery-action:disabled { opacity:.55; cursor:default; }
-      .gallery-action-primary { padding:0 .55rem; gap:.3rem; }
-      .gallery-action-delete { color:#b42318; }
-      .gallery-action-delete:hover { color:#8f1d16; }
-      .gallery-image-meta { display:flex; align-items:center; justify-content:space-between; padding:.65rem .75rem; color:#64748b; font-size:.75rem; }
-      .app-content { min-height: 100vh; margin-left: var(--sidebar-width); }
-      .content-inner { max-width: 1440px; padding: 2.5rem; margin: 0 auto; }
-      .mobile-header { display: none; }
-      .mobile-backdrop { display: none; }
-      .app-toast-stack { position:fixed; right:1.25rem; bottom:1.25rem; z-index:1090; display:grid; gap:.55rem; max-width:min(24rem, calc(100vw - 2.5rem)); }
-      .app-toast { display:flex; align-items:center; gap:.65rem; padding:.75rem .9rem; border:1px solid #dbe3ee; border-radius:.7rem; color:#172033; background:#fff; box-shadow:0 .65rem 1.6rem rgba(15,23,42,.14); font-size:.875rem; font-weight:600; animation:toast-in .18s ease-out; }
-      .app-toast::before { width:.55rem; height:.55rem; border-radius:50%; background:#64748b; content:''; }
-      @keyframes toast-in { from { opacity:0; transform:translateY(.5rem); } to { opacity:1; transform:translateY(0); } }
       .mobile-records { display:none; }
       @media (max-width: 991.98px) {
-        .app-sidebar { transition: transform .2s ease; transform: translateX(-100%); box-shadow: 12px 0 35px rgba(15,23,42,.22); }
-        .app-sidebar.is-open { transform: translateX(0); }
-        .app-content { margin-left: 0; }
-        .content-inner { padding: 1.25rem; }
-        .mobile-header { display: flex; align-items: center; justify-content: space-between; padding: .85rem 1.25rem; background: #fff; border-bottom: 1px solid #e5e7eb; }
-        .mobile-backdrop { position: fixed; inset: 0; z-index: 1030; background: rgba(15,23,42,.45); }
         .desktop-records { display:none; }
         .mobile-records { display:grid; gap:.75rem; }
         .mobile-record-card { padding:1rem; border:1px solid #e2e8f0; border-radius:.8rem; background:#fff; box-shadow:0 .2rem .8rem rgba(15,23,42,.04); }
@@ -189,23 +88,25 @@
         .visual-settings-grid { grid-template-columns:1fr; gap:1rem; }
       }
     </style>
+    <link rel="stylesheet" href="{{ static_prefix }}css/rieltor-ui.css" />
   </head>
   <body x-data="{ sidebarOpen: false }">
+    {% include "includes/ui_icon_sprite.html" %}
     {% if user.is_authenticated %}
       <header class="mobile-header">
         <a class="app-brand mb-0" href="{% url 'property_list' %}" style="color:var(--ink)"><span class="app-brand-mark">RE</span>Rieltor AI</a>
-        <button class="btn btn-outline-primary" type="button" @click="sidebarOpen = true" aria-label="Открыть меню">☰</button>
+        <button class="btn btn-icon btn-outline-primary" type="button" @click="sidebarOpen = true" aria-label="Открыть меню"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-menu"></use></svg></button>
       </header>
       <div class="mobile-backdrop" x-cloak x-show="sidebarOpen" @click="sidebarOpen = false"></div>
       <aside class="app-sidebar" :class="{ 'is-open': sidebarOpen }">
-        <div class="d-flex justify-content-between align-items-center d-lg-none mb-3"><span class="text-white-50 small">Меню</span><button class="btn btn-sm btn-outline-light" type="button" @click="sidebarOpen = false">×</button></div>
+        <div class="d-flex justify-content-between align-items-center d-lg-none mb-3"><span class="text-white-50 small">Меню</span><button class="btn btn-icon btn-sm btn-outline-light" type="button" @click="sidebarOpen = false" aria-label="Закрыть меню"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></button></div>
         <a class="app-brand" href="{% url 'property_list' %}"><span class="app-brand-mark">RE</span>Rieltor AI</a>
         <p class="sidebar-label">Рабочее пространство</p>
         <nav>
-          <a class="sidebar-link {% if request.resolver_match.url_name == 'property_list' %}active{% endif %}" href="{% url 'property_list' %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8.878.392a1.5 1.5 0 0 0-1.756 0L.257 4.25A.5.5 0 0 0 0 4.686v6.628a1.5 1.5 0 0 0 .757 1.307l6.365 3.576a1.75 1.75 0 0 0 1.756 0l6.365-3.576A1.5 1.5 0 0 0 16 11.314V4.686a.5.5 0 0 0-.257-.436L8.878.392ZM7.61 1.265a.75.75 0 0 1 .78 0l5.31 2.987L8 7.491 2.3 4.252l5.31-2.987ZM1 5.548l6.5 3.693v5.625l-5.753-3.233A.5.5 0 0 1 1 11.197V5.548Zm14 0v5.649a.5.5 0 0 1-.747.436L8.5 14.866V9.24L15 5.548Z"/></svg></span>Объекты</a>
-          <a class="sidebar-link {% if request.resolver_match.url_name == 'landing_list' %}active{% endif %}" href="{% url 'landing_list' %}"><span class="nav-icon">▱</span>Лендинги</a>
-          <a class="sidebar-link {% if request.resolver_match.url_name == 'lead_list' %}active{% endif %}" href="{% url 'lead_list' %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .8 2.9a2 2 0 0 1-.5 2.1L8.1 10a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.5c.9.4 1.9.7 2.9.8a2 2 0 0 1 1.6 1.9Z"/></svg></span><span>Заявки</span>{% if nav_new_leads_count %}<span class="sidebar-counter" title="{{ nav_new_leads_count }} новых заявок" aria-label="{{ nav_new_leads_count }} новых заявок">{{ nav_new_leads_label }}</span>{% endif %}</a>
-          <a class="sidebar-link {% if 'client' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'client_list' %}"><span class="nav-icon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 15A7 7 0 1 0 8 1a7 7 0 0 0 0 14Zm0-13a6 6 0 1 1 0 12A6 6 0 0 1 8 2Zm0 2.5a2.25 2.25 0 1 1 0 4.5 2.25 2.25 0 0 1 0-4.5Zm0 5.5c-1.5 0-2.83.73-3.65 1.85A5.95 5.95 0 0 0 8 13a5.95 5.95 0 0 0 3.65-1.15A4.5 4.5 0 0 0 8 10Z"/></svg></span>Клиенты</a>
+          <a class="sidebar-link {% if request.resolver_match.url_name == 'property_list' %}active{% endif %}" href="{% url 'property_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-home"></use></svg></span>Объекты</a>
+          <a class="sidebar-link {% if request.resolver_match.url_name == 'landing_list' %}active{% endif %}" href="{% url 'landing_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-layout"></use></svg></span>Лендинги</a>
+          <a class="sidebar-link {% if request.resolver_match.url_name == 'lead_list' %}active{% endif %}" href="{% url 'lead_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-phone"></use></svg></span><span>Заявки</span>{% if nav_new_leads_count %}<span class="sidebar-counter" title="{{ nav_new_leads_count }} новых заявок" aria-label="{{ nav_new_leads_count }} новых заявок">{{ nav_new_leads_label }}</span>{% endif %}</a>
+          <a class="sidebar-link {% if 'client' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'client_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-users"></use></svg></span>Клиенты</a>
         </nav>
         <div class="sidebar-bottom" x-data="{ profileOpen: false }">
           <button class="profile-link w-100 border-0 bg-transparent text-start {% if request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' %}active{% endif %}" type="button" @click="profileOpen = !profileOpen" :aria-expanded="profileOpen.toString()">
@@ -214,14 +115,14 @@
             <span class="text-white-50" x-text="profileOpen ? '⌃' : '⌄'"></span>
           </button>
           <div x-cloak x-show="profileOpen" x-transition class="pt-2">
-            <a class="sidebar-link" href="{% url 'edit_profile' %}"><span class="nav-icon">⚙</span>Личный кабинет</a>
-            <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="sidebar-link w-100 border-0 bg-transparent" type="submit"><span class="nav-icon">↪</span>Выйти</button></form>
+            <a class="sidebar-link" href="{% url 'edit_profile' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-settings"></use></svg></span>Личный кабинет</a>
+            <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="sidebar-link w-100 border-0 bg-transparent" type="submit"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-log-out"></use></svg></span>Выйти</button></form>
           </div>
         </div>
       </aside>
     {% endif %}
     <main class="{% if user.is_authenticated %}app-content{% else %}container py-5{% endif %}" {% block main_attributes %}{% if not user.is_authenticated %}style="max-width: 560px;"{% endif %}{% endblock %}><div class="{% if user.is_authenticated %}content-inner{% endif %}">
-      {% if messages %}{% for message in messages %}<div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} {% if user.is_authenticated %}alert-dismissible fade show{% endif %}" role="alert">{{ message }}{% if user.is_authenticated %}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>{% endif %}</div>{% endfor %}{% endif %}
+      {% if messages %}{% for message in messages %}<div class="alert alert-{% if message.tags == 'error' %}danger{% else %}{{ message.tags|default:'info' }}{% endif %} app-system-message {% if user.is_authenticated %}alert-dismissible fade show{% endif %}" role="{% if message.tags == 'error' %}alert{% else %}status{% endif %}"><span class="app-system-message__mark" aria-hidden="true"></span><span>{{ message }}</span>{% if user.is_authenticated %}<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>{% endif %}</div>{% endfor %}{% endif %}
       {% block content %}{% endblock %}
     </div></main>
     <div class="modal fade" id="action-confirmation-modal" tabindex="-1" aria-labelledby="action-confirmation-title" aria-hidden="true">

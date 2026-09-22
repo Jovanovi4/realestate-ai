@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Новый объект{% endblock %}
 {% block content %}
-<div class="row justify-content-center"><div class="col-lg-9"><div class="card border-0 shadow-sm"><div class="card-body p-4 p-lg-5">
-  <p class="small text-muted mb-1">Объекты</p><h1 class="h2 mb-4">Новый объект</h1>
+<div class="app-form-page">
+  <header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Объекты</p><h1 class="ui-page-header__title">Новый объект</h1><p class="ui-page-header__description">Начните с основного, остальное можно заполнить позже.</p></div></header>
   {% include "properties/property_form.html" with submit_label="Создать объект" %}
-</div></div></div></div>
+</div>
 {% endblock %}

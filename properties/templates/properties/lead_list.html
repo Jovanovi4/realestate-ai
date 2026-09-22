@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}Заявки{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4"><div><p class="small text-muted mb-1">Рабочее пространство</p><h1 class="h2 mb-1">Входящие заявки</h1><p class="text-muted mb-0">Разберите обращения, затем ведите этап сделки в карточке клиента.</p></div><a href="{% url 'client_list' %}" class="btn btn-outline-secondary">Клиенты</a></div>
+<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Рабочее пространство</p><h1 class="ui-page-header__title">Входящие заявки</h1><p class="ui-page-header__description">Разберите обращения, затем ведите этап сделки в карточке клиента.</p></div><div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Клиенты</a></div></header>
 
-{% if demo_test_completed %}<div class="alert alert-success border-0 shadow-sm"><strong>Готово!</strong> Вы прошли путь от лендинга до обращения клиента. Новая демо-заявка уже в списке ниже.</div>{% elif not leads %}<div class="contextual-hint mb-4"><span class="contextual-hint-mark">i</span><span>Здесь появляются обращения с опубликованных лендингов. Откройте лендинг объекта и отправьте тестовую заявку, чтобы увидеть весь путь клиента.</span></div>{% endif %}
+{% if demo_test_completed %}<div class="alert alert-success border-0 shadow-sm"><strong>Готово!</strong> Вы прошли путь от лендинга до обращения клиента. Новая демо-заявка уже в списке ниже.</div>{% elif not has_any_leads %}<div class="contextual-hint mb-4"><span class="contextual-hint-mark">i</span><span>Здесь появляются обращения с опубликованных лендингов. Откройте лендинг объекта и отправьте тестовую заявку, чтобы увидеть весь путь клиента.</span></div>{% endif %}
 
 {% include "properties/includes/lead_workspace.html" %}
 {% endblock %}

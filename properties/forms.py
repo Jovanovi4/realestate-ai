@@ -13,8 +13,23 @@ PHONE_MASK_ATTRS = {
     "data-phone-mask": "true",
     "placeholder": "+7 (999) 999-99-99",
     "inputmode": "tel",
+    "autocomplete": "tel",
     "maxlength": "18",
 }
+
+
+def mark_invalid_fields(form):
+    """Expose server-side validation state to the shared form styles and assistive tech."""
+    if not form.is_bound:
+        return
+    for name in form.errors:
+        if name not in form.fields:
+            continue
+        attrs = form.fields[name].widget.attrs
+        attrs["aria-invalid"] = "true"
+        classes = attrs.get("class", "").split()
+        if "is-invalid" not in classes:
+            attrs["class"] = " ".join([*classes, "is-invalid"])
 
 
 class PropertyForm(forms.ModelForm):
@@ -116,6 +131,7 @@ class PropertyForm(forms.ModelForm):
         self.fields["landing_logo"].widget.attrs.update({
             "x-ref": "logoInput",
             "@change": "selectLogo($event)",
+            "accept": "image/png,image/jpeg,image/webp",
         })
         self._visual_landing_defaults = {
             "landing_accent": "template",
@@ -130,6 +146,7 @@ class PropertyForm(forms.ModelForm):
             benefit = benefits[index - 1] if len(benefits) >= index else {}
             for key in ("icon", "title", "description"):
                 self.initial[f"landing_benefit_{index}_{key}"] = benefit.get(key, "")
+        mark_invalid_fields(self)
 
     def save(self, commit=True):
         property = super().save(commit=False)
@@ -190,7 +207,7 @@ class RealtorProfileForm(forms.ModelForm):
         model = RealtorProfile
         fields = ("display_name", "photo", "phone", "telegram_username", "email", "telegram_chat_id")
         widgets = {
-            "photo": forms.FileInput(attrs={"accept": "image/*"}),
+            "photo": forms.FileInput(attrs={"accept": "image/png,image/jpeg,image/webp"}),
         }
 
     def __init__(self, *args, **kwargs):
@@ -201,6 +218,7 @@ class RealtorProfileForm(forms.ModelForm):
         self.fields["photo"].widget.attrs.update(
             {"class": "d-none", "x-ref": "photoInput", "x-on:change": "selectPhoto($event)"}
         )
+        mark_invalid_fields(self)
 
 
 class LeadForm(forms.ModelForm):
@@ -253,6 +271,7 @@ class ClientForm(forms.ModelForm):
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
         self.fields["phone"].widget.attrs.update(PHONE_MASK_ATTRS)
+        mark_invalid_fields(self)
 
     def clean_phone(self):
         return normalize_phone(self.cleaned_data["phone"])
@@ -330,6 +349,7 @@ class AIRequestForm(forms.Form):
             field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
         self.fields["source_text"].label = "Текст для улучшения"
         self.fields["source_text"].widget.attrs["placeholder"] = "Вставьте текст, который нужно улучшить. Для адаптации укажите аудиторию в первой строке."
+        mark_invalid_fields(self)
 
     def clean(self):
         cleaned_data = super().clean()
@@ -355,6 +375,7 @@ class AIContentEditForm(forms.ModelForm):
         self.fields["edited_content"].widget.attrs["class"] = "form-control"
         self.fields["edited_content"].widget.attrs["x-ref"] = "text"
         self.fields["apply_target"].widget.attrs["class"] = "form-select"
+        mark_invalid_fields(self)
 
 def normalize_phone(value):
     phone = re.sub(r"[\s()\-]", "", value.strip())
@@ -367,8 +388,8 @@ def normalize_phone(value):
 
 class RegistrationForm(forms.Form):
     phone = forms.CharField(label="Телефон", max_length=30, widget=forms.TelInput(attrs=PHONE_MASK_ATTRS))
-    password1 = forms.CharField(label="Пароль", widget=forms.PasswordInput())
-    password2 = forms.CharField(label="Повторите пароль", widget=forms.PasswordInput())
+    password1 = forms.CharField(label="Пароль", widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
+    password2 = forms.CharField(label="Повторите пароль", widget=forms.PasswordInput(attrs={"autocomplete": "new-password"}))
     terms_accepted = forms.BooleanField(
         required=True,
         label="Принимаю условия сервиса",
@@ -384,6 +405,7 @@ class RegistrationForm(forms.Form):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-check-input" if isinstance(field.widget, forms.CheckboxInput) else "form-control"
+        mark_invalid_fields(self)
 
     def clean_phone(self):
         phone = normalize_phone(self.cleaned_data["phone"])
@@ -412,12 +434,13 @@ class RegistrationForm(forms.Form):
 
 
 class PhoneAuthenticationForm(AuthenticationForm):
-    username = forms.CharField(label="Телефон", widget=forms.TelInput(attrs={**PHONE_MASK_ATTRS, "autofocus": True}))
+    username = forms.CharField(label="Телефон", widget=forms.TelInput(attrs={**PHONE_MASK_ATTRS, "autocomplete": "username", "autofocus": True}))
 
     def __init__(self, request=None, *args, **kwargs):
         super().__init__(request, *args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-control"
+        mark_invalid_fields(self)
 
     def clean_username(self):
         return normalize_phone(self.cleaned_data["username"])
@@ -428,3 +451,4 @@ class AccountPasswordChangeForm(PasswordChangeForm):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-control"
+        mark_invalid_fields(self)
