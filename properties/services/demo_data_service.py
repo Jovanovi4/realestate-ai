@@ -6,7 +6,7 @@ from django.core.files import File
 from django.db import transaction
 from django.utils import timezone
 
-from ..models import AIContent, Client, ClientInteraction, ClientReminder, Lead, Property, PropertyImage, RealtorProfile
+from ..models import AIContent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, PropertyImage, RealtorProfile, Showing
 
 
 class DemoDataService:
@@ -93,10 +93,28 @@ class DemoDataService:
             interaction_type="message",
             text="Демо: клиенту отправлен ответ с предложением времени для просмотра.",
         )
-        ClientReminder.objects.create(
+        deal = Deal.objects.create(
+            owner=user,
+            responsible=user,
             client=first_client,
+            property=property,
+            lead=first_lead,
+            stage="viewing",
+            expected_commission=8500,
+            is_demo=True,
+        )
+        ClientReminder.objects.create(
+            owner=user,
+            client=first_client,
+            deal=deal,
             text="Демо: подтвердить время просмотра",
             due_at=timezone.now() + timedelta(days=1),
+        )
+        Showing.objects.create(
+            owner=user,
+            deal=deal,
+            starts_at=timezone.now() + timedelta(days=2),
+            location=property.address,
         )
         second_client = Client.objects.create(
             owner=user,

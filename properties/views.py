@@ -15,6 +15,7 @@ from django.db.models import Count, Max, Q
 from django.core.paginator import Paginator
 from django.core.files.base import ContentFile
 from django.http import HttpResponse, JsonResponse
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -29,7 +30,8 @@ from .forms import (
     ClientDetailsForm, ClientForm, ClientInteractionForm, ClientReminderForm, LeadForm,
     PropertyForm, RegistrationForm, RealtorProfileForm,
 )
-from .models import AIContent, Client, ClientInteraction, ClientReminder, Lead, Property, PropertyImage, RealtorProfile, UserLegalAcceptance
+from .agency_access import agency_for, deletable_queryset, may_manage_agency, workspace_queryset
+from .models import AIContent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, PropertyImage, RealtorProfile, UserLegalAcceptance
 from .services.avito_service import AvitoExportService
 from .services.cian_service import CianExportService
 from .services.demo_data_service import DemoDataService
@@ -79,7 +81,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
         return [self.template_name]
 
     def get_queryset(self):
-        queryset = Property.objects.filter(owner=self.request.user)
+        queryset = workspace_queryset(Property.objects, self.request.user)
         query = self.request.GET.get("q", "").strip()
         property_type = self.request.GET.get("property_type")
         deal_type = self.request.GET.get("deal_type")
@@ -163,7 +165,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
         params.pop("page", None)
         context["pagination_query"] = params.urlencode()
         profile = RealtorProfile.objects.filter(user=self.request.user).first()
-        user_properties = Property.objects.filter(owner=self.request.user)
+        user_properties = workspace_queryset(Property.objects, self.request.user)
         first_property = user_properties.order_by("-created_at").first()
         onboarding_items = [
             {
@@ -178,7 +180,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
             },
             {
                 "label": "Добавьте фотографию объекта",
-                "done": PropertyImage.objects.filter(property__owner=self.request.user).exists(),
+                "done": workspace_queryset(PropertyImage.objects, self.request.user, prefix="property__").exists(),
                 "url": reverse("upload_images", args=[first_property.pk]) if first_property else reverse("create_property"),
             },
             {
@@ -216,6 +218,7 @@ class PropertyCreateView(LoginRequiredMixin, CreateView):
         """Start a saved draft so AI tools have a property to work with."""
         draft = Property.objects.create(
             owner=request.user,
+            agency=agency_for(request.user),
             title="Новый объект",
             status="draft",
         )
@@ -223,6 +226,7 @@ class PropertyCreateView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.owner = self.request.user
+        form.instance.agency = agency_for(self.request.user)
         return super().form_valid(form)
 
     def get_success_url(self):
@@ -263,7 +267,7 @@ class PropertyUpdateView(LoginRequiredMixin, UpdateView):
     context_object_name = "property"
 
     def get_queryset(self):
-        return Property.objects.filter(owner=self.request.user)
+        return workspace_queryset(Property.objects, self.request.user)
 
     def get_success_url(self):
         return reverse_lazy("property_detail", kwargs={"pk": self.object.pk})
@@ -281,13 +285,13 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
     context_object_name = "property"
 
     def get_queryset(self):
-        return Property.objects.filter(owner=self.request.user).prefetch_related("images")
+        return workspace_queryset(Property.objects, self.request.user).prefetch_related("images")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         image_count = self.object.images.count()
         has_primary_image = self.object.images.filter(is_primary=True).exists()
-        profile = RealtorProfile.objects.filter(user=self.request.user).first()
+        profile = RealtorProfile.objects.filter(user=self.object.owner).first()
         has_contacts = bool(profile and (profile.phone or profile.email or profile.telegram_username))
         detail_url = reverse("property_detail", kwargs={"pk": self.object.pk})
         edit_url = reverse("edit_property", kwargs={"pk": self.object.pk})
@@ -309,12 +313,17 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
         if not self.object.landing_published:
             tasks.append({"text": "Настройте и опубликуйте лендинг", "url": f"{edit_url}#landing-pane"})
         if not has_contacts:
-            tasks.append({"text": "Укажите контакты риелтора", "url": reverse("edit_profile")})
+            tasks.append({
+                "text": "Укажите контакты риелтора" if self.object.owner_id == self.request.user.pk else "Попросите автора объекта указать контакты",
+                "url": reverse("edit_profile") if self.object.owner_id == self.request.user.pk else reverse("agency_dashboard"),
+            })
         context["readiness_tasks"] = tasks
         context["readiness_total"] = 7
         context["readiness_completed"] = context["readiness_total"] - len(tasks)
         context["image_count"] = image_count
         context["property_setup_hint"] = not (self.object.price and self.object.address and has_primary_image)
+        context["can_delete"] = not self.object.agency_id or may_manage_agency(self.request.user)
+        context["property_deals"] = workspace_queryset(Deal.objects.filter(property=self.object), self.request.user).select_related("client")[:5]
         return context
 
 
@@ -325,7 +334,7 @@ class LandingListView(LoginRequiredMixin, ListView):
     paginate_by = 10
 
     def get_queryset(self):
-        queryset = Property.objects.filter(owner=self.request.user).annotate(landing_leads_count=Count("leads"))
+        queryset = workspace_queryset(Property.objects, self.request.user).annotate(landing_leads_count=Count("leads"))
         status = self.request.GET.get("status", "")
         if status == "published":
             queryset = queryset.filter(landing_published=True)
@@ -335,7 +344,7 @@ class LandingListView(LoginRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        all_landings = Property.objects.filter(owner=self.request.user)
+        all_landings = workspace_queryset(Property.objects, self.request.user)
         context.update(
             {
                 "selected_status": self.request.GET.get("status", ""),
@@ -354,7 +363,7 @@ class LandingListView(LoginRequiredMixin, ListView):
 
 class PropertyLandingUnpublishView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         if property.landing_published:
             property.landing_published = False
             property.save(update_fields=["landing_published", "updated_at"])
@@ -367,7 +376,7 @@ class PropertyLandingUnpublishView(LoginRequiredMixin, View):
 
 class PropertyStatusUpdateView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         status = request.POST.get("status")
         if status in dict(Property.STATUS_CHOICES):
             property.status = status
@@ -381,10 +390,7 @@ class AvitoExportView(LoginRequiredMixin, View):
     template_name = "properties/avito_export.html"
 
     def get_properties_and_profile(self):
-        properties = Property.objects.filter(
-            owner=self.request.user,
-            avito_export=True,
-        ).prefetch_related("images")
+        properties = workspace_queryset(Property.objects, self.request.user).filter(avito_export=True).prefetch_related("images")
         profile = RealtorProfile.objects.filter(user=self.request.user).first()
         return properties, profile
 
@@ -417,10 +423,7 @@ class CianExportView(LoginRequiredMixin, View):
     template_name = "properties/cian_export.html"
 
     def get_properties_and_profile(self):
-        properties = Property.objects.filter(
-            owner=self.request.user,
-            cian_export=True,
-        ).prefetch_related("images")
+        properties = workspace_queryset(Property.objects, self.request.user).filter(cian_export=True).prefetch_related("images")
         profile = RealtorProfile.objects.filter(user=self.request.user).first()
         return properties, profile
 
@@ -452,7 +455,7 @@ class CianExportView(LoginRequiredMixin, View):
 class PropertyPresentationPDFView(LoginRequiredMixin, View):
     def get(self, request, pk):
         property = get_object_or_404(
-            Property.objects.filter(owner=request.user).prefetch_related("images"),
+            workspace_queryset(Property.objects, request.user).prefetch_related("images"),
             pk=pk,
         )
         profile = RealtorProfile.objects.filter(user=request.user).first()
@@ -489,7 +492,7 @@ class PropertyPresentationPDFView(LoginRequiredMixin, View):
 
 class PropertyPresentationDOCXView(LoginRequiredMixin, View):
     def get(self, request, pk):
-        property = get_object_or_404(Property.objects.filter(owner=request.user).prefetch_related("images"), pk=pk)
+        property = get_object_or_404(workspace_queryset(Property.objects, request.user).prefetch_related("images"), pk=pk)
         profile = RealtorProfile.objects.filter(user=request.user).first()
         def enabled(name):
             values = request.GET.getlist(name)
@@ -508,7 +511,7 @@ class PropertyDeleteView(LoginRequiredMixin, DeleteView):
     model = Property
 
     def get_queryset(self):
-        return Property.objects.filter(owner=self.request.user)
+        return deletable_queryset(Property.objects, self.request.user)
 
     def get_success_url(self):
         return reverse_lazy("property_list")
@@ -542,11 +545,11 @@ class RealtorProfileUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        properties = Property.objects.filter(owner=self.request.user)
+        properties = workspace_queryset(Property.objects, self.request.user)
         context["statistics"] = {
             "properties": properties.count(),
             "published_landings": properties.filter(landing_published=True).count(),
-            "new_leads": Lead.objects.filter(property__owner=self.request.user, status="new").count(),
+            "new_leads": workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(status="new").count(),
         }
         return context
 
@@ -567,7 +570,7 @@ class ClientListView(LoginRequiredMixin, ListView):
             return None
 
     def get_queryset(self):
-        queryset = Client.objects.filter(owner=self.request.user).prefetch_related("leads")
+        queryset = workspace_queryset(Client.objects, self.request.user).prefetch_related("leads")
         query = self.request.GET.get("q", "").strip()
         status = self.request.GET.get("status", "")
         source = self.request.GET.get("source", "")
@@ -598,10 +601,10 @@ class ClientListView(LoginRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        all_clients = Client.objects.filter(owner=self.request.user)
+        all_clients = workspace_queryset(Client.objects, self.request.user)
         now = timezone.now()
         start_tomorrow = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        pending_reminders = ClientReminder.objects.filter(client__owner=self.request.user, is_done=False).select_related("client")
+        pending_reminders = workspace_queryset(ClientReminder.objects, self.request.user).filter(client__isnull=False, is_done=False).select_related("client")
         overdue_reminders = pending_reminders.filter(due_at__lt=now)
         today_reminders = pending_reminders.filter(due_at__gte=now, due_at__lt=start_tomorrow)
         contacted = [client for client in all_clients.exclude(first_contacted_at__isnull=True) if client.first_contacted_at]
@@ -667,6 +670,7 @@ class ClientListView(LoginRequiredMixin, ListView):
         context["active_filters"] = active_filters
         context["extra_filters_open"] = bool(filters.get("source") or filters.get("date_from") or filters.get("date_to"))
         context["has_any_clients"] = total > 0
+        context["can_bulk_delete"] = not agency_for(self.request.user) or may_manage_agency(self.request.user)
         return context
 
 
@@ -677,7 +681,11 @@ class ClientCreateView(LoginRequiredMixin, CreateView):
 
     def form_valid(self, form):
         form.instance.owner = self.request.user
-        existing_client = Client.objects.filter(owner=self.request.user, phone=form.cleaned_data["phone"]).first()
+        form.instance.agency = agency_for(self.request.user)
+        client_scope = Client.objects.filter(agency=form.instance.agency)
+        if form.instance.agency is None:
+            client_scope = client_scope.filter(owner=self.request.user)
+        existing_client = client_scope.filter(phone=form.cleaned_data["phone"]).first()
         if existing_client:
             form.add_error("phone", f"Клиент с этим номером уже есть в базе: {existing_client.name}.")
             return self.form_invalid(form)
@@ -694,7 +702,7 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
     context_object_name = "client"
 
     def get_queryset(self):
-        return Client.objects.filter(owner=self.request.user)
+        return workspace_queryset(Client.objects, self.request.user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -704,16 +712,19 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
         reminder_queryset = self.object.reminders.all()
         pending_reminders = reminder_queryset.filter(is_done=False)
         lead_queryset = self.object.leads.select_related("property")
+        deal_queryset = self.object.deals.select_related("property", "responsible")
         context["interactions"] = Paginator(interaction_queryset, 10).get_page(self.request.GET.get("history_page", 1))
         context["reminders"] = Paginator(reminder_queryset, 10).get_page(self.request.GET.get("reminders_page", 1))
         context["client_leads"] = Paginator(lead_queryset, 10).get_page(self.request.GET.get("leads_page", 1))
+        context["client_deals"] = Paginator(deal_queryset, 10).get_page(self.request.GET.get("deals_page", 1))
         context["interactions_total"] = interaction_queryset.count()
         context["reminders_total"] = reminder_queryset.count()
         context["pending_reminders_count"] = pending_reminders.count()
-        context["next_reminder"] = pending_reminders.order_by("due_at").first()
+        context["next_reminder"] = pending_reminders.filter(due_at__isnull=False).order_by("due_at").first()
         context["next_reminder_overdue"] = bool(context["next_reminder"] and context["next_reminder"].due_at < timezone.now())
         context["client_leads_total"] = lead_queryset.count()
-        for page_param in ("history_page", "reminders_page", "leads_page"):
+        context["client_deals_total"] = deal_queryset.count()
+        for page_param in ("history_page", "reminders_page", "leads_page", "deals_page"):
             params = self.request.GET.copy()
             params.pop(page_param, None)
             context[f"{page_param}_query"] = params.urlencode()
@@ -725,7 +736,7 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
 
 class ClientStatusUpdateView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        client = get_object_or_404(Client, pk=pk, owner=request.user)
+        client = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
         status = request.POST.get("status")
         if status in dict(Client.STATUS_CHOICES) and status != client.status:
             previous_status = client.get_status_display()
@@ -743,7 +754,7 @@ class ClientStatusUpdateView(LoginRequiredMixin, View):
 
 class ClientInteractionCreateView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        client = get_object_or_404(Client, pk=pk, owner=request.user)
+        client = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
         form = ClientInteractionForm(request.POST)
         if form.is_valid():
             interaction = form.save(commit=False)
@@ -757,18 +768,22 @@ class ClientInteractionCreateView(LoginRequiredMixin, View):
 
 class ClientReminderCreateView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        client = get_object_or_404(Client, pk=pk, owner=request.user)
+        client = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
         form = ClientReminderForm(request.POST)
         if form.is_valid():
             reminder = form.save(commit=False)
             reminder.client = client
+            reminder.owner = request.user
             reminder.save()
+            messages.success(request, "Задача добавлена.")
+        else:
+            messages.error(request, "Не удалось добавить задачу. Проверьте текст и срок выполнения.")
         return redirect("client_detail", pk=client.pk)
 
 
 class ClientReminderCompleteView(LoginRequiredMixin, View):
     def post(self, request, pk, reminder_pk):
-        client = get_object_or_404(Client, pk=pk, owner=request.user)
+        client = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
         reminder = get_object_or_404(client.reminders, pk=reminder_pk)
         reminder.is_done = True
         reminder.completed_at = timezone.now()
@@ -779,9 +794,11 @@ class ClientReminderCompleteView(LoginRequiredMixin, View):
 class ClientBulkActionView(LoginRequiredMixin, View):
     def post(self, request):
         client_ids = [int(pk) for pk in request.POST.getlist("client_ids") if pk.isdigit()]
-        clients = Client.objects.filter(owner=request.user, pk__in=client_ids)
+        clients = workspace_queryset(Client.objects, request.user).filter(pk__in=client_ids)
         action = request.POST.get("action")
         if action == "delete":
+            if not may_manage_agency(request.user) and clients.filter(agency__isnull=False).exists():
+                raise PermissionDenied
             clients.delete()
         next_url = request.POST.get("next")
         if next_url and url_has_allowed_host_and_scheme(next_url, {request.get_host()}):
@@ -796,14 +813,14 @@ class ClientExportView(LoginRequiredMixin, View):
         response.write("\ufeff")
         writer = csv.writer(response)
         writer.writerow(["Имя", "Телефон", "Статус", "Источник", "Бюджет", "Район", "Удобное время", "Создан"])
-        for client in Client.objects.filter(owner=request.user).order_by("-created_at"):
+        for client in workspace_queryset(Client.objects, request.user).order_by("-created_at"):
             writer.writerow([client.name, client.phone, client.get_status_display(), client.get_source_display(), client.budget or "", client.preferred_area, client.preferred_contact_time, client.created_at.strftime("%d.%m.%Y %H:%M")])
         return response
 
 
 class ClientBoardView(LoginRequiredMixin, View):
     def get(self, request):
-        clients = Client.objects.filter(owner=request.user).order_by("-updated_at")
+        clients = workspace_queryset(Client.objects, request.user).order_by("-updated_at")
         columns = [(value, label, [client for client in clients if client.status == value]) for value, label in Client.STATUS_CHOICES]
         return render(request, "properties/client_board.html", {"columns": columns})
 
@@ -820,7 +837,9 @@ class LeadListView(LoginRequiredMixin, ListView):
         return [self.template_name]
 
     def get_queryset(self):
-        queryset = Lead.objects.filter(property__owner=self.request.user).select_related("property", "client").prefetch_related("client__leads")
+        queryset = workspace_queryset(Lead.objects, self.request.user, prefix="property__").select_related("property", "client", "assigned_to").prefetch_related("client__leads")
+        if self.request.GET.get("assigned") == "mine":
+            queryset = queryset.filter(assigned_to=self.request.user)
         status = self.request.GET.get("status")
         if status in dict(Lead.STATUS_CHOICES):
             queryset = queryset.filter(status=status)
@@ -831,14 +850,19 @@ class LeadListView(LoginRequiredMixin, ListView):
         context["status_choices"] = Lead.STATUS_CHOICES
         requested_status = self.request.GET.get("status", "")
         selected_status = requested_status if requested_status in dict(Lead.STATUS_CHOICES) else ""
+        selected_assigned = self.request.GET.get("assigned") == "mine"
+        count_queryset = workspace_queryset(Lead.objects, self.request.user, prefix="property__")
+        if selected_assigned:
+            count_queryset = count_queryset.filter(assigned_to=self.request.user)
         counts = {
             row["status"]: row["total"]
-            for row in Lead.objects.filter(property__owner=self.request.user)
+            for row in count_queryset
             .values("status")
             .annotate(total=Count("id"))
         }
         total_leads = sum(counts.values())
         context["selected_status"] = selected_status
+        context["selected_assigned"] = selected_assigned
         context["status_tabs"] = [
             {"value": "", "label": "Все", "count": total_leads},
             *[
@@ -847,10 +871,11 @@ class LeadListView(LoginRequiredMixin, ListView):
             ],
         ]
         context["has_any_leads"] = total_leads > 0
-        context["pagination_query"] = f"status={selected_status}" if selected_status else ""
+        context["can_bulk_delete"] = not agency_for(self.request.user) or may_manage_agency(self.request.user)
+        context["pagination_query"] = "&".join(filter(None, [f"status={selected_status}" if selected_status else "", "assigned=mine" if selected_assigned else ""]))
         context["demo_test_completed"] = (
             self.request.GET.get("demo_test") == "1"
-            and Lead.objects.filter(property__owner=self.request.user, is_demo=True).exists()
+            and workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(is_demo=True).exists()
         )
         return context
 
@@ -861,11 +886,23 @@ class LeadDetailView(LoginRequiredMixin, DetailView):
     context_object_name = "lead"
 
     def get_queryset(self):
-        return Lead.objects.filter(property__owner=self.request.user).select_related("property", "client")
+        return workspace_queryset(Lead.objects, self.request.user, prefix="property__").select_related("property", "client", "assigned_to")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["latest_ai_reply"] = self.object.ai_contents.filter(content_type="lead_reply").first()
+        context["can_assign"] = bool(self.object.property.agency_id and may_manage_agency(self.request.user))
+        context["can_delete"] = not self.object.property.agency_id or may_manage_agency(self.request.user)
+        if context["can_assign"]:
+            context["team_members"] = self.object.property.agency.memberships.select_related("user", "user__realtor_profile").order_by("user__username")
+        active_deal = None
+        if self.object.client_id:
+            active_deal = workspace_queryset(Deal.objects, self.request.user).filter(
+                client_id=self.object.client_id,
+                property_id=self.object.property_id,
+                stage__in=Deal.ACTIVE_STAGES,
+            ).first()
+        context["linked_deal"] = active_deal or workspace_queryset(self.object.deals.all(), self.request.user).first()
         return context
 
 class LeadBulkStatusUpdateView(LoginRequiredMixin, View):
@@ -876,15 +913,21 @@ class LeadBulkStatusUpdateView(LoginRequiredMixin, View):
         if not lead_ids:
             messages.error(request, "Выберите хотя бы одну заявку.")
         elif action == "delete":
-            leads = Lead.objects.filter(pk__in=lead_ids, property__owner=request.user)
+            leads = workspace_queryset(Lead.objects, request.user, prefix="property__").filter(pk__in=lead_ids)
+            if not may_manage_agency(request.user) and leads.filter(property__agency__isnull=False).exists():
+                raise PermissionDenied
             deleted_count = leads.count()
             leads.delete()
             messages.success(request, f"Удалено заявок: {deleted_count}.")
         elif status not in dict(Lead.STATUS_CHOICES):
             messages.error(request, "Выберите корректный статус обработки.")
         else:
-            leads = Lead.objects.filter(pk__in=lead_ids, property__owner=request.user)
-            updated = leads.exclude(status=status).update(status=status, updated_at=timezone.now())
+            leads = workspace_queryset(Lead.objects, request.user, prefix="property__").filter(pk__in=lead_ids)
+            updated = 0
+            for lead in leads.exclude(status=status):
+                lead.status = status
+                lead.save(update_fields=["status", "updated_at"])
+                updated += 1
             messages.success(request, f"Статус обновлён у {updated} заявок.")
 
         next_url = request.POST.get("next")
@@ -897,7 +940,7 @@ class LeadDeleteView(LoginRequiredMixin, DeleteView):
     model = Lead
 
     def get_queryset(self):
-        return Lead.objects.filter(property__owner=self.request.user)
+        return deletable_queryset(Lead.objects, self.request.user, prefix="property__")
 
     def get_success_url(self):
         return reverse_lazy("lead_list")
@@ -907,11 +950,11 @@ class PropertyImageUploadView(LoginRequiredMixin, View):
     template_name = "properties/upload_images.html"
 
     def get(self, request, pk):
-        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         return render(request, self.template_name, {"property": property})
 
     def post(self, request, pk):
-        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         uploads = request.FILES.getlist("images")
         if not uploads:
             return render(request, self.template_name, {
@@ -934,10 +977,12 @@ class PropertyImageUploadView(LoginRequiredMixin, View):
 
 class PropertyImagePrimaryView(LoginRequiredMixin, View):
     def post(self, request, pk, image_pk):
-        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         image = get_object_or_404(property.images, pk=image_pk)
         with transaction.atomic():
-            property.images.update(is_primary=False)
+            for current in property.images.filter(is_primary=True).exclude(pk=image.pk):
+                current.is_primary = False
+                current.save(update_fields=["is_primary"])
             image.is_primary = True
             image.save(update_fields=["is_primary"])
         if request.headers.get("HX-Request") == "true":
@@ -947,7 +992,7 @@ class PropertyImagePrimaryView(LoginRequiredMixin, View):
 
 class PropertyImageDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk, image_pk):
-        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         image = get_object_or_404(property.images, pk=image_pk)
         image_file = image.image
         image.delete()
@@ -961,7 +1006,7 @@ class PropertyImageDeleteView(LoginRequiredMixin, View):
 
 class PropertyImageReorderView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         try:
             image_ids = json.loads(request.body).get("image_ids", [])
             image_ids = [int(image_id) for image_id in image_ids]
@@ -976,7 +1021,8 @@ class PropertyImageReorderView(LoginRequiredMixin, View):
         images_by_id = {image.pk: image for image in existing_images}
         for position, image_id in enumerate(image_ids):
             images_by_id[image_id].order = position
-        PropertyImage.objects.bulk_update(existing_images, ["order"])
+        for image in existing_images:
+            image.save(update_fields=["order"])
         return JsonResponse({"ok": True})
 
 
@@ -1089,10 +1135,12 @@ class PublicLandingView(View):
             lead.personal_data_consent_at = timezone.now()
             lead.personal_data_consent_version = settings.PERSONAL_DATA_CONSENT_VERSION
             lead.is_demo = property.is_demo
+            client_lookup = {"agency": property.agency, "phone": form.cleaned_data["phone"]}
+            if property.agency_id is None:
+                client_lookup["owner"] = property.owner
             client, created = Client.objects.get_or_create(
-                owner=property.owner,
-                phone=form.cleaned_data["phone"],
-                defaults={"name": form.cleaned_data["name"], "source": "landing"},
+                **client_lookup,
+                defaults={"owner": property.owner, "name": form.cleaned_data["name"], "source": "landing"},
             )
             if not created and not client.name and form.cleaned_data["name"]:
                 client.name = form.cleaned_data["name"]
@@ -1129,8 +1177,8 @@ class PublicLandingView(View):
 @method_decorator(xframe_options_sameorigin, name="dispatch")
 class PropertyLandingPreviewView(LoginRequiredMixin, PublicLandingView):
     def get(self, request, pk):
-        property = get_object_or_404(Property.objects.select_related("owner").prefetch_related("images"), pk=pk, owner=request.user)
-        profile = RealtorProfile.objects.filter(user=request.user).first()
+        property = get_object_or_404(workspace_queryset(Property.objects.select_related("owner").prefetch_related("images"), request.user), pk=pk)
+        profile = RealtorProfile.objects.filter(user=property.owner).first()
         return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(property=property), preview=True))
 
     def post(self, request, pk):

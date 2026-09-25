@@ -3,8 +3,8 @@
   <div class="lead-status-filter__options">
     {% for tab in status_tabs %}
       <a class="lead-status-filter__option {% if tab.value == selected_status %}is-active{% endif %}"
-         href="{% url 'lead_list' %}{% if tab.value %}?status={{ tab.value }}{% endif %}"
-         hx-get="{% url 'lead_list' %}{% if tab.value %}?status={{ tab.value }}{% endif %}"
+         href="{% url 'lead_list' %}{% if tab.value or selected_assigned %}?{% if tab.value %}status={{ tab.value }}{% endif %}{% if selected_assigned %}{% if tab.value %}&amp;{% endif %}assigned=mine{% endif %}{% endif %}"
+         hx-get="{% url 'lead_list' %}{% if tab.value or selected_assigned %}?{% if tab.value %}status={{ tab.value }}{% endif %}{% if selected_assigned %}{% if tab.value %}&amp;{% endif %}assigned=mine{% endif %}{% endif %}"
          hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"
          {% if tab.value == selected_status %}aria-current="page"{% endif %}>
         {{ tab.label }} <span class="lead-status-filter__count">{{ tab.count }}</span>
@@ -13,3 +13,4 @@
   </div>
   <span class="htmx-indicator lead-status-filter__loading" role="status">Обновляем…</span>
 </nav>
+{% if nav_agency_membership %}<div class="d-flex gap-2 mb-3"><a class="btn btn-sm {% if not selected_assigned %}btn-neutral{% else %}btn-text{% endif %}" href="{% url 'lead_list' %}{% if selected_status %}?status={{ selected_status }}{% endif %}" hx-get="{% url 'lead_list' %}{% if selected_status %}?status={{ selected_status }}{% endif %}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true">Все заявки</a><a class="btn btn-sm {% if selected_assigned %}btn-neutral{% else %}btn-text{% endif %}" href="{% url 'lead_list' %}?assigned=mine{% if selected_status %}&amp;status={{ selected_status }}{% endif %}" hx-get="{% url 'lead_list' %}?assigned=mine{% if selected_status %}&amp;status={{ selected_status }}{% endif %}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true">Мои заявки</a></div>{% endif %}

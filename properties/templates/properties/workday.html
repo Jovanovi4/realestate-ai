@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Мой день{% endblock %}
+{% block content %}
+<header class="ui-page-header">
+  <div><p class="ui-page-header__eyebrow">Рабочее пространство</p><h1 class="ui-page-header__title">Мой день</h1><p class="ui-page-header__description">Показы, задачи и то, что требует внимания сегодня · {{ today|date:"d.m.Y" }}.</p></div>
+  <div class="ui-page-header__actions"><a href="{% url 'showing_create' %}" class="btn btn-neutral">Назначить показ</a><a href="{% url 'task_create' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Новая задача</a></div>
+</header>
+
+{% if overdue_tasks or overdue_showings %}
+<section class="detail-section workday-section workday-section--urgent" aria-labelledby="workday-overdue-title">
+  <div class="detail-section__heading"><div><span class="detail-kicker">Требует внимания</span><h2 id="workday-overdue-title">Просрочено</h2></div></div>
+  {% for task in overdue_tasks %}
+    <article class="workday-item"><div class="workday-item__time">{{ task.due_at|date:"d.m · H:i" }}</div><div class="workday-item__body"><a href="{% url 'task_detail' task.pk %}"><strong>{{ task.text }}</strong></a><span>{% if task.deal %}{{ task.deal.property.title }} · {% endif %}{% if task.client %}{{ task.client.name }}{% else %}Общая задача{% endif %}</span></div><form method="post" action="{% url 'task_complete' task.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{% url 'workday' %}"><button class="btn btn-sm btn-neutral" type="submit">Готово</button></form></article>
+  {% endfor %}
+  {% for showing in overdue_showings %}
+    <article class="workday-item"><div class="workday-item__time">{{ showing.starts_at|date:"d.m · H:i" }}</div><div class="workday-item__body"><a href="{% url 'showing_detail' showing.pk %}"><strong>Укажите итог показа</strong></a><span>{{ showing.deal.client.name }} · {{ showing.deal.property.title }}</span></div><a class="btn btn-sm btn-neutral" href="{% url 'showing_detail' showing.pk %}">Открыть</a></article>
+  {% endfor %}
+</section>
+{% endif %}
+
+<div class="workday-grid">
+  <section class="detail-section workday-section" aria-labelledby="workday-showings-title"><div class="detail-section__heading"><div><span class="detail-kicker">Встречи</span><h2 id="workday-showings-title">Показы сегодня</h2></div></div>
+    {% for showing in today_showings %}
+      <article class="workday-item"><div class="workday-item__time">{{ showing.starts_at|date:"H:i" }}</div><div class="workday-item__body"><a href="{% url 'showing_detail' showing.pk %}"><strong>{{ showing.deal.property.title }}</strong></a><span>{{ showing.deal.client.name }} · {{ showing.get_status_display }}{% if showing.location %} · {{ showing.location }}{% endif %}</span></div><a class="btn btn-icon btn-sm btn-neutral" href="{% url 'showing_detail' showing.pk %}" aria-label="Открыть показ"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a></article>
+    {% empty %}<p class="detail-muted mb-0">На сегодня показы не назначены.</p>{% endfor %}
+  </section>
+  <section class="detail-section workday-section" aria-labelledby="workday-tasks-title"><div class="detail-section__heading"><div><span class="detail-kicker">Дела</span><h2 id="workday-tasks-title">Задачи сегодня</h2></div></div>
+    {% for task in today_tasks %}
+      <article class="workday-item"><div class="workday-item__time">{{ task.due_at|date:"H:i" }}</div><div class="workday-item__body"><a href="{% url 'task_detail' task.pk %}"><strong>{{ task.text }}</strong></a><span>{% if task.deal %}{{ task.deal.property.title }} · {% endif %}{% if task.client %}{{ task.client.name }}{% else %}Общая задача{% endif %}</span></div><form method="post" action="{% url 'task_complete' task.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{% url 'workday' %}"><button class="btn btn-sm btn-neutral" type="submit">Готово</button></form></article>
+    {% empty %}<p class="detail-muted mb-0">На сегодня задач нет.</p>{% endfor %}
+  </section>
+</div>
+
+{% if unscheduled_tasks %}<section class="detail-section workday-section mt-4" aria-labelledby="workday-unscheduled-title"><div class="detail-section__heading"><div><span class="detail-kicker">Без даты</span><h2 id="workday-unscheduled-title">Запланируйте срок</h2></div></div>{% for task in unscheduled_tasks %}<article class="workday-item"><div class="workday-item__body"><a href="{% url 'task_detail' task.pk %}"><strong>{{ task.text }}</strong></a><span>{% if task.client %}{{ task.client.name }}{% else %}Общая задача{% endif %}</span></div><a class="btn btn-sm btn-neutral" href="{% url 'task_detail' task.pk %}">Назначить срок</a></article>{% endfor %}</section>{% endif %}
+{% endblock %}

@@ -11,6 +11,7 @@ from django.views import View
 from django.views.generic import DetailView
 
 from .forms import AIContentEditForm, AILeadReplyForm, AIRequestForm
+from .agency_access import workspace_queryset
 from .models import AIContent, Lead, Property, RealtorProfile
 from .services.ai_service import AIService, AIServiceError
 
@@ -80,7 +81,7 @@ class AIInlineGenerateView(AIEnabledMixin, LoginRequiredMixin, View):
     """Return one generated text for the inline editor without saving it to the property."""
 
     def post(self, request, pk):
-        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         target = request.POST.get("target", "")
         tone = request.POST.get("tone", "business")
         mode = request.POST.get("mode", "generate")
@@ -121,7 +122,7 @@ class AIBundleGenerateView(AIEnabledMixin, LoginRequiredMixin, View):
     """Generate a review-first set of texts for one property."""
 
     def post(self, request, pk):
-        property = get_object_or_404(Property, pk=pk, owner=request.user)
+        property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         tone = request.POST.get("tone", "business")
         bundle_type = request.POST.get("bundle", "package")
         if tone not in dict(AIContent.TONE_CHOICES):
@@ -155,7 +156,7 @@ class AIAssistantView(AIEnabledMixin, LoginRequiredMixin, DetailView):
     context_object_name = "property"
 
     def get_queryset(self):
-        return Property.objects.filter(owner=self.request.user)
+        return workspace_queryset(Property.objects, self.request.user)
 
     def get_template_names(self):
         if is_htmx(self.request) and self.request.GET.get("history_page"):
@@ -222,7 +223,7 @@ class AIContentEditView(AIEnabledMixin, LoginRequiredMixin, DetailView):
     context_object_name = "ai_content"
 
     def get_queryset(self):
-        return AIContent.objects.select_related("property").filter(property__owner=self.request.user)
+        return workspace_queryset(AIContent.objects.select_related("property"), self.request.user, prefix="property__")
 
     def get_template_names(self):
         if is_htmx(self.request):
@@ -276,9 +277,8 @@ class AIContentEditView(AIEnabledMixin, LoginRequiredMixin, DetailView):
 class AIContentDeleteView(AIEnabledMixin, LoginRequiredMixin, View):
     def post(self, request, pk):
         ai_content = get_object_or_404(
-            AIContent.objects.select_related("property"),
+            workspace_queryset(AIContent.objects.select_related("property"), request.user, prefix="property__"),
             pk=pk,
-            property__owner=request.user,
         )
         messages.info(request, "История генераций сохранена как служебный журнал и недоступна для удаления из интерфейса.")
         return redirect(f"{reverse('edit_property', kwargs={'pk': ai_content.property.pk})}#texts-pane")
@@ -287,9 +287,8 @@ class AIContentDeleteView(AIEnabledMixin, LoginRequiredMixin, View):
 class AILeadReplyView(AIEnabledMixin, LoginRequiredMixin, View):
     def post(self, request, pk):
         lead = get_object_or_404(
-            Lead.objects.select_related("property"),
+            workspace_queryset(Lead.objects.select_related("property"), request.user, prefix="property__"),
             pk=pk,
-            property__owner=request.user,
         )
         form = AILeadReplyForm(request.POST)
         if not form.is_valid():
@@ -322,7 +321,7 @@ class AILeadReplyView(AIEnabledMixin, LoginRequiredMixin, View):
 @login_required
 def generate_description(request, pk):
     """Preserve the old URL while moving work to the inline text editor."""
-    property = get_object_or_404(Property, pk=pk, owner=request.user)
+    property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
     if not settings.AI_ENABLED:
         messages.info(request, "ИИ-помощник отключён на этом стенде.")
         return redirect("property_detail", pk=pk)

@@ -4,7 +4,7 @@
 <header class="ui-page-header">
   <div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Клиенты</h1><p class="ui-page-header__description">Единая база обращений, задач и сделок.</p></div>
   <div class="ui-page-header__actions">
-    <a class="btn btn-neutral" href="{% url 'client_board' %}">Воронка</a>
+    <a class="btn btn-neutral" href="{% url 'client_board' %}">Статусы клиентов</a>
     <a class="btn btn-neutral" href="{% url 'client_export' %}">Экспорт CSV</a>
     <a class="btn btn-primary" href="{% url 'client_create' %}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Добавить клиента</a>
   </div>
@@ -12,7 +12,7 @@
 
 {% if overdue_reminders or today_reminders %}
   <section class="client-reminders" aria-labelledby="client-reminders-title">
-    <div class="client-reminders__heading"><div><h2 id="client-reminders-title">Напоминания</h2><p>Ближайшие действия по клиентам</p></div></div>
+    <div class="client-reminders__heading"><div><h2 id="client-reminders-title">Задачи по клиентам</h2><p>Ближайшие действия и просроченные задачи</p></div><a href="{% url 'workday' %}" class="btn btn-text btn-sm">Весь день</a></div>
     <div class="client-reminders__groups">
       {% if overdue_reminders %}
         <div class="client-reminder-group is-overdue">
@@ -78,27 +78,27 @@
 <form method="post" action="{% url 'client_bulk_action' %}" x-data="{ selected: [] }">
   {% csrf_token %}
   <input type="hidden" name="next" value="{% url 'client_list' %}{% if pagination_query %}?{{ pagination_query }}{% endif %}">
-  <div class="lead-bulk-toolbar" x-cloak x-show="selected.length" x-transition>
+  {% if can_bulk_delete %}<div class="lead-bulk-toolbar" x-cloak x-show="selected.length" x-transition>
     <span class="lead-bulk-toolbar__count" x-text="`Выбрано: ${selected.length}`" aria-live="polite"></span>
     <button class="btn btn-sm btn-text" type="button" @click="selected = []">Снять выбор</button>
     <div class="dropdown action-menu lead-bulk-toolbar__more">
       <button class="btn btn-icon btn-sm btn-neutral dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Действия с выбранными клиентами">•••</button>
       <ul class="dropdown-menu dropdown-menu-end"><li><button class="dropdown-item text-danger" type="submit" name="action" value="delete" data-confirm="Удалить выбранных клиентов? Заявки сохранятся, но связь с карточкой клиента будет убрана." data-confirm-title="Удалить клиентов?" data-confirm-button="Удалить">Удалить выбранных</button></li></ul>
     </div>
-  </div>
+  </div>{% endif %}
 
   {% if clients %}
     <div class="lead-table-shell desktop-records">
       <div class="table-responsive">
         <table class="table lead-table client-table align-middle mb-0">
           <thead><tr>
-            <th scope="col" class="lead-table__selection"><input class="form-check-input" type="checkbox" aria-label="Выбрать всех клиентов на странице" @change="selected = $event.target.checked ? [{% for client in clients %}'{{ client.pk }}'{% if not forloop.last %}, {% endif %}{% endfor %}] : []" :checked="selected.length === {{ clients|length }}"></th>
+            {% if can_bulk_delete %}<th scope="col" class="lead-table__selection"><input class="form-check-input" type="checkbox" aria-label="Выбрать всех клиентов на странице" @change="selected = $event.target.checked ? [{% for client in clients %}'{{ client.pk }}'{% if not forloop.last %}, {% endif %}{% endfor %}] : []" :checked="selected.length === {{ clients|length }}"></th>{% endif %}
             <th scope="col">Клиент</th><th scope="col">Интерес</th><th scope="col">Этап</th><th scope="col">Заявки</th><th scope="col">Добавлен</th><th scope="col"><span class="visually-hidden">Действия</span></th>
           </tr></thead>
           <tbody>
             {% for client in clients %}
               <tr class="lead-table__row" :class="{ 'is-selected': selected.includes('{{ client.pk }}') }">
-                <td class="lead-table__selection"><input class="form-check-input" type="checkbox" name="client_ids" value="{{ client.pk }}" aria-label="Выбрать {{ client.name }}" x-model="selected"></td>
+                {% if can_bulk_delete %}<td class="lead-table__selection"><input class="form-check-input" type="checkbox" name="client_ids" value="{{ client.pk }}" aria-label="Выбрать {{ client.name }}" x-model="selected"></td>{% endif %}
                 <td><a class="lead-table__name" href="{% url 'client_detail' client.pk %}">{{ client.name }}</a><a class="lead-table__phone" href="tel:{{ client.phone }}">{{ client.phone }}</a><span class="client-table__source">{{ client.get_source_display }}</span></td>
                 <td><span class="lead-table__property">{{ client.preferred_area|default:"Не указан" }}</span>{% if client.budget %}<span class="lead-table__type">Бюджет: {{ client.budget }}</span>{% endif %}</td>
                 <td>{% include "properties/includes/client_status_badge.html" %}</td>
@@ -115,7 +115,7 @@
       {% for client in clients %}
         <article class="lead-mobile-card client-mobile-card" :class="{ 'is-selected': selected.includes('{{ client.pk }}') }">
           <div class="lead-mobile-card__head">
-            <input class="form-check-input" type="checkbox" name="client_ids" value="{{ client.pk }}" aria-label="Выбрать {{ client.name }}" x-model="selected">
+            {% if can_bulk_delete %}<input class="form-check-input" type="checkbox" name="client_ids" value="{{ client.pk }}" aria-label="Выбрать {{ client.name }}" x-model="selected">{% endif %}
             <div class="lead-mobile-card__person"><a class="lead-mobile-card__name" href="{% url 'client_detail' client.pk %}">{{ client.name }}</a><a class="lead-mobile-card__phone" href="tel:{{ client.phone }}">{{ client.phone }}</a></div>
             {% include "properties/includes/client_status_badge.html" %}
           </div>

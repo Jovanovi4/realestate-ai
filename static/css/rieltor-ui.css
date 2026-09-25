@@ -609,7 +609,12 @@ a.profile-stat:hover { border-color: var(--ui-border-strong); color: var(--ui-in
 }
 .page-link:hover { border-color: var(--ui-border-strong); color: var(--ui-ink); background: var(--ui-surface-selected); }
 .page-link:focus { box-shadow: 0 0 0 .2rem rgba(52, 64, 84, .12); }
+.page-item.active .page-link { border-color: var(--ui-accent); color: #fff; background: var(--ui-accent); box-shadow: none; }
 .page-item.disabled .page-link { border-color: var(--ui-border); color: var(--ui-muted); background: var(--ui-surface-subtle); }
+.agency-history-pagination .page-link { color: var(--ui-muted-strong); }
+.agency-history-pagination .page-link:hover,
+.agency-history-pagination .page-link:focus { color: var(--ui-ink); }
+.agency-history-pagination .page-item.active .page-link { border-color: var(--ui-accent); color: #fff; background: var(--ui-accent); }
 
 .app-toast-stack { position: fixed; right: var(--ui-space-5); bottom: var(--ui-space-5); z-index: 1090; display: grid; gap: var(--ui-space-2); max-width: min(24rem, calc(100vw - 2.5rem)); }
 .app-toast { display: flex; align-items: center; gap: .65rem; padding: .8125rem .9375rem; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-md); color: var(--ui-ink); background: var(--ui-surface); box-shadow: var(--ui-shadow-float); font-size: .875rem; font-weight: 600; animation: ui-toast-in 180ms ease-out; }
@@ -722,6 +727,7 @@ a.profile-stat:hover { border-color: var(--ui-border-strong); color: var(--ui-in
 .client-board__column.is-in_progress { border-top-color: var(--ui-warning); }
 .client-board__column.is-viewing { border-top-color: #0e7090; }
 .client-board__column.is-negotiation { border-top-color: var(--ui-accent); }
+.client-board__column.is-reserved { border-top-color: var(--ui-warning); }
 .client-board__column.is-won { border-top-color: var(--ui-success); }
 .client-board__column.is-lost { border-top-color: var(--ui-muted); }
 .client-board__heading { display: flex; align-items: center; justify-content: space-between; gap: .5rem; min-height: 2.75rem; padding: .375rem .5rem; }
@@ -1033,3 +1039,22 @@ a.profile-stat:hover { border-color: var(--ui-border-strong); color: var(--ui-in
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
 }
+
+.workday-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--ui-space-4); align-items: start; }
+.workday-section { min-width: 0; margin-bottom: var(--ui-space-4); }
+.workday-section--urgent { border-color: var(--ui-danger-border, #e9c7c7); background: var(--ui-danger-surface, #fffafa); }
+.workday-item { display: flex; align-items: center; gap: .875rem; min-width: 0; padding: .875rem 0; border-top: 1px solid var(--ui-border); }
+.workday-item:first-of-type { border-top: 0; }
+.workday-item__time { flex: 0 0 4.75rem; color: var(--ui-muted-strong); font-size: .75rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.workday-item__body { display: grid; gap: .15rem; flex: 1; min-width: 0; }
+.workday-item__body a { color: var(--ui-ink); text-decoration: none; }
+.workday-item__body a:hover { color: var(--ui-accent); }
+.workday-item__body strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .875rem; }
+.workday-item__body span { overflow: hidden; color: var(--ui-muted); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
+.workday-item form { margin: 0; }
+@media (max-width: 991.98px) { .workday-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 575.98px) { .workday-item { flex-wrap: wrap; gap: .5rem; } .workday-item__time { flex-basis: 3.75rem; } .workday-item > form, .workday-item > .btn { margin-left: auto; } }
+.agency-list { display: grid; }
+.agency-row { display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: .8rem 0; border-bottom: 1px solid var(--border, #e2e8f0); }
+.agency-row:last-child { border-bottom: 0; }
+@media (max-width: 575.98px) { .agency-row { align-items: flex-start; flex-direction: column; } }

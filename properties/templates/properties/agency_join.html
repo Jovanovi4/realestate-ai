@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}Приглашение в агентство · RealtorAI{% endblock %}
+{% block content %}
+<div class="detail-section" style="max-width:38rem;margin:3rem auto"><p class="detail-kicker">Приглашение в команду</p><h1 class="h3">{{ invite.agency.name }}</h1><p class="detail-muted">Вас приглашают как «{{ invite.get_role_display }}». После вступления вам будет доступна общая база агентства. Ваши личные объекты и клиенты останутся личными.</p><form method="post">{% csrf_token %}<button class="btn btn-primary" type="submit">Присоединиться</button><a href="{% url 'property_list' %}" class="btn btn-neutral">Не сейчас</a></form></div>
+{% endblock %}

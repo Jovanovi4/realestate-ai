@@ -3,6 +3,14 @@ from django.urls import path, reverse_lazy
 
 from .ai_views import AIAssistantView, AIBundleGenerateView, AIContentDeleteView, AIContentEditView, AIInlineGenerateView, AILeadReplyView, generate_description
 from .forms import AccountPasswordChangeForm, PhoneAuthenticationForm
+from .deal_views import DealBoardView, DealCreateView, DealUpdateView
+from .agency_views import (
+    AgencyCreateView, AgencyDashboardView, AgencyInviteView, AgencyInviteRevokeView, AgencyJoinView,
+    AgencyMemberRemoveView, AgencyMemberRoleView, LeadAssignView,
+)
+from .workday_views import (
+    ShowingCreateView, ShowingUpdateView, TaskCompleteView, TaskCreateView, TaskUpdateView, WorkdayView,
+)
 from .views import (
     AvitoExportView, CianExportView, PropertyPresentationPDFView, PropertyPresentationDOCXView,
     PropertyCreateView,
@@ -54,6 +62,13 @@ urlpatterns = [
     path("login/", auth_views.LoginView.as_view(authentication_form=PhoneAuthenticationForm), name="login"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("profile/", RealtorProfileUpdateView.as_view(), name="edit_profile"),
+    path("agency/", AgencyDashboardView.as_view(), name="agency_dashboard"),
+    path("agency/create/", AgencyCreateView.as_view(), name="agency_create"),
+    path("agency/invite/", AgencyInviteView.as_view(), name="agency_invite"),
+    path("agency/invitations/<int:pk>/revoke/", AgencyInviteRevokeView.as_view(), name="agency_invite_revoke"),
+    path("agency/join/<uuid:code>/", AgencyJoinView.as_view(), name="agency_join"),
+    path("agency/members/<int:pk>/role/", AgencyMemberRoleView.as_view(), name="agency_member_role"),
+    path("agency/members/<int:pk>/remove/", AgencyMemberRemoveView.as_view(), name="agency_member_remove"),
     path("avito/export/", AvitoExportView.as_view(), name="avito_export"),
     path("cian/export/", CianExportView.as_view(), name="cian_export"),
     path(
@@ -68,6 +83,7 @@ urlpatterns = [
     path("leads/", LeadListView.as_view(), name="lead_list"),
     path("leads/bulk-status/", LeadBulkStatusUpdateView.as_view(), name="lead_bulk_status_update"),
     path("leads/<int:pk>/ai-reply/", AILeadReplyView.as_view(), name="lead_ai_reply"),
+    path("leads/<int:pk>/assign/", LeadAssignView.as_view(), name="lead_assign"),
     path("leads/<int:pk>/", LeadDetailView.as_view(), name="lead_detail"),
     path("leads/<int:pk>/delete/", LeadDeleteView.as_view(), name="lead_delete"),
     path("clients/", ClientListView.as_view(), name="client_list"),
@@ -80,6 +96,15 @@ urlpatterns = [
     path("clients/<int:pk>/interactions/", ClientInteractionCreateView.as_view(), name="client_interaction_create"),
     path("clients/<int:pk>/reminders/", ClientReminderCreateView.as_view(), name="client_reminder_create"),
     path("clients/<int:pk>/reminders/<int:reminder_pk>/complete/", ClientReminderCompleteView.as_view(), name="client_reminder_complete"),
+    path("deals/", DealBoardView.as_view(), name="deal_board"),
+    path("deals/new/", DealCreateView.as_view(), name="deal_create"),
+    path("deals/<int:pk>/", DealUpdateView.as_view(), name="deal_detail"),
+    path("today/", WorkdayView.as_view(), name="workday"),
+    path("tasks/new/", TaskCreateView.as_view(), name="task_create"),
+    path("tasks/<int:pk>/", TaskUpdateView.as_view(), name="task_detail"),
+    path("tasks/<int:pk>/complete/", TaskCompleteView.as_view(), name="task_complete"),
+    path("showings/new/", ShowingCreateView.as_view(), name="showing_create"),
+    path("showings/<int:pk>/", ShowingUpdateView.as_view(), name="showing_detail"),
     path("landings/", LandingListView.as_view(), name="landing_list"),
     path("landings/<int:pk>/unpublish/", PropertyLandingUnpublishView.as_view(), name="landing_unpublish"),
     path("", PropertyListView.as_view(), name="property_list"),

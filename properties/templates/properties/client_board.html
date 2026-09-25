@@ -1,9 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Воронка клиентов{% endblock %}
+{% block title %}Статусы клиентов{% endblock %}
 {% block content %}
 <header class="ui-page-header">
-  <div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Воронка клиентов</h1><p class="ui-page-header__description">Клиенты по этапам работы — от первого контакта до результата.</p></div>
-  <div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Список клиентов</a></div>
+  <div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Статусы клиентов</h1><p class="ui-page-header__description">Общий статус контакта. Отдельные переговоры по объектам находятся в сделках.</p></div>
+  <div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Список клиентов</a><a href="{% url 'deal_board' %}" class="btn btn-primary">Воронка сделок</a></div>
 </header>
 
 <div class="client-board" aria-label="Этапы работы с клиентами">

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Сделки{% endblock %}
+{% block content %}
+<header class="ui-page-header">
+  <div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Сделки</h1><p class="ui-page-header__description">Каждый интерес клиента к объекту проходит свой путь от первого контакта до результата.</p></div>
+  <div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Клиенты</a><a href="{% url 'deal_create' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Новая сделка</a></div>
+</header>
+
+{% if active_count %}<p class="detail-muted mb-3">Активных сделок: {{ active_count }}</p>{% endif %}
+<div class="client-board deal-board" aria-label="Воронка сделок">
+  {% for stage, label, deals in columns %}
+    <section class="client-board__column is-{{ stage }}" aria-labelledby="deal-board-{{ stage }}">
+      <header class="client-board__heading"><h2 id="deal-board-{{ stage }}">{{ label }}</h2><span class="client-board__count" aria-label="Сделок на этапе: {{ deals|length }}">{{ deals|length }}</span></header>
+      <div class="client-board__items">
+        {% for deal in deals %}
+          <a class="client-board__card" href="{% url 'deal_detail' deal.pk %}">
+            <strong>{{ deal.client.name }}{% if deal.is_demo %} · демо{% endif %}</strong>
+            <span class="client-board__area">{{ deal.property.title }}</span>
+            {% if deal.next_showing %}<span class="client-board__phone">Показ: {{ deal.next_showing.starts_at|date:"d.m.Y · H:i" }}</span>{% endif %}
+            {% if deal.next_task %}<span class="client-board__source">{{ deal.next_task.text }}{% if deal.next_task.due_at %} · {{ deal.next_task.due_at|date:"d.m.Y" }}{% endif %}</span>{% endif %}
+          </a>
+        {% empty %}<p class="client-board__empty">Пока нет сделок</p>{% endfor %}
+      </div>
+    </section>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -10,6 +10,7 @@
               </th>
               <th scope="col">Клиент</th>
               <th scope="col">Объект</th>
+              {% if nav_agency_membership %}<th scope="col">Ответственный</th>{% endif %}
               <th scope="col">Статус</th>
               <th scope="col">Получена</th>
               <th scope="col"><span class="visually-hidden">Действия</span></th>
@@ -31,6 +32,7 @@
                   <span class="lead-table__property">{{ lead.property.title }}</span>
                   <span class="lead-table__type">{{ lead.property.get_property_type_display }}</span>
                 </td>
+                {% if nav_agency_membership %}<td>{% if lead.assigned_to %}{{ lead.assigned_to.username }}{% else %}—{% endif %}</td>{% endif %}
                 <td>
                   {% include "properties/includes/lead_status_badge.html" %}
                   {% if lead.client %}<span class="lead-table__stage">Этап клиента: {{ lead.client.get_status_display }}</span>{% endif %}
@@ -62,6 +64,7 @@
           <div class="lead-mobile-card__body">
             <p class="lead-mobile-card__object"><span>Объект</span><strong>{{ lead.property.title }}</strong></p>
             {% if lead.message %}<p class="lead-mobile-card__message">{{ lead.message|truncatechars:120 }}</p>{% endif %}
+            {% if nav_agency_membership and lead.assigned_to %}<p class="detail-muted small mb-0">Ответственный: {{ lead.assigned_to.username }}</p>{% endif %}
           </div>
           <div class="lead-mobile-card__footer">
             <div>

@@ -6,7 +6,8 @@ from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
-from .models import AIContent, Client, ClientInteraction, ClientReminder, Lead, Property, RealtorProfile
+from .agency_access import agency_for, may_manage_agency, workspace_queryset
+from .models import AIContent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, RealtorProfile, Showing, same_workspace
 
 
 PHONE_MASK_ATTRS = {
@@ -285,6 +286,64 @@ class ClientDetailsForm(ClientForm):
         )
 
 
+class DealForm(forms.ModelForm):
+    class Meta:
+        model = Deal
+        fields = (
+            "client", "property", "lead", "responsible", "stage", "expected_commission", "outcome_note",
+        )
+        widgets = {
+            "lead": forms.HiddenInput(),
+            "expected_commission": forms.NumberInput(attrs={"min": "0", "step": "0.01"}),
+            "outcome_note": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, owner, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.owner = owner
+        self.fields["client"].queryset = workspace_queryset(Client.objects, owner).order_by("name")
+        self.fields["property"].queryset = workspace_queryset(Property.objects, owner).order_by("title")
+        self.fields["lead"].queryset = workspace_queryset(Lead.objects.filter(client__isnull=False), owner, prefix="property__")
+        agency = agency_for(owner)
+        if agency and may_manage_agency(owner):
+            self.fields["responsible"].queryset = User.objects.filter(agency_membership__agency=agency).order_by("username")
+            if not self.instance.pk:
+                self.fields["responsible"].initial = owner
+        else:
+            self.fields.pop("responsible")
+        if self.instance.pk:
+            for field_name in ("client", "property", "lead"):
+                self.fields[field_name].disabled = True
+        for field in self.fields.values():
+            if not isinstance(field.widget, forms.HiddenInput):
+                field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+        mark_invalid_fields(self)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        client = cleaned_data.get("client")
+        property = cleaned_data.get("property")
+        lead = cleaned_data.get("lead")
+        responsible = cleaned_data.get("responsible")
+        stage = cleaned_data.get("stage")
+        if not self.instance.pk:
+            self.instance.owner = self.owner
+            if property:
+                self.instance.agency = property.agency
+        if client and property and not same_workspace(client, property):
+            self.add_error("property", "Клиент и объект должны быть в одном рабочем пространстве.")
+        if property and not property.agency_id and responsible and responsible.pk != self.owner.pk:
+            self.add_error("responsible", "Личная сделка может быть назначена только вам.")
+        if lead and client and property and (lead.client_id != client.pk or lead.property_id != property.pk):
+            self.add_error("lead", "Заявка не относится к выбранным клиенту и объекту.")
+        if client and property and stage in Deal.ACTIVE_STAGES:
+            if Deal.objects.filter(client=client, property=property, stage__in=Deal.ACTIVE_STAGES).exclude(pk=self.instance.pk).exists():
+                self.add_error(None, "По этому клиенту и объекту уже есть активная сделка.")
+        if stage == "lost" and not cleaned_data.get("outcome_note", "").strip():
+            self.add_error("outcome_note", "Укажите причину отказа.")
+        return cleaned_data
+
+
 class ClientInteractionForm(forms.ModelForm):
     class Meta:
         model = ClientInteraction
@@ -301,12 +360,63 @@ class ClientReminderForm(forms.ModelForm):
     class Meta:
         model = ClientReminder
         fields = ("text", "due_at")
-        widgets = {"due_at": forms.DateTimeInput(attrs={"type": "datetime-local"})}
+        widgets = {"due_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M")}
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["due_at"].required = True
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-control"
+
+
+class TaskForm(forms.ModelForm):
+    class Meta:
+        model = ClientReminder
+        fields = ("text", "due_at", "client", "deal")
+        widgets = {
+            "due_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+        }
+
+    def __init__(self, *args, owner, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["due_at"].required = True
+        self.fields["client"].queryset = workspace_queryset(Client.objects, owner).order_by("name")
+        self.fields["deal"].queryset = workspace_queryset(Deal.objects, owner).filter(stage__in=Deal.ACTIVE_STAGES).select_related("client", "property")
+        if self.instance.pk and self.instance.deal_id:
+            self.fields["deal"].queryset = workspace_queryset(Deal.objects, owner).select_related("client", "property")
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+        mark_invalid_fields(self)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        client = cleaned_data.get("client")
+        deal = cleaned_data.get("deal")
+        if deal and client and deal.client_id != client.pk:
+            self.add_error("client", "Клиент должен совпадать с клиентом сделки.")
+        return cleaned_data
+
+
+class ShowingForm(forms.ModelForm):
+    class Meta:
+        model = Showing
+        fields = ("deal", "starts_at", "ends_at", "location", "status", "outcome_note")
+        widgets = {
+            "starts_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+            "ends_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+            "outcome_note": forms.Textarea(attrs={"rows": 3}),
+        }
+
+    def __init__(self, *args, owner, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["deal"].queryset = workspace_queryset(Deal.objects, owner).filter(stage__in=Deal.ACTIVE_STAGES).select_related("client", "property")
+        if self.instance.pk and self.instance.deal_id:
+            self.fields["deal"].queryset = workspace_queryset(Deal.objects, owner).select_related("client", "property")
+        if self.instance.pk:
+            self.fields["deal"].disabled = True
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+        mark_invalid_fields(self)
 
 
 class AIRequestForm(forms.Form):

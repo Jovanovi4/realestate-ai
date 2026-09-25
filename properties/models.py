@@ -1,7 +1,9 @@
 import uuid
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
+from django.utils import timezone
 
 
 def default_landing_block_order():
@@ -18,6 +20,13 @@ def default_realtor_benefits():
         {"icon": "◌", "title": "На связи", "description": "Отвечаем на вопросы и организуем просмотр в удобное время."},
         {"icon": "✓", "title": "Внимание к сделке", "description": "Сопровождаем процесс бережно и прозрачно."},
     ]
+
+
+def same_workspace(left, right):
+    """Private records belong to one user; team records belong to one agency."""
+    if left.agency_id or right.agency_id:
+        return bool(left.agency_id and left.agency_id == right.agency_id)
+    return left.owner_id == right.owner_id
 
 
 class Property(models.Model):
@@ -119,6 +128,7 @@ class Property(models.Model):
         blank=True,
         verbose_name="Риелтор",
     )
+    agency = models.ForeignKey("Agency", on_delete=models.PROTECT, null=True, blank=True, related_name="properties")
 
     title = models.CharField(
         max_length=255,
@@ -316,6 +326,8 @@ class Property(models.Model):
         return self.title
 
     def save(self, *args, **kwargs):
+        if self.agency_id and (not self.owner_id or not AgencyMembership.objects.filter(agency_id=self.agency_id, user_id=self.owner_id).exists()):
+            raise ValidationError({"owner": "Владелец записи не состоит в агентстве."})
         if not self.landing_slug:
             self.landing_slug = uuid.uuid4().hex[:12]
         super().save(*args, **kwargs)
@@ -473,6 +485,49 @@ class RealtorProfile(models.Model):
         return self.display_name or self.user.get_full_name() or self.user.username
 
 
+class Agency(models.Model):
+    name = models.CharField(max_length=150, verbose_name="Название агентства")
+    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="owned_agency")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class AgencyMembership(models.Model):
+    ROLE_CHOICES = [("owner", "Владелец"), ("manager", "Руководитель"), ("agent", "Риелтор")]
+    agency = models.ForeignKey(Agency, on_delete=models.CASCADE, related_name="memberships")
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="agency_membership")
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="agent")
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    def clean(self):
+        if self.role == "owner" and self.agency_id and self.user_id != self.agency.owner_id:
+            raise ValidationError({"role": "Владельцем может быть только создатель агентства."})
+        if self.agency_id and self.user_id == self.agency.owner_id and self.role != "owner":
+            raise ValidationError({"role": "Нельзя изменить роль владельца агентства."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.user} · {self.agency}"
+
+
+class AgencyInvitation(models.Model):
+    agency = models.ForeignKey(Agency, on_delete=models.CASCADE, related_name="invitations")
+    code = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    role = models.CharField(max_length=20, choices=AgencyMembership.ROLE_CHOICES[1:], default="agent")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    accepted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="accepted_agency_invitations")
+
+    def __str__(self):
+        return f"{self.agency} · {self.role}"
+
+
 class Client(models.Model):
     STATUS_CHOICES = [
         ("new", "Новый"),
@@ -491,6 +546,7 @@ class Client(models.Model):
     ]
 
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="clients")
+    agency = models.ForeignKey(Agency, on_delete=models.PROTECT, null=True, blank=True, related_name="clients")
     name = models.CharField(max_length=150, verbose_name="Имя")
     phone = models.CharField(max_length=30, verbose_name="Телефон")
     preferred_contact_time = models.CharField(max_length=120, blank=True, verbose_name="Удобное время связи")
@@ -507,12 +563,20 @@ class Client(models.Model):
 
     class Meta:
         ordering = ["-updated_at"]
-        constraints = [models.UniqueConstraint(fields=["owner", "phone"], name="unique_client_phone_per_owner")]
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "phone"], condition=models.Q(agency__isnull=True), name="unique_client_phone_per_owner"),
+            models.UniqueConstraint(fields=["agency", "phone"], condition=models.Q(agency__isnull=False), name="unique_client_phone_per_agency"),
+        ]
         verbose_name = "Клиент"
         verbose_name_plural = "Клиенты"
 
     def __str__(self):
         return f"{self.name} · {self.phone}"
+
+    def save(self, *args, **kwargs):
+        if self.agency_id and not AgencyMembership.objects.filter(agency_id=self.agency_id, user_id=self.owner_id).exists():
+            raise ValidationError({"owner": "Владелец записи не состоит в агентстве."})
+        super().save(*args, **kwargs)
 
 
 class ClientInteraction(models.Model):
@@ -537,17 +601,55 @@ class ClientInteraction(models.Model):
 
 
 class ClientReminder(models.Model):
-    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="reminders")
-    text = models.CharField(max_length=255, verbose_name="Напоминание")
-    due_at = models.DateTimeField(verbose_name="Когда напомнить")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="crm_tasks")
+    agency = models.ForeignKey(Agency, on_delete=models.PROTECT, null=True, blank=True, related_name="tasks")
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, null=True, blank=True, related_name="reminders", verbose_name="Клиент")
+    deal = models.ForeignKey("Deal", on_delete=models.CASCADE, null=True, blank=True, related_name="tasks", verbose_name="Сделка")
+    text = models.CharField(max_length=255, verbose_name="Задача")
+    due_at = models.DateTimeField(null=True, blank=True, verbose_name="Срок выполнения")
     is_done = models.BooleanField(default=False, verbose_name="Выполнено")
     completed_at = models.DateTimeField(null=True, blank=True)
+    overdue_notified_at = models.DateTimeField(null=True, blank=True, verbose_name="Уведомление о просрочке отправлено")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ["is_done", "due_at"]
-        verbose_name = "Напоминание"
-        verbose_name_plural = "Напоминания"
+        verbose_name = "Задача"
+        verbose_name_plural = "Задачи"
+
+    def clean(self):
+        errors = {}
+        if self.agency_id and self.owner_id and not AgencyMembership.objects.filter(agency_id=self.agency_id, user_id=self.owner_id).exists():
+            errors["owner"] = "Ответственный не состоит в агентстве."
+        if self.client_id and self.owner_id and not same_workspace(self, self.client):
+            errors["client"] = "Клиент находится в другом рабочем пространстве."
+        if self.deal_id:
+            if self.owner_id and not same_workspace(self, self.deal):
+                errors["deal"] = "Сделка находится в другом рабочем пространстве."
+            if self.client_id and self.client_id != self.deal.client_id:
+                errors["client"] = "Клиент должен совпадать с клиентом сделки."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if self.deal_id and not self.client_id:
+            self.client = self.deal.client
+        if not self.agency_id and (self.deal_id or self.client_id):
+            self.agency_id = self.deal.agency_id if self.deal_id else self.client.agency_id
+        if not self.owner_id:
+            if self.deal_id:
+                self.owner = self.deal.owner
+            elif self.client_id:
+                self.owner = self.client.owner
+        update_fields = kwargs.get("update_fields")
+        if self.pk and (update_fields is None or "due_at" in update_fields):
+            previous_due_at = type(self).objects.filter(pk=self.pk).values_list("due_at", flat=True).first()
+            if previous_due_at != self.due_at:
+                self.overdue_notified_at = None
+                if update_fields is not None:
+                    kwargs["update_fields"] = set(update_fields) | {"overdue_notified_at"}
+        self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class Lead(models.Model):
@@ -567,6 +669,7 @@ class Lead(models.Model):
     ]
 
     property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="leads")
+    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_leads", verbose_name="Ответственный")
     client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, related_name="leads")
     name = models.CharField(max_length=150, verbose_name="Имя")
     phone = models.CharField(max_length=30, verbose_name="Телефон")
@@ -590,6 +693,167 @@ class Lead(models.Model):
         verbose_name = "Заявка"
         verbose_name_plural = "Заявки"
 
+    def clean(self):
+        errors = {}
+        if self.client_id and self.property_id and not same_workspace(self.client, self.property):
+            errors["client"] = "Клиент находится в другом рабочем пространстве."
+        if self.assigned_to_id and self.property_id:
+            if self.property.agency_id:
+                allowed = AgencyMembership.objects.filter(agency_id=self.property.agency_id, user_id=self.assigned_to_id).exists()
+            else:
+                allowed = self.assigned_to_id == self.property.owner_id
+            if not allowed:
+                errors["assigned_to"] = "Ответственный не имеет доступа к заявке."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if not self.assigned_to_id and self.property_id:
+            self.assigned_to_id = self.property.owner_id
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class Deal(models.Model):
+    STAGE_CHOICES = [
+        ("new", "Новая"),
+        ("in_progress", "В работе"),
+        ("viewing", "Показ"),
+        ("negotiation", "Переговоры"),
+        ("reserved", "Бронь"),
+        ("won", "Завершена"),
+        ("lost", "Отказ"),
+    ]
+    ACTIVE_STAGES = ("new", "in_progress", "viewing", "negotiation", "reserved")
+    CLOSED_STAGES = ("won", "lost")
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="deals")
+    agency = models.ForeignKey(Agency, on_delete=models.PROTECT, null=True, blank=True, related_name="deals")
+    responsible = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="assigned_deals",
+        verbose_name="Ответственный",
+    )
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="deals", verbose_name="Клиент")
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="deals", verbose_name="Объект")
+    lead = models.ForeignKey(Lead, on_delete=models.SET_NULL, null=True, blank=True, related_name="deals", verbose_name="Исходная заявка")
+    stage = models.CharField(max_length=20, choices=STAGE_CHOICES, default="new", verbose_name="Этап сделки")
+    outcome_note = models.TextField(blank=True, verbose_name="Итог или причина отказа")
+    expected_commission = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        verbose_name="Ожидаемая комиссия",
+    )
+    is_demo = models.BooleanField(default=False, verbose_name="Демонстрационная сделка")
+    closed_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата завершения")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["client", "property"],
+                condition=models.Q(stage__in=["new", "in_progress", "viewing", "negotiation", "reserved"]),
+                name="unique_active_deal_per_client_property",
+            ),
+        ]
+        indexes = [models.Index(fields=["owner", "stage"], name="deal_owner_stage_idx")]
+        verbose_name = "Сделка"
+        verbose_name_plural = "Сделки"
+
+    def clean(self):
+        errors = {}
+        if self.agency_id and self.owner_id and not AgencyMembership.objects.filter(agency_id=self.agency_id, user_id=self.owner_id).exists():
+            errors["owner"] = "Создатель не состоит в агентстве."
+        if self.client_id and self.owner_id and not same_workspace(self, self.client):
+            errors["client"] = "Клиент находится в другом рабочем пространстве."
+        if self.property_id and self.owner_id and not same_workspace(self, self.property):
+            errors["property"] = "Объект находится в другом рабочем пространстве."
+        if self.responsible_id:
+            if self.agency_id:
+                allowed = AgencyMembership.objects.filter(agency_id=self.agency_id, user_id=self.responsible_id).exists()
+            else:
+                allowed = self.responsible_id == self.owner_id
+            if not allowed:
+                errors["responsible"] = "Ответственный не имеет доступа к сделке."
+        if self.lead_id and self.client_id and self.property_id:
+            if self.lead.client_id != self.client_id or self.lead.property_id != self.property_id:
+                errors["lead"] = "Заявка должна относиться к выбранным клиенту и объекту."
+        if self.expected_commission is not None and self.expected_commission < 0:
+            errors["expected_commission"] = "Комиссия не может быть отрицательной."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if not self.agency_id and self.property_id:
+            self.agency_id = self.property.agency_id
+        if self.stage in self.CLOSED_STAGES:
+            self.closed_at = self.closed_at or timezone.now()
+        else:
+            self.closed_at = None
+        if kwargs.get("update_fields") is not None:
+            kwargs["update_fields"] = set(kwargs["update_fields"]) | {"closed_at"}
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.client} · {self.property}"
+
+
+class Showing(models.Model):
+    STATUS_CHOICES = [
+        ("planned", "Запланирован"),
+        ("completed", "Проведён"),
+        ("cancelled", "Отменён"),
+    ]
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="showings")
+    agency = models.ForeignKey(Agency, on_delete=models.PROTECT, null=True, blank=True, related_name="showings")
+    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="showings", verbose_name="Сделка")
+    starts_at = models.DateTimeField(verbose_name="Начало показа")
+    ends_at = models.DateTimeField(null=True, blank=True, verbose_name="Окончание показа")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="planned", verbose_name="Статус")
+    location = models.CharField(max_length=255, blank=True, verbose_name="Место встречи")
+    outcome_note = models.TextField(blank=True, verbose_name="Итог показа")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["starts_at"]
+        indexes = [models.Index(fields=["owner", "starts_at"], name="showing_owner_start_idx")]
+        verbose_name = "Показ"
+        verbose_name_plural = "Показы"
+
+    def clean(self):
+        errors = {}
+        if self.agency_id and self.owner_id and not AgencyMembership.objects.filter(agency_id=self.agency_id, user_id=self.owner_id).exists():
+            errors["owner"] = "Ответственный не состоит в агентстве."
+        if self.owner_id and self.deal_id and not same_workspace(self, self.deal):
+            errors["deal"] = "Сделка находится в другом рабочем пространстве."
+        if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
+            errors["ends_at"] = "Окончание должно быть позже начала."
+        if self.status == "completed" and not self.outcome_note.strip():
+            errors["outcome_note"] = "Запишите результат показа."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        if not self.agency_id and self.deal_id:
+            self.agency_id = self.deal.agency_id
+        if not self.owner_id and self.deal_id:
+            self.owner = self.deal.owner
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.deal} · {self.starts_at:%d.%m.%Y %H:%M}"
+
 
 class UserLegalAcceptance(models.Model):
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="legal_acceptance")
@@ -601,3 +865,22 @@ class UserLegalAcceptance(models.Model):
     class Meta:
         verbose_name = "Принятие юридических документов"
         verbose_name_plural = "Принятие юридических документов"
+
+
+class AuditEvent(models.Model):
+    ACTION_CHOICES = [("created", "Создано"), ("updated", "Изменено"), ("deleted", "Удалено")]
+    agency = models.ForeignKey(Agency, on_delete=models.SET_NULL, null=True, blank=True, related_name="audit_events")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="personal_audit_events")
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="audit_actions")
+    model_name = models.CharField(max_length=60)
+    object_pk = models.CharField(max_length=40)
+    action = models.CharField(max_length=10, choices=ACTION_CHOICES)
+    changed_fields = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["agency", "created_at"], name="audit_agency_time_idx")]
+
+    def __str__(self):
+        return f"{self.get_action_display()}: {self.model_name} #{self.object_pk}"

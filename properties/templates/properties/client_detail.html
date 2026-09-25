@@ -3,29 +3,30 @@
 {% block content %}
 <header class="ui-page-header detail-page-header">
   <div><p class="ui-page-header__eyebrow">CRM · клиент</p><h1 class="ui-page-header__title">{{ client.name }}</h1><div class="detail-page-header__meta"><a href="tel:{{ client.phone }}">{{ client.phone }}</a><span>Источник: {{ client.get_source_display }}</span></div></div>
-  <div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Все клиенты</a></div>
+  <div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Все клиенты</a><a href="{% url 'deal_create' %}?client={{ client.pk }}" class="btn btn-primary">Новая сделка</a></div>
 </header>
 
 <section class="detail-summary-bar" aria-label="Текущий этап и следующий шаг">
-  <div><span class="detail-kicker">Этап воронки</span>{% include "properties/includes/client_status_control.html" %}</div>
-  <div class="detail-summary-bar__next"><span class="detail-kicker">Следующее действие</span>{% if next_reminder %}<strong>{{ next_reminder.text }}</strong><time datetime="{{ next_reminder.due_at|date:'c' }}">{{ next_reminder.due_at|date:"d.m.Y в H:i" }}{% if next_reminder_overdue %} · просрочено{% endif %}</time>{% else %}<strong>Запланируйте контакт с клиентом</strong><span>Добавьте напоминание в карточке ниже.</span>{% endif %}</div>
+  <div><span class="detail-kicker">Статус клиента</span>{% include "properties/includes/client_status_control.html" %}</div>
+  <div class="detail-summary-bar__next"><span class="detail-kicker">Следующее действие</span>{% if next_reminder %}<strong>{{ next_reminder.text }}</strong><time datetime="{{ next_reminder.due_at|date:'c' }}">{{ next_reminder.due_at|date:"d.m.Y в H:i" }}{% if next_reminder_overdue %} · просрочено{% endif %}</time>{% else %}<strong>Запланируйте контакт с клиентом</strong><span>Добавьте задачу с датой выполнения.</span>{% endif %}</div>
 </section>
 
 <ul class="nav nav-pills workspace-tabs detail-tabs" id="client-tabs" role="tablist">
   <li class="nav-item" role="presentation"><button class="nav-link active" id="client-overview-tab" data-bs-toggle="tab" data-bs-target="#client-overview" type="button" role="tab" aria-controls="client-overview" aria-selected="true">Обзор</button></li>
   <li class="nav-item" role="presentation"><button class="nav-link" id="client-history-tab" data-bs-toggle="tab" data-bs-target="#client-history" type="button" role="tab" aria-controls="client-history" aria-selected="false">История{% if interactions_total %} · {{ interactions_total }}{% endif %}</button></li>
   <li class="nav-item" role="presentation"><button class="nav-link" id="client-leads-tab" data-bs-toggle="tab" data-bs-target="#client-leads" type="button" role="tab" aria-controls="client-leads" aria-selected="false">Заявки{% if client_leads_total %} · {{ client_leads_total }}{% endif %}</button></li>
+  <li class="nav-item" role="presentation"><button class="nav-link" id="client-deals-tab" data-bs-toggle="tab" data-bs-target="#client-deals" type="button" role="tab" aria-controls="client-deals" aria-selected="false">Сделки{% if client_deals_total %} · {{ client_deals_total }}{% endif %}</button></li>
 </ul>
 
 <div class="tab-content detail-tab-content">
   <section class="tab-pane fade show active" id="client-overview" role="tabpanel" aria-labelledby="client-overview-tab" tabindex="0">
     <div class="detail-two-column">
       <section class="detail-section" aria-labelledby="client-data-title"><div class="detail-section__heading"><div><span class="detail-kicker">Профиль</span><h2 id="client-data-title">Данные клиента</h2></div></div><form method="post" class="app-form" novalidate>{% csrf_token %}{% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}<div class="detail-form-grid">{% for field in form %}<div class="app-field {% if field.name == 'notes' or field.name == 'outcome_reason' %}is-wide{% endif %}">{% include "includes/form_field.html" with field=field %}</div>{% endfor %}</div><div class="detail-form-actions"><button class="btn btn-primary" type="submit">Сохранить изменения</button></div></form></section>
-      <aside class="detail-section detail-aside" aria-labelledby="client-reminders-title"><div class="detail-section__heading"><div><span class="detail-kicker">Следующие действия{% if pending_reminders_count %} · {{ pending_reminders_count }}{% endif %}</span><h2 id="client-reminders-title">Напоминания</h2></div></div>
-        <form method="post" action="{% url 'client_reminder_create' client.pk %}" class="detail-reminder-form">{% csrf_token %}<label class="visually-hidden" for="{{ reminder_form.text.id_for_label }}">Текст напоминания</label>{{ reminder_form.text }}<label class="visually-hidden" for="{{ reminder_form.due_at.id_for_label }}">Когда напомнить</label>{{ reminder_form.due_at }}<button class="btn btn-neutral" type="submit">Добавить напоминание</button></form>
-        {% if reminders %}<div class="detail-reminder-list">{% for reminder in reminders %}<div class="detail-reminder {% if reminder.is_done %}is-done{% endif %}"><div><strong>{{ reminder.text }}</strong><time datetime="{{ reminder.due_at|date:'c' }}">{{ reminder.due_at|date:"d.m.Y · H:i" }}</time></div>{% if not reminder.is_done %}<form method="post" action="{% url 'client_reminder_complete' client.pk reminder.pk %}">{% csrf_token %}<button class="btn btn-sm btn-text" type="submit">Выполнено</button></form>{% endif %}</div>{% endfor %}</div>
+      <aside class="detail-section detail-aside" aria-labelledby="client-reminders-title"><div class="detail-section__heading"><div><span class="detail-kicker">Следующие действия{% if pending_reminders_count %} · {{ pending_reminders_count }}{% endif %}</span><h2 id="client-reminders-title">Задачи</h2></div><a href="{% url 'workday' %}" class="btn btn-text btn-sm">Мой день</a></div>
+        <form method="post" action="{% url 'client_reminder_create' client.pk %}" class="detail-reminder-form">{% csrf_token %}<label class="visually-hidden" for="{{ reminder_form.text.id_for_label }}">Текст задачи</label>{{ reminder_form.text }}<label class="visually-hidden" for="{{ reminder_form.due_at.id_for_label }}">Срок выполнения</label>{{ reminder_form.due_at }}<button class="btn btn-neutral" type="submit">Добавить задачу</button></form>
+        {% if reminders %}<div class="detail-reminder-list">{% for reminder in reminders %}<div class="detail-reminder {% if reminder.is_done %}is-done{% endif %}"><div><a href="{% url 'task_detail' reminder.pk %}"><strong>{{ reminder.text }}</strong></a>{% if reminder.due_at %}<time datetime="{{ reminder.due_at|date:'c' }}">{{ reminder.due_at|date:"d.m.Y · H:i" }}</time>{% else %}<span class="detail-muted">Без срока</span>{% endif %}</div>{% if not reminder.is_done %}<form method="post" action="{% url 'client_reminder_complete' client.pk reminder.pk %}">{% csrf_token %}<button class="btn btn-sm btn-text" type="submit">Выполнено</button></form>{% endif %}</div>{% endfor %}</div>
           {% if reminders.has_other_pages %}<nav class="mt-3" aria-label="Страницы напоминаний"><ul class="pagination pagination-sm">{% if reminders.has_previous %}<li class="page-item"><a class="page-link" href="?{{ reminders_page_query }}{% if reminders_page_query %}&amp;{% endif %}reminders_page={{ reminders.previous_page_number }}#client-overview">‹</a></li>{% endif %}<li class="page-item active"><span class="page-link">{{ reminders.number }} / {{ reminders.paginator.num_pages }}</span></li>{% if reminders.has_next %}<li class="page-item"><a class="page-link" href="?{{ reminders_page_query }}{% if reminders_page_query %}&amp;{% endif %}reminders_page={{ reminders.next_page_number }}#client-overview">›</a></li>{% endif %}</ul></nav>{% endif %}
-        {% else %}<p class="detail-muted detail-aside__empty">Напоминаний пока нет.</p>{% endif %}
+        {% else %}<p class="detail-muted detail-aside__empty">Задач пока нет.</p>{% endif %}
       </aside>
     </div>
   </section>
@@ -42,12 +43,18 @@
         {% if client_leads.has_other_pages %}<nav class="mt-3" aria-label="Страницы заявок"><ul class="pagination pagination-sm">{% if client_leads.has_previous %}<li class="page-item"><a class="page-link" href="?{{ leads_page_query }}{% if leads_page_query %}&amp;{% endif %}leads_page={{ client_leads.previous_page_number }}#client-leads">‹</a></li>{% endif %}<li class="page-item active"><span class="page-link">{{ client_leads.number }} / {{ client_leads.paginator.num_pages }}</span></li>{% if client_leads.has_next %}<li class="page-item"><a class="page-link" href="?{{ leads_page_query }}{% if leads_page_query %}&amp;{% endif %}leads_page={{ client_leads.next_page_number }}#client-leads">›</a></li>{% endif %}</ul></nav>{% endif %}
       {% else %}<p class="detail-muted detail-aside__empty">Заявок пока нет.</p>{% endif %}
     </div></section>
+
+  <section class="tab-pane fade" id="client-deals" role="tabpanel" aria-labelledby="client-deals-tab" tabindex="0"><div class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Работа по объектам</span><h2>Сделки клиента</h2></div><a href="{% url 'deal_create' %}?client={{ client.pk }}" class="btn btn-neutral btn-sm">Добавить сделку</a></div>
+      {% if client_deals %}<div class="detail-linked-list">{% for deal in client_deals %}<a class="detail-linked-list__item" href="{% url 'deal_detail' deal.pk %}"><span><strong>{{ deal.property.title }}</strong></span><span class="detail-linked-list__aside"><span>{{ deal.get_stage_display }}</span></span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endfor %}</div>
+        {% if client_deals.has_other_pages %}<nav class="mt-3" aria-label="Страницы сделок"><ul class="pagination pagination-sm">{% if client_deals.has_previous %}<li class="page-item"><a class="page-link" href="?{{ deals_page_query }}{% if deals_page_query %}&amp;{% endif %}deals_page={{ client_deals.previous_page_number }}#client-deals">‹</a></li>{% endif %}<li class="page-item active"><span class="page-link">{{ client_deals.number }} / {{ client_deals.paginator.num_pages }}</span></li>{% if client_deals.has_next %}<li class="page-item"><a class="page-link" href="?{{ deals_page_query }}{% if deals_page_query %}&amp;{% endif %}deals_page={{ client_deals.next_page_number }}#client-deals">›</a></li>{% endif %}</ul></nav>{% endif %}
+      {% else %}<p class="detail-muted detail-aside__empty">Сделок пока нет. Добавьте объект, который интересует клиента.</p>{% endif %}
+    </div></section>
 </div>
 
 <script>
   window.addEventListener('DOMContentLoaded', () => {
     const tabs = document.getElementById('client-tabs');
-    const validTargets = new Set(['#client-overview', '#client-history', '#client-leads']);
+    const validTargets = new Set(['#client-overview', '#client-history', '#client-leads', '#client-deals']);
     if (validTargets.has(window.location.hash)) {
       const selected = tabs?.querySelector(`[data-bs-target="${window.location.hash}"]`);
       if (selected) bootstrap.Tab.getOrCreateInstance(selected).show();

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}{% if object %}Сделка · {{ object.client.name }}{% else %}Новая сделка{% endif %}{% endblock %}
+{% block content %}
+<header class="ui-page-header detail-page-header">
+  <div><p class="ui-page-header__eyebrow">CRM · сделка</p><h1 class="ui-page-header__title">{% if object %}{{ object.client.name }} · {{ object.property.title }}{% else %}Новая сделка{% endif %}</h1><p class="ui-page-header__description">У сделки свой этап, задачи и показы — независимо от других обращений клиента.</p></div>
+  <div class="ui-page-header__actions"><a href="{% url 'deal_board' %}" class="btn btn-neutral">Все сделки</a></div>
+</header>
+
+{% if object %}
+<section class="detail-summary-bar" aria-label="Связанные данные сделки">
+  <div><span class="detail-kicker">Клиент</span><a href="{% url 'client_detail' object.client.pk %}">{{ object.client.name }}</a></div>
+  <div><span class="detail-kicker">Объект</span><a href="{% url 'property_detail' object.property.pk %}">{{ object.property.title }}</a></div>
+  <div><span class="detail-kicker">Ответственный</span><strong>{{ object.responsible.username|default:"Не назначен" }}</strong></div>
+</section>
+{% endif %}
+
+<section class="app-form-panel deal-form-panel">
+  <div class="app-form-panel__heading"><h2>{% if object %}Данные сделки{% else %}Начните работу по объекту{% endif %}</h2><p>Укажите клиента и объект, затем зафиксируйте этап. Задачи и показы добавляются ниже после создания сделки.</p></div>
+  <form method="post" class="app-form" novalidate>
+    {% csrf_token %}
+    {{ form.lead }}
+    {% if form.lead.errors %}<div class="alert alert-danger" role="alert">{{ form.lead.errors }}</div>{% endif %}
+    {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    {% if object %}<p class="form-text mb-3">Клиент и объект закреплены за сделкой. Для другой пары создайте новую сделку.</p>{% endif %}
+    <div class="detail-form-grid">
+      <div class="app-field">{% include "includes/form_field.html" with field=form.client %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.property %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.stage %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.expected_commission %}<p class="form-text">Укажите сумму в валюте выбранного объекта.</p></div>
+      <div class="app-field is-wide">{% include "includes/form_field.html" with field=form.outcome_note %}</div>
+    </div>
+    {% if object and object.lead %}<p class="detail-muted mt-3 mb-0">Создана из <a href="{% url 'lead_detail' object.lead.pk %}">заявки {{ object.lead.created_at|date:"d.m.Y" }}</a>.</p>{% endif %}
+    {% if object and object.closed_at %}<p class="detail-muted mt-2 mb-0">Завершена {{ object.closed_at|date:"d.m.Y в H:i" }}.</p>{% endif %}
+    <div class="detail-form-actions"><button class="btn btn-primary" type="submit">{% if object %}Сохранить сделку{% else %}Создать сделку{% endif %}</button></div>
+  </form>
+</section>
+{% if object %}
+<div class="detail-two-column mt-4">
+  <section class="detail-section" aria-labelledby="deal-tasks-title"><div class="detail-section__heading"><div><span class="detail-kicker">Следующие действия</span><h2 id="deal-tasks-title">Задачи</h2></div><a href="{% url 'task_create' %}?deal={{ object.pk }}" class="btn btn-neutral btn-sm">Добавить задачу</a></div>
+    {% if deal_tasks %}<div class="detail-linked-list">{% for task in deal_tasks %}<a class="detail-linked-list__item" href="{% url 'task_detail' task.pk %}"><span><strong>{{ task.text }}</strong></span><span class="detail-linked-list__aside">{% if task.due_at %}<time datetime="{{ task.due_at|date:'c' }}">{{ task.due_at|date:"d.m.Y · H:i" }}</time>{% else %}Без срока{% endif %}</span></a>{% endfor %}</div>{% else %}<p class="detail-muted mb-0">Запланируйте следующий шаг по сделке.</p>{% endif %}
+  </section>
+  <section class="detail-section" aria-labelledby="deal-showings-title"><div class="detail-section__heading"><div><span class="detail-kicker">Встречи</span><h2 id="deal-showings-title">Показы</h2></div><a href="{% url 'showing_create' %}?deal={{ object.pk }}" class="btn btn-neutral btn-sm">Назначить показ</a></div>
+    {% if deal_showings %}<div class="detail-linked-list">{% for showing in deal_showings %}<a class="detail-linked-list__item" href="{% url 'showing_detail' showing.pk %}"><span><strong>{{ showing.starts_at|date:"d.m.Y · H:i" }}</strong><span class="detail-linked-list__description">{{ showing.location|default:object.property.address|default:"Место не указано" }}</span></span><span class="detail-linked-list__aside">{{ showing.get_status_display }}</span></a>{% endfor %}</div>{% else %}<p class="detail-muted mb-0">Показов пока нет.</p>{% endif %}
+  </section>
+</div>
+{% endif %}
+{% endblock %}

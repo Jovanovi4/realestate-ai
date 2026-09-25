@@ -9,8 +9,8 @@
   </select>
   <button class="btn btn-sm btn-primary" name="action" value="status" type="submit">Применить</button>
   <button class="btn btn-sm btn-text" type="button" @click="selected = []">Снять выбор</button>
-  <div class="dropdown action-menu lead-bulk-toolbar__more">
+  {% if can_bulk_delete %}<div class="dropdown action-menu lead-bulk-toolbar__more">
     <button class="btn btn-icon btn-sm btn-neutral dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Дополнительные действия с выбранными заявками">•••</button>
     <ul class="dropdown-menu dropdown-menu-end"><li><button class="dropdown-item text-danger" name="action" value="delete" type="submit" formnovalidate data-confirm="Удалить выбранные заявки без возможности восстановления?" data-confirm-title="Удалить заявки?" data-confirm-button="Удалить">Удалить выбранные</button></li></ul>
-  </div>
+  </div>{% endif %}
 </form>

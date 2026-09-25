@@ -1,5 +1,4 @@
 {% load static %}
-{% get_static_prefix as static_prefix %}
 <!doctype html>
 <html lang="ru">
   <head>
@@ -88,7 +87,7 @@
         .visual-settings-grid { grid-template-columns:1fr; gap:1rem; }
       }
     </style>
-    <link rel="stylesheet" href="{{ static_prefix }}css/rieltor-ui.css" />
+    <link rel="stylesheet" href="{% static 'css/rieltor-ui.css' %}" />
   </head>
   <body x-data="{ sidebarOpen: false }">
     {% include "includes/ui_icon_sprite.html" %}
@@ -103,19 +102,22 @@
         <a class="app-brand" href="{% url 'property_list' %}"><span class="app-brand-mark">RE</span>RealtorAI</a>
         <p class="sidebar-label">Рабочее пространство</p>
         <nav>
-          <a class="sidebar-link {% if request.resolver_match.url_name == 'property_list' %}active{% endif %}" href="{% url 'property_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-home"></use></svg></span>Объекты</a>
-          <a class="sidebar-link {% if request.resolver_match.url_name == 'landing_list' %}active{% endif %}" href="{% url 'landing_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-layout"></use></svg></span>Лендинги</a>
+          <a class="sidebar-link {% if request.resolver_match.url_name == 'workday' or request.resolver_match.url_name == 'task_create' or request.resolver_match.url_name == 'task_detail' or request.resolver_match.url_name == 'showing_create' or request.resolver_match.url_name == 'showing_detail' %}active{% endif %}" href="{% url 'workday' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-calendar"></use></svg></span><span>Сегодня</span>{% if nav_overdue_count %}<span class="sidebar-counter" title="{{ nav_overdue_count }} просроченных дел" aria-label="{{ nav_overdue_count }} просроченных дел">{{ nav_overdue_label }}</span>{% endif %}</a>
+          <a class="sidebar-link {% if 'property' in request.resolver_match.url_name or request.resolver_match.url_name == 'upload_images' or request.resolver_match.url_name == 'reorder_images' or request.resolver_match.url_name == 'set_primary_image' or request.resolver_match.url_name == 'avito_export' or request.resolver_match.url_name == 'cian_export' or request.resolver_match.url_name == 'ai_assistant' %}active{% endif %}" href="{% url 'property_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-home"></use></svg></span>Объекты</a>
+          <a class="sidebar-link {% if request.resolver_match.url_name == 'landing_list' or request.resolver_match.url_name == 'landing_unpublish' %}active{% endif %}" href="{% url 'landing_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-layout"></use></svg></span>Лендинги</a>
           <a class="sidebar-link {% if request.resolver_match.url_name == 'lead_list' %}active{% endif %}" href="{% url 'lead_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-phone"></use></svg></span><span>Заявки</span>{% if nav_new_leads_count %}<span class="sidebar-counter" title="{{ nav_new_leads_count }} новых заявок" aria-label="{{ nav_new_leads_count }} новых заявок">{{ nav_new_leads_label }}</span>{% endif %}</a>
           <a class="sidebar-link {% if 'client' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'client_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-users"></use></svg></span>Клиенты</a>
+          <a class="sidebar-link {% if 'deal' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deal_board' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-briefcase"></use></svg></span>Сделки</a>
         </nav>
-        <div class="sidebar-bottom" x-data="{ profileOpen: false }">
-          <button class="profile-link w-100 border-0 bg-transparent text-start {% if request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' %}active{% endif %}" type="button" @click="profileOpen = !profileOpen" :aria-expanded="profileOpen.toString()">
+        <div class="sidebar-bottom" x-data="{ profileOpen: {% if request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' or 'agency' in request.resolver_match.url_name %}true{% else %}false{% endif %} }">
+          <button class="profile-link w-100 border-0 bg-transparent text-start {% if request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' or 'agency' in request.resolver_match.url_name %}active{% endif %}" type="button" @click="profileOpen = !profileOpen" :aria-expanded="profileOpen.toString()">
             <span class="profile-avatar">{% if nav_profile and nav_profile.photo %}<img src="{{ nav_profile.photo.url }}" alt="">{% else %}{{ user.username|slice:":1"|upper }}{% endif %}</span>
             <span class="text-truncate flex-grow-1"><strong class="d-block text-truncate">{% if nav_profile and nav_profile.display_name %}{{ nav_profile.display_name }}{% else %}Личный кабинет{% endif %}</strong><small class="text-white-50">Настройки профиля</small></span>
             <span class="text-white-50" x-text="profileOpen ? '⌃' : '⌄'"></span>
           </button>
           <div x-cloak x-show="profileOpen" x-transition class="pt-2">
-            <a class="sidebar-link" href="{% url 'edit_profile' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-settings"></use></svg></span>Личный кабинет</a>
+            <a class="sidebar-link {% if request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' %}active{% endif %}" href="{% url 'edit_profile' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-settings"></use></svg></span>Личный кабинет</a>
+            <a class="sidebar-link {% if 'agency' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'agency_dashboard' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-users"></use></svg></span>{% if nav_agency_membership %}Команда{% else %}Создать команду{% endif %}</a>
             <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="sidebar-link w-100 border-0 bg-transparent" type="submit"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-log-out"></use></svg></span>Выйти</button></form>
           </div>
         </div>
