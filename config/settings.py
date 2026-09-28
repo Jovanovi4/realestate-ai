@@ -69,6 +69,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'properties.security_middleware.AccountSecurityMiddleware',
     'properties.audit.AuditActorMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
@@ -171,8 +172,24 @@ STORAGES = {
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 MEDIA_URL = os.getenv("DJANGO_MEDIA_URL", "/media/")
-MEDIA_ROOT = Path(os.getenv("DJANGO_MEDIA_ROOT", BASE_DIR / "media"))
+MEDIA_ROOT = Path(os.getenv("DJANGO_MEDIA_ROOT", "") or BASE_DIR / "media")
 SERVE_MEDIA = env_flag("DJANGO_SERVE_MEDIA", DEBUG)
+
+# CRM archives are reviewed after 3 calendar months, never auto-deleted.
+CRM_ARCHIVE_REVIEW_MONTHS = int(os.getenv("CRM_ARCHIVE_REVIEW_MONTHS", "3"))
+CRM_BACKUP_ROOT = os.getenv("CRM_BACKUP_ROOT", "")
+CRM_BACKUP_REVIEW_DAYS = int(os.getenv("CRM_BACKUP_REVIEW_DAYS", "30"))
+CRM_BACKUP_TIMEOUT_SECONDS = int(os.getenv("CRM_BACKUP_TIMEOUT_SECONDS", "300"))
+
+# Validation limits for untrusted uploads (also cap request bodies at the proxy).
+PROPERTY_IMAGE_MAX_MB = int(os.getenv("PROPERTY_IMAGE_MAX_MB", "10"))
+PROFILE_IMAGE_MAX_MB = int(os.getenv("PROFILE_IMAGE_MAX_MB", "5"))
+IMAGE_UPLOAD_MAX_PIXELS = int(os.getenv("IMAGE_UPLOAD_MAX_PIXELS", "25000000"))
+PROPERTY_IMAGES_PER_UPLOAD = int(os.getenv("PROPERTY_IMAGES_PER_UPLOAD", "10"))
+PROPERTY_IMAGES_MAX_COUNT = int(os.getenv("PROPERTY_IMAGES_MAX_COUNT", "30"))
+# A parser-level ceiling, including unexpected multipart fields. The gallery
+# applies its lower, user-facing limit before processing any image.
+DATA_UPLOAD_MAX_NUMBER_FILES = 20
 
 # Shared cache is recommended in production when several web processes run.
 CACHES = {
@@ -185,6 +202,19 @@ CACHES = {
 LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "property_list"
 LOGOUT_REDIRECT_URL = "login"
+
+AUTH_TRUST_X_FORWARDED_FOR = env_flag("AUTH_TRUST_X_FORWARDED_FOR", False)
+AUTH_RATE_LIMITS = {
+    "login": {"ip": 30, "pair": 5, "identity": 20, "window": 900},
+    "register": {"ip": 5, "identity": 3, "window": 3600},
+    "reset": {"ip": 10, "identity": 3, "window": 3600},
+    "verify": {"ip": 10, "identity": 3, "window": 3600},
+    "confirm": {"ip": 20, "window": 900},
+}
+PASSWORD_RESET_TIMEOUT = 3600
+ACCOUNT_PUBLIC_BASE_URL = os.getenv("ACCOUNT_PUBLIC_BASE_URL", "").rstrip("/")
+ACCOUNT_EMAIL_QUEUE_TTL = 3600
+EMAIL_TIMEOUT = 10
 
 # Lead notifications. Credentials are always supplied by the deployment
 # environment, never committed with the project.

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block main_attributes %}style="max-width: none;"{% endblock %}
+{% block content %}
+<section class="auth-page"><div class="auth-panel">
+  <a class="auth-brand" href="{% if user.is_authenticated %}{% url 'property_list' %}{% else %}{% url 'login' %}{% endif %}"><span class="auth-brand-mark">RE</span><span>RealtorAI</span></a>
+  <div class="auth-card"><div class="auth-card-body">
+    <h1 class="auth-heading">{{ title }}</h1><p class="auth-subtitle">{{ description }}</p>
+    {% block security_content %}
+      {% if form %}<form method="post" class="app-form" novalidate>{% csrf_token %}
+        {% if form.non_field_errors %}<div class="app-form-error-summary" role="alert">{{ form.non_field_errors|striptags }}</div>{% endif %}
+        {% for field in form %}<div class="app-field">{% include "includes/form_field.html" with field=field %}</div>{% endfor %}
+        <button class="btn btn-primary w-100" type="submit">{{ submit_label }}</button>
+      </form>{% endif %}
+    {% endblock %}
+    {% if link_name %}<a class="btn btn-text w-100 mt-3" href="{% url link_name %}">{{ link_label }}</a>{% endif %}
+  </div></div>
+</div></section>
+{% endblock %}

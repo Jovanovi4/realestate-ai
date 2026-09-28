@@ -1,21 +1,18 @@
 import json
 import csv
 from decimal import Decimal, InvalidOperation
-from io import BytesIO
-from pathlib import Path
 from datetime import timedelta
 
-from PIL import Image, ImageOps, UnidentifiedImageError
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
+from django.db.models.deletion import ProtectedError
 from django.db.models import Count, Max, Q
 from django.core.paginator import Paginator
-from django.core.files.base import ContentFile
 from django.http import HttpResponse, JsonResponse
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.utils.dateparse import parse_date
@@ -24,7 +21,7 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.decorators.clickjacking import xframe_options_sameorigin
-from django.views.generic import CreateView, DeleteView, DetailView, ListView, UpdateView
+from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
 from .forms import (
     ClientDetailsForm, ClientForm, ClientInteractionForm, ClientReminderForm, LeadForm,
@@ -39,26 +36,8 @@ from .services.lead_notification_service import LeadNotificationService
 from .services.public_form_security import PublicLeadFormSecurity
 from .services.presentation_service import PresentationError, PresentationService
 from .services.presentation_docx_service import PresentationDocxService
-
-
-def optimize_property_image(uploaded_file):
-    """Resize newly uploaded property photos and strip excess metadata."""
-    try:
-        image = ImageOps.exif_transpose(Image.open(uploaded_file))
-        image.thumbnail((2000, 2000), Image.Resampling.LANCZOS)
-        if image.mode in {"RGBA", "LA"}:
-            background = Image.new("RGB", image.size, "white")
-            background.paste(image, mask=image.getchannel("A"))
-            image = background
-        elif image.mode != "RGB":
-            image = image.convert("RGB")
-        output = BytesIO()
-        image.save(output, format="JPEG", quality=85, optimize=True)
-        filename = f"{Path(uploaded_file.name).stem or 'property'}.jpg"
-        return ContentFile(output.getvalue(), name=filename)
-    except (OSError, UnidentifiedImageError):
-        uploaded_file.seek(0)
-        return uploaded_file
+from .services.image_upload_service import prepare_image_upload
+from .services.csv_security import spreadsheet_safe_cell
 
 
 class PropertyListView(LoginRequiredMixin, ListView):
@@ -100,6 +79,8 @@ class PropertyListView(LoginRequiredMixin, ListView):
             queryset = queryset.filter(deal_type=deal_type)
         if status in dict(Property.STATUS_CHOICES):
             queryset = queryset.filter(status=status)
+        if status != "archived":
+            queryset = queryset.exclude(status="archived")
         if min_price is not None:
             queryset = queryset.filter(price__gte=min_price)
         if max_price is not None:
@@ -119,6 +100,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
         context["deal_types"] = Property.DEAL_TYPE_CHOICES
         context["status_choices"] = Property.STATUS_CHOICES
         context["filters"] = self.request.GET
+        context["archived_count"] = workspace_queryset(Property.objects, self.request.user).filter(status="archived").count()
         context["sort_choices"] = [
             ("newest", "Сначала новые"),
             ("oldest", "Сначала старые"),
@@ -165,7 +147,8 @@ class PropertyListView(LoginRequiredMixin, ListView):
         params.pop("page", None)
         context["pagination_query"] = params.urlencode()
         profile = RealtorProfile.objects.filter(user=self.request.user).first()
-        user_properties = workspace_queryset(Property.objects, self.request.user)
+        all_user_properties = workspace_queryset(Property.objects, self.request.user)
+        user_properties = all_user_properties.exclude(status="archived")
         first_property = user_properties.order_by("-created_at").first()
         onboarding_items = [
             {
@@ -180,7 +163,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
             },
             {
                 "label": "Добавьте фотографию объекта",
-                "done": workspace_queryset(PropertyImage.objects, self.request.user, prefix="property__").exists(),
+                "done": workspace_queryset(PropertyImage.objects, self.request.user, prefix="property__").exclude(property__status="archived").exists(),
                 "url": reverse("upload_images", args=[first_property.pk]) if first_property else reverse("create_property"),
             },
             {
@@ -194,12 +177,12 @@ class PropertyListView(LoginRequiredMixin, ListView):
                 "url": f"{reverse('edit_property', args=[first_property.pk])}#landing-pane" if first_property else reverse("create_property"),
             },
         ]
-        has_properties = bool(first_property)
+        has_properties = all_user_properties.exists()
         context["has_any_properties"] = has_properties
-        context["show_welcome"] = not has_properties and not (profile and profile.onboarding_started)
+        context["show_welcome"] = not has_properties and not self.request.GET.get("status") and not (profile and profile.onboarding_started)
         completed_steps = sum(item["done"] for item in onboarding_items)
         context["onboarding"] = {
-            "visible": (not profile or not profile.onboarding_dismissed) and completed_steps < len(onboarding_items),
+            "visible": self.request.GET.get("status") != "archived" and (bool(first_property) or not has_properties) and (not profile or not profile.onboarding_dismissed) and completed_steps < len(onboarding_items),
             "items": onboarding_items,
             "completed": completed_steps,
             "total": len(onboarding_items),
@@ -213,6 +196,9 @@ class PropertyCreateView(LoginRequiredMixin, CreateView):
     form_class = PropertyForm
     template_name = "properties/create_property.html"
     success_url = reverse_lazy("property_list")
+
+    def get_form_kwargs(self):
+        return {**super().get_form_kwargs(), "user": self.request.user}
 
     def get(self, request, *args, **kwargs):
         """Start a saved draft so AI tools have a property to work with."""
@@ -266,8 +252,18 @@ class PropertyUpdateView(LoginRequiredMixin, UpdateView):
     template_name = "properties/edit_property.html"
     context_object_name = "property"
 
+    def get_form_kwargs(self):
+        return {**super().get_form_kwargs(), "user": self.request.user}
+
     def get_queryset(self):
-        return workspace_queryset(Property.objects, self.request.user)
+        queryset = workspace_queryset(Property.objects, self.request.user)
+        return queryset.select_for_update() if self.request.method == "POST" else queryset
+
+    def post(self, request, *args, **kwargs):
+        # Serialize full form saves with archive/restore so a stale editor
+        # cannot overwrite a concurrent lifecycle change after validation.
+        with transaction.atomic():
+            return super().post(request, *args, **kwargs)
 
     def get_success_url(self):
         return reverse_lazy("property_detail", kwargs={"pk": self.object.pk})
@@ -334,7 +330,7 @@ class LandingListView(LoginRequiredMixin, ListView):
     paginate_by = 10
 
     def get_queryset(self):
-        queryset = workspace_queryset(Property.objects, self.request.user).annotate(landing_leads_count=Count("leads"))
+        queryset = workspace_queryset(Property.objects, self.request.user).exclude(status="archived").annotate(landing_leads_count=Count("leads"))
         status = self.request.GET.get("status", "")
         if status == "published":
             queryset = queryset.filter(landing_published=True)
@@ -344,7 +340,7 @@ class LandingListView(LoginRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        all_landings = workspace_queryset(Property.objects, self.request.user)
+        all_landings = workspace_queryset(Property.objects, self.request.user).exclude(status="archived")
         context.update(
             {
                 "selected_status": self.request.GET.get("status", ""),
@@ -376,11 +372,14 @@ class PropertyLandingUnpublishView(LoginRequiredMixin, View):
 
 class PropertyStatusUpdateView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         status = request.POST.get("status")
-        if status in dict(Property.STATUS_CHOICES):
-            property.status = status
-            property.save(update_fields=["status", "updated_at"])
+        with transaction.atomic():
+            property = get_object_or_404(workspace_queryset(Property.objects.select_for_update(), request.user), pk=pk)
+            if status in dict(Property.STATUS_CHOICES):
+                if (status == "archived" or property.status == "archived") and property.agency_id and not may_manage_agency(request.user):
+                    raise PermissionDenied
+                property.status = status
+                property.save(update_fields=["status", "updated_at"])
         if request.headers.get("HX-Request") != "true":
             return redirect("property_detail", pk=property.pk)
         return render(request, "properties/includes/property_status_badge.html", {"property": property})
@@ -507,28 +506,29 @@ class PropertyPresentationDOCXView(LoginRequiredMixin, View):
         return response
 
 
-class PropertyDeleteView(LoginRequiredMixin, DeleteView):
-    model = Property
+class PropertyDeleteView(LoginRequiredMixin, View):
+    """Keep the old POST URL compatible, but never hard-delete CRM history."""
 
-    def get_queryset(self):
-        return deletable_queryset(Property.objects, self.request.user)
+    def post(self, request, pk):
+        with transaction.atomic():
+            property = get_object_or_404(deletable_queryset(Property.objects.select_for_update(), request.user), pk=pk)
+            if property.status != "archived":
+                property.status = "archived"
+                property.save(update_fields=["status", "updated_at"])
+        messages.success(request, "Объект в архиве. Фотографии, заявки и сделки сохранены.")
+        return redirect(f"{reverse('property_list')}?status=archived")
 
-    def get_success_url(self):
-        return reverse_lazy("property_list")
 
-    def _delete_image_files(self):
-        for property_image in self.object.images.all():
-            if property_image.image:
-                property_image.image.delete(save=False)
-
-    def form_valid(self, form):
-        self._delete_image_files()
-        return super().form_valid(form)
-
-    def delete(self, request, *args, **kwargs):
-        self.object = self.get_object()
-        self._delete_image_files()
-        return super().delete(request, *args, **kwargs)
+class PropertyRestoreView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        with transaction.atomic():
+            property = get_object_or_404(deletable_queryset(Property.objects.select_for_update(), request.user), pk=pk)
+            if property.status == "archived":
+                previous = property.status_before_archive
+                property.status = previous if previous in dict(Property.STATUS_CHOICES) and previous != "archived" else "draft"
+                property.save(update_fields=["status", "updated_at"])
+        messages.success(request, "Объект восстановлен. Публикацию лендинга включите отдельно после проверки.")
+        return redirect("property_detail", pk=pk)
 
 
 class RealtorProfileUpdateView(LoginRequiredMixin, UpdateView):
@@ -545,7 +545,7 @@ class RealtorProfileUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        properties = workspace_queryset(Property.objects, self.request.user)
+        properties = workspace_queryset(Property.objects, self.request.user).exclude(status="archived")
         context["statistics"] = {
             "properties": properties.count(),
             "published_landings": properties.filter(landing_published=True).count(),
@@ -799,7 +799,11 @@ class ClientBulkActionView(LoginRequiredMixin, View):
         if action == "delete":
             if not may_manage_agency(request.user) and clients.filter(agency__isnull=False).exists():
                 raise PermissionDenied
-            clients.delete()
+            try:
+                with transaction.atomic():
+                    clients.delete()
+            except ProtectedError:
+                messages.error(request, "Клиенты не удалены: у них есть CRM-история. Сначала согласуйте отдельное удаление или обезличивание данных.")
         next_url = request.POST.get("next")
         if next_url and url_has_allowed_host_and_scheme(next_url, {request.get_host()}):
             return redirect(next_url)
@@ -811,10 +815,10 @@ class ClientExportView(LoginRequiredMixin, View):
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="clients.csv"'
         response.write("\ufeff")
-        writer = csv.writer(response)
+        writer = csv.writer(response, quoting=csv.QUOTE_ALL)
         writer.writerow(["Имя", "Телефон", "Статус", "Источник", "Бюджет", "Район", "Удобное время", "Создан"])
         for client in workspace_queryset(Client.objects, request.user).order_by("-created_at"):
-            writer.writerow([client.name, client.phone, client.get_status_display(), client.get_source_display(), client.budget or "", client.preferred_area, client.preferred_contact_time, client.created_at.strftime("%d.%m.%Y %H:%M")])
+            writer.writerow([spreadsheet_safe_cell(value) for value in [client.name, client.phone, client.get_status_display(), client.get_source_display(), client.budget or "", client.preferred_area, client.preferred_contact_time, client.created_at.strftime("%d.%m.%Y %H:%M")]])
         return response
 
 
@@ -916,9 +920,13 @@ class LeadBulkStatusUpdateView(LoginRequiredMixin, View):
             leads = workspace_queryset(Lead.objects, request.user, prefix="property__").filter(pk__in=lead_ids)
             if not may_manage_agency(request.user) and leads.filter(property__agency__isnull=False).exists():
                 raise PermissionDenied
-            deleted_count = leads.count()
-            leads.delete()
-            messages.success(request, f"Удалено заявок: {deleted_count}.")
+            archived_count = 0
+            with transaction.atomic():
+                for lead in leads.select_for_update().exclude(status="archived"):
+                    lead.status = "archived"
+                    lead.save(update_fields=["status", "updated_at"])
+                    archived_count += 1
+            messages.success(request, f"В архив перенесено заявок: {archived_count}.")
         elif status not in dict(Lead.STATUS_CHOICES):
             messages.error(request, "Выберите корректный статус обработки.")
         else:
@@ -936,42 +944,60 @@ class LeadBulkStatusUpdateView(LoginRequiredMixin, View):
         return redirect("lead_list")
 
 
-class LeadDeleteView(LoginRequiredMixin, DeleteView):
-    model = Lead
-
-    def get_queryset(self):
-        return deletable_queryset(Lead.objects, self.request.user, prefix="property__")
-
-    def get_success_url(self):
-        return reverse_lazy("lead_list")
+class LeadDeleteView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        with transaction.atomic():
+            lead = get_object_or_404(deletable_queryset(Lead.objects.select_for_update(), request.user, prefix="property__"), pk=pk)
+            if lead.status != "archived":
+                lead.status = "archived"
+                lead.save(update_fields=["status", "updated_at"])
+        messages.success(request, "Заявка перенесена в архив. Связи со сделками и история сохранены.")
+        return redirect(f"{reverse('lead_list')}?status=archived")
 
 
 class PropertyImageUploadView(LoginRequiredMixin, View):
     template_name = "properties/upload_images.html"
 
+    def render_upload(self, request, property, error=None):
+        return render(request, self.template_name, {
+            "property": property,
+            "upload_error": error,
+            "max_image_mb": settings.PROPERTY_IMAGE_MAX_MB,
+            "max_upload_count": settings.PROPERTY_IMAGES_PER_UPLOAD,
+            "max_image_count": settings.PROPERTY_IMAGES_MAX_COUNT,
+            "image_count": property.images.count(),
+        }, status=400 if error else 200)
+
     def get(self, request, pk):
         property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
-        return render(request, self.template_name, {"property": property})
+        return self.render_upload(request, property)
 
     def post(self, request, pk):
         property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         uploads = request.FILES.getlist("images")
         if not uploads:
-            return render(request, self.template_name, {
-                "property": property,
-                "upload_error": "Выберите хотя бы одну фотографию.",
-            }, status=400)
-        next_order = (property.images.aggregate(max_order=Max("order"))["max_order"] or -1) + 1
-        has_primary = property.images.filter(is_primary=True).exists()
-        for image in uploads:
-            PropertyImage.objects.create(
-                property=property,
-                image=optimize_property_image(image),
-                order=next_order,
-                is_primary=not has_primary,
-            )
-            has_primary = True
-            next_order += 1
+            return self.render_upload(request, property, "Выберите хотя бы одну фотографию.")
+        if sum(len(request.FILES.getlist(key)) for key in request.FILES) > settings.PROPERTY_IMAGES_PER_UPLOAD:
+            return self.render_upload(request, property, f"За одну загрузку можно добавить не более {settings.PROPERTY_IMAGES_PER_UPLOAD} фотографий.")
+        if property.images.count() + len(uploads) > settings.PROPERTY_IMAGES_MAX_COUNT:
+            return self.render_upload(request, property, f"У объекта может быть не более {settings.PROPERTY_IMAGES_MAX_COUNT} фотографий.")
+        try:
+            # Validate the entire batch before writing any files or DB records.
+            prepared = [prepare_image_upload(upload) for upload in uploads]
+        except ValidationError as error:
+            return self.render_upload(request, property, " ".join(error.messages))
+        with transaction.atomic():
+            # Serialize simultaneous uploads to the same property in PostgreSQL.
+            property = workspace_queryset(Property.objects, request.user).select_for_update().get(pk=pk)
+            if property.images.count() + len(prepared) > settings.PROPERTY_IMAGES_MAX_COUNT:
+                return self.render_upload(request, property, f"У объекта может быть не более {settings.PROPERTY_IMAGES_MAX_COUNT} фотографий.")
+            max_order = property.images.aggregate(max_order=Max("order"))["max_order"]
+            next_order = (max_order if max_order is not None else -1) + 1
+            has_primary = property.images.filter(is_primary=True).exists()
+            for image in prepared:
+                PropertyImage.objects.create(property=property, image=image, order=next_order, is_primary=not has_primary)
+                has_primary = True
+                next_order += 1
         return redirect("property_detail", pk=property.pk)
 
 
@@ -1105,7 +1131,7 @@ class PublicLandingView(View):
 
     def get_property(self, slug):
         return get_object_or_404(
-            Property.objects.select_related("owner").prefetch_related("images"),
+            Property.objects.exclude(status="archived").select_related("owner").prefetch_related("images"),
             landing_slug=slug,
             landing_published=True,
         )

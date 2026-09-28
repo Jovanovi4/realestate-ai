@@ -5,6 +5,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}RealEstate AI{% endblock %}</title>
+    <link rel="icon" type="image/svg+xml" sizes="any" href="{% static 'branding/favicon.svg' %}" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet" />
     <script defer src="https://unpkg.com/htmx.org@2.0.6"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.9/dist/cdn.min.js"></script>
@@ -132,7 +133,7 @@
         <div class="modal-content border-0 shadow">
           <div class="modal-body p-4">
             <div class="d-flex align-items-start gap-3">
-              <span class="confirm-modal-icon" aria-hidden="true">!</span>
+              <span class="confirm-modal-icon" id="action-confirmation-icon" aria-hidden="true">!</span>
               <div><h2 class="h5 mb-2" id="action-confirmation-title">Подтвердите действие</h2><p class="text-muted small mb-0" id="action-confirmation-message"></p></div>
             </div>
           </div>
@@ -163,6 +164,7 @@
       const confirmationTitle = document.getElementById('action-confirmation-title');
       const confirmationMessage = document.getElementById('action-confirmation-message');
       const confirmationSubmit = document.getElementById('action-confirmation-submit');
+      const confirmationIcon = document.getElementById('action-confirmation-icon');
       let confirmationTarget = null;
       let confirmationSubmitter = null;
       const openConfirmation = (source, form, submitter = null) => {
@@ -172,6 +174,10 @@
         confirmationTitle.textContent = source.dataset.confirmTitle || 'Подтвердите действие';
         confirmationMessage.textContent = source.dataset.confirm || 'Это действие нельзя отменить.';
         confirmationSubmit.textContent = source.dataset.confirmButton || 'Удалить';
+        const neutral = source.dataset.confirmVariant === 'neutral';
+        confirmationSubmit.classList.toggle('btn-danger', !neutral);
+        confirmationSubmit.classList.toggle('btn-primary', neutral);
+        confirmationIcon?.classList.toggle('is-neutral', neutral);
         confirmationModal.show();
       };
       document.addEventListener('click', (event) => {

@@ -4,6 +4,7 @@ from urllib.parse import parse_qs, urlsplit
 from unittest.mock import Mock, patch
 
 from django.contrib.auth.models import User
+from django.contrib.staticfiles import finders
 from django.core.cache import cache
 from django.core import mail
 from django.core.management import call_command
@@ -11,6 +12,7 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.template.loader import render_to_string
+from django.templatetags.static import static
 from django.test import RequestFactory, TestCase, TransactionTestCase, override_settings
 from django.urls import resolve, reverse
 from django.utils import timezone
@@ -53,6 +55,26 @@ class NavigationStructureTests(TestCase):
         self.assertContains(response, 'aria-label="Фильтр лендингов по статусу"')
         self.assertContains(response, 'href="?status=published"')
         self.assertContains(response, 'href="?status=draft"')
+
+    def test_property_header_uses_accessible_archive_and_xml_icons(self):
+        Property.objects.create(owner=self.user, title="Архивный объект", status="archived")
+        response = self.client.get(reverse("property_list"))
+        header = response.content.decode().split('<header class="ui-page-header">', 1)[1].split("</header>", 1)[0]
+        self.assertIn('title="Архив объектов (1)" aria-label="Архив объектов (1)"', header)
+        self.assertIn('title="Выгрузить XML" aria-label="Выгрузить XML"', header)
+        self.assertIn('<use href="#ui-icon-archive"></use>', header)
+        self.assertIn('<use href="#ui-icon-download"></use>', header)
+        self.assertEqual(header.count('class="btn btn-icon btn-neutral"'), 2)
+        self.assertIn('data-bs-toggle="dropdown"', header)
+        self.assertIn(f'href="{reverse("avito_export")}"', header)
+        self.assertIn(f'href="{reverse("cian_export")}"', header)
+        self.assertNotIn("dropdown-toggle", header)
+        self.assertNotIn("Экспорт XML</button>", header)
+        self.assertNotIn("badge", header)
+
+        archived_response = self.client.get(reverse("property_list"), {"status": "archived"})
+        self.assertContains(archived_response, 'title="К активным объектам" aria-label="К активным объектам"')
+        self.assertContains(archived_response, '<use href="#ui-icon-chevron-left"></use>')
 
     def test_welcome_screen_still_has_landing_navigation(self):
         newcomer = User.objects.create_user("navigation-newcomer", password="password")
@@ -296,6 +318,20 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertRedirects(response, reverse("property_list"))
         user = User.objects.get(username="+79991234567")
         self.assertTrue(UserLegalAcceptance.objects.filter(user=user).exists())
+
+    def test_auth_forms_match_workspace_brand_and_include_favicon(self):
+        favicon_link = f'<link rel="icon" type="image/svg+xml" sizes="any" href="{static("branding/favicon.svg")}" />'
+        self.assertIsNotNone(finders.find("branding/favicon.svg"))
+        for url_name in ("login", "register"):
+            with self.subTest(page=url_name):
+                response = self.client.get(reverse(url_name))
+                self.assertContains(response, "<span>RealtorAI</span>", html=True)
+                self.assertNotContains(response, "Rieltor AI")
+                self.assertContains(response, favicon_link, html=True)
+
+        owner = User.objects.create_user("brand-owner", password="password")
+        self.client.force_login(owner)
+        self.assertContains(self.client.get(reverse("edit_profile")), favicon_link, html=True)
 
     def test_agent_cannot_open_another_agents_property(self):
         owner = User.objects.create_user("owner", password="password")
@@ -981,7 +1017,7 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertEqual(photo_tasks[1]["url"], reverse("upload_images", args=[property.pk]))
         self.assertContains(response, "window.addEventListener('hashchange', showTabFromHash)")
 
-    def test_property_detail_renders_preview_presentation_and_danger_action(self):
+    def test_property_detail_renders_preview_presentation_and_archive_action(self):
         owner = User.objects.create_user("detail-owner", password="password")
         property = Property.objects.create(title="Квартира", owner=owner)
         self.client.force_login(owner)
@@ -994,7 +1030,8 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertContains(response, reverse("property_landing_preview", args=[property.pk]))
         self.assertContains(response, reverse("property_presentation_pdf", args=[property.pk]))
         self.assertContains(response, reverse("property_presentation_docx", args=[property.pk]))
-        self.assertContains(response, 'class="detail-danger"')
+        self.assertContains(response, 'data-confirm-title="Архивировать объект?"')
+        self.assertNotContains(response, "Восстановить объект нельзя")
 
     def test_lead_detail_keeps_client_and_property_navigation(self):
         owner = User.objects.create_user("detail-owner", password="password")
@@ -1009,7 +1046,7 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertContains(response, "Хочу посмотреть")
         self.assertContains(response, reverse("client_detail", args=[client.pk]))
         self.assertContains(response, reverse("property_detail", args=[property.pk]))
-        self.assertContains(response, 'data-confirm-title="Удалить заявку?"')
+        self.assertContains(response, 'data-confirm-title="Архивировать заявку?"')
 
     def test_client_detail_shows_next_reminder_and_history_entry_stays_on_tab(self):
         owner = User.objects.create_user("detail-owner", password="password")
@@ -1531,6 +1568,8 @@ class WorkdayMigrationTests(TransactionTestCase):
         old_target = [("properties", "0034_deal_is_demo")]
         new_target = [("properties", "0035_workday")]
         executor = MigrationExecutor(connection)
+        latest = executor.loader.graph.leaf_nodes()
+        self.addCleanup(lambda: MigrationExecutor(connection).migrate(latest))
         executor.migrate(old_target)
         old_apps = executor.loader.project_state(old_target).apps
         OldUser = old_apps.get_model("auth", "User")

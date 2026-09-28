@@ -14,11 +14,47 @@
     <div class="app-form-panel__heading"><h2 id="profile-form-title">Профиль и контакты</h2><p>Эти данные увидят посетители ваших опубликованных объектов.</p></div>
     <form method="post" enctype="multipart/form-data" class="app-form" novalidate>{% csrf_token %}
       {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
-      <div class="upload-control upload-control--avatar"><button type="button" class="upload-control__preview" @click="$refs.photoInput.click()" aria-label="Загрузить или заменить фотографию"><template x-if="preview"><img :src="preview" alt="Фото риелтора"></template><span x-show="!preview" class="upload-control__placeholder"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-users"></use></svg></span><span class="upload-control__overlay" aria-hidden="true">Изменить</span></button><div class="upload-control__content"><h3>Фотография риелтора</h3><p>Появится в профиле и на лендингах.</p><span class="upload-control__hint">Нажмите на фото, чтобы выбрать новое изображение.</span><span class="upload-control__filename" x-show="fileName" x-text="fileName"></span><div class="d-none">{{ form.photo }}</div>{% if form.photo.errors %}<div class="app-field-error text-danger" role="alert">{{ form.photo.errors|striptags }}</div>{% endif %}</div></div>
+      <div class="upload-control upload-control--avatar"><button type="button" class="upload-control__preview" @click="$refs.photoInput.click()" aria-label="Загрузить или заменить фотографию"><template x-if="preview"><img :src="preview" alt="Фото риелтора"></template><span x-show="!preview" class="upload-control__placeholder"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-users"></use></svg></span><span class="upload-control__overlay" aria-hidden="true">Изменить</span></button><div class="upload-control__content"><h3>Фотография риелтора</h3><p>Появится в профиле и на лендингах.</p><span class="upload-control__hint">{{ form.photo.help_text }}</span><span class="upload-control__filename" x-show="fileName" x-text="fileName"></span><div class="d-none">{{ form.photo }}</div>{% if form.photo.errors %}<div class="app-field-error text-danger" role="alert">{{ form.photo.errors|striptags }}</div>{% endif %}</div></div>
       <div class="app-form-grid">{% for field in form %}{% if field.name != 'photo' %}{% if field.name == 'telegram_chat_id' %}<div class="app-form-divider is-wide"><h3>Уведомления о заявках</h3><p>Укажите Telegram chat ID, чтобы получать обращения после настройки бота. На email из профиля тоже могут приходить уведомления.</p></div>{% endif %}<div class="app-field {% if field.name == 'telegram_chat_id' %}is-wide{% endif %}">{% include "includes/form_field.html" with field=field %}</div>{% endif %}{% endfor %}</div>
       <div class="app-form-actions"><button class="btn btn-primary" type="submit">Сохранить изменения</button></div>
     </form>
   </section>
-  <aside class="app-form-panel profile-account" aria-labelledby="profile-account-title"><div class="app-form-panel__heading"><h2 id="profile-account-title">Доступ к аккаунту</h2><p>Телефон для входа: {{ user.username }}</p></div><a href="{% url 'password_change' %}" class="btn btn-neutral">Сменить пароль</a><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn btn-text" type="submit">Выйти из аккаунта</button></form></aside>
+  <aside class="app-form-panel profile-account" aria-labelledby="profile-account-title">
+    <div class="app-form-panel__heading">
+      <h2 id="profile-account-title">Доступ к аккаунту</h2>
+      <p>Вход, пароль и восстановление доступа.</p>
+    </div>
+    <div class="profile-account__section">
+      <dl class="profile-account__credentials">
+        <dt>Телефон для входа</dt>
+        <dd>{{ user.username }}</dd>
+      </dl>
+      <a href="{% url 'password_change' %}" class="btn btn-neutral">Сменить пароль</a>
+    </div>
+    <section class="profile-account__section profile-account__recovery" aria-labelledby="profile-recovery-title">
+      <h3 id="profile-recovery-title">Восстановление доступа</h3>
+      <div class="profile-account__email{% if form.instance.email_verified_at %} is-verified{% endif %}">
+        <span class="profile-account__status-icon" aria-hidden="true">
+          <svg class="ui-icon" viewBox="0 0 24 24"><use href="{% if form.instance.email_verified_at %}#ui-icon-check{% else %}#ui-icon-mail{% endif %}"></use></svg>
+        </span>
+        <div class="profile-account__email-content">
+          <p class="profile-account__status">{% if form.instance.email_verified_at %}Email подтверждён{% elif form.instance.email %}Email не подтверждён{% else %}Email не добавлен{% endif %}</p>
+          {% if form.instance.email %}<p class="profile-account__email-address">{{ form.instance.email }}</p>{% endif %}
+        </div>
+      </div>
+      {% if form.instance.email_verified_at %}
+        <p class="profile-account__hint">Если забудете пароль, сможете восстановить его через эту почту.</p>
+      {% elif form.instance.email %}
+        <p class="profile-account__hint">Подтвердите почту, чтобы использовать её для восстановления пароля.</p>
+        <a href="{% url 'account_email_verify' %}" class="btn btn-neutral">Подтвердить email</a>
+      {% else %}
+        <p class="profile-account__hint">Укажите email в профиле и сохраните изменения. Затем подтвердите почту для восстановления пароля.</p>
+      {% endif %}
+    </section>
+    <form method="post" action="{% url 'logout' %}" class="profile-account__footer">
+      {% csrf_token %}
+      <button class="btn btn-text" type="submit"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-log-out"></use></svg>Выйти из аккаунта</button>
+    </form>
+  </aside>
 </div>
 {% endblock %}

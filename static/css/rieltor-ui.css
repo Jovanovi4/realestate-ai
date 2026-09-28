@@ -274,6 +274,7 @@ textarea.form-control { min-height: 6.5rem; line-height: 1.5; resize: vertical; 
 .auth-card .app-field + .app-field { margin-top: var(--ui-space-4); }
 .auth-card .app-form-consents { margin-top: .25rem; }
 .auth-card .app-form > .btn:last-child { margin-top: .5rem; }
+.auth-card .app-form > .app-field + .btn[type="submit"] { margin-top: var(--ui-space-4); }
 .auth-page { background: var(--ui-canvas); }
 .auth-card { border-color: var(--ui-border); background: var(--ui-surface); box-shadow: var(--ui-shadow-card); }
 .auth-tabs { background: var(--ui-surface-selected); }
@@ -314,9 +315,25 @@ a.profile-stat:hover { border-color: var(--ui-border-strong); color: var(--ui-in
 .profile-stat span { color: var(--ui-muted); font-size: .75rem; }
 .profile-stat strong { font-size: 1.5rem; font-weight: 750; line-height: 1.2; }
 .profile-form-layout { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(15rem, 1fr); align-items: start; gap: var(--ui-space-4); }
-.profile-account { display: grid; gap: .5rem; }
-.profile-account .app-form-panel__heading { margin-bottom: .25rem; }
+.profile-account { display: grid; gap: var(--ui-space-5); }
+.profile-account .app-form-panel__heading { padding-bottom: var(--ui-space-4); margin-bottom: 0; }
 .profile-account .btn { justify-self: start; }
+.profile-account__section { display: grid; gap: var(--ui-space-3); min-width: 0; }
+.profile-account__credentials { display: grid; gap: var(--ui-space-1); margin: 0; }
+.profile-account__credentials dt { color: var(--ui-muted); font-size: .75rem; font-weight: 500; }
+.profile-account__credentials dd { margin: 0; color: var(--ui-ink); font-size: .9375rem; font-weight: 650; overflow-wrap: anywhere; }
+.profile-account__recovery, .profile-account__footer { padding-top: var(--ui-space-5); border-top: 1px solid var(--ui-border); }
+.profile-account__recovery h3 { margin: 0; font-size: .875rem; font-weight: 750; }
+.profile-account__email { display: flex; align-items: center; gap: var(--ui-space-3); min-width: 0; }
+.profile-account__status-icon { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 2rem; height: 2rem; border-radius: var(--ui-radius-pill); color: var(--ui-muted-strong); background: var(--ui-surface-selected); }
+.profile-account__status-icon .ui-icon { width: 1rem; height: 1rem; }
+.profile-account__email-content { min-width: 0; }
+.profile-account__status { margin: 0; color: var(--ui-ink); font-size: .8125rem; font-weight: 650; line-height: 1.5; }
+.profile-account__email-address { margin: .125rem 0 0; color: var(--ui-muted); font-size: .75rem; line-height: 1.5; overflow-wrap: anywhere; }
+.profile-account__email.is-verified .profile-account__status-icon { color: var(--ui-success); background: var(--ui-success-soft); }
+.profile-account__email.is-verified .profile-account__status { color: var(--ui-success); }
+.profile-account__hint { margin: 0; color: var(--ui-muted); font-size: .8125rem; line-height: 1.6; }
+.profile-account__footer { margin: 0; }
 
 .property-editor .form-section { margin-bottom: .5rem; border-color: var(--ui-border); border-radius: var(--ui-radius-sm); box-shadow: none; }
 .property-editor .form-section > summary { min-height: 3rem; padding: .75rem 1rem; font-size: .875rem; }
@@ -468,6 +485,7 @@ a.profile-stat:hover { border-color: var(--ui-border-strong); color: var(--ui-in
 .modal-header, .modal-footer { border-color: var(--ui-border); }
 .modal-backdrop.show { opacity: .3; }
 .confirm-modal-icon { display: grid; flex: 0 0 2.5rem; width: 2.5rem; height: 2.5rem; place-items: center; border-radius: var(--ui-radius-md); color: var(--ui-danger); background: var(--ui-danger-soft); font-size: 1.125rem; font-weight: 800; }
+.confirm-modal-icon.is-neutral { color: var(--ui-accent); background: var(--ui-accent-soft); }
 
 /* Application shell */
 .app-sidebar {

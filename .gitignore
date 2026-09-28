@@ -10,6 +10,7 @@ venv/
 db.sqlite3
 media/
 staticfiles/
+.crm-backups/
 
 # Secrets and local configuration
 .env

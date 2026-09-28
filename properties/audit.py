@@ -51,6 +51,7 @@ def _before_save(sender, instance, raw=False, update_fields=None, **kwargs):
         and (update_fields is None or field.name in update_fields or field.attname in update_fields)
     ]
     old = sender.objects.filter(pk=instance.pk).values(*[field.attname for field in fields]).first()
+    instance._audit_old_status = old.get("status") if old else None
     instance._audit_changed_fields = [field.verbose_name or field.name for field in fields if old and old[field.attname] != getattr(instance, field.attname)]
 
 
@@ -62,10 +63,16 @@ def _after_save(sender, instance, created, raw=False, **kwargs):
         return
     agency_id, owner_id = _scope(instance)
     actor = _actor.get()
+    action = "created" if created else "updated"
+    if not created and isinstance(instance, (Property, Lead)) and getattr(instance, "_audit_old_status", None) is not None:
+        if instance.status == "archived" and instance._audit_old_status != "archived":
+            action = "archived"
+        elif instance.status != "archived" and instance._audit_old_status == "archived":
+            action = "restored"
     AuditEvent.objects.create(
         agency_id=agency_id, owner_id=owner_id, actor=actor if getattr(actor, "is_authenticated", False) else None,
         model_name=str(sender._meta.verbose_name).capitalize(), object_pk=str(instance.pk),
-        action="created" if created else "updated", changed_fields=changed if not created else [],
+        action=action, changed_fields=changed if not created else [],
     )
 
 

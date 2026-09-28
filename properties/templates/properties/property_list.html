@@ -4,7 +4,21 @@
 {% if show_welcome %}
   <section class="welcome-screen"><div class="welcome-panel text-center"><span class="welcome-mark">RE</span><p class="small text-uppercase fw-semibold text-muted mt-4 mb-2">Добро пожаловать в Rieltor AI</p><h1 class="display-6 mb-3">Объект, лендинг и заявки — в одном месте</h1><p class="lead text-muted mx-auto mb-4">Создайте объект, получите готовый лендинг и ведите обращения клиентов в едином рабочем пространстве.</p><div class="welcome-choice-row"><form method="post" action="{% url 'onboarding_demo_create' %}">{% csrf_token %}<button class="welcome-choice is-recommended" type="submit"><span class="welcome-choice-badge">Рекомендуем</span><span class="welcome-choice-icon">◈</span><strong>Начать с демо</strong><small>Посмотрите готовый объект, лендинг, заявки и CRM за несколько минут.</small><span class="welcome-choice-action">Открыть демо-кабинет <span aria-hidden="true">→</span></span></button></form><form method="post" action="{% url 'onboarding_start_manual' %}">{% csrf_token %}<button class="welcome-choice" type="submit"><span class="welcome-choice-icon">＋</span><strong>Создать свой объект</strong><small>Сразу заполните карточку недвижимости и настройте собственный лендинг.</small><span class="welcome-choice-action">Перейти к созданию <span aria-hidden="true">→</span></span></button></form></div><p class="small text-muted mt-4 mb-0">Оба варианта можно изменить или продолжить позже.</p></div></section>
 {% else %}
-<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Рабочее пространство</p><h1 class="ui-page-header__title">Объекты</h1><p class="ui-page-header__description">Карточки недвижимости, публикации и материалы для продвижения.</p></div><div class="ui-page-header__actions"><div class="dropdown action-menu"><button class="btn btn-neutral dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Экспорт XML</button><ul class="dropdown-menu dropdown-menu-end"><li><a class="dropdown-item" href="{% url 'avito_export' %}">Avito</a></li><li><a class="dropdown-item" href="{% url 'cian_export' %}">ЦИАН</a></li></ul></div><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></header>
+<header class="ui-page-header">
+  <div><p class="ui-page-header__eyebrow">Рабочее пространство</p><h1 class="ui-page-header__title">{% if filters.status == 'archived' %}Архив объектов{% else %}Объекты{% endif %}</h1><p class="ui-page-header__description">{% if filters.status == 'archived' %}Сохранённые объекты и CRM-история. Откройте карточку, чтобы восстановить объект.{% else %}Карточки недвижимости, публикации и материалы для продвижения.{% endif %}</p></div>
+  <div class="ui-page-header__actions">
+    {% if filters.status == 'archived' %}
+      <a class="btn btn-icon btn-neutral" href="{% url 'property_list' %}" title="К активным объектам" aria-label="К активным объектам"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-left"></use></svg></a>
+    {% else %}
+      <a class="btn btn-icon btn-neutral" href="{% url 'property_list' %}?status=archived" title="Архив объектов ({{ archived_count }})" aria-label="Архив объектов ({{ archived_count }})"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-archive"></use></svg></a>
+    {% endif %}
+    <div class="dropdown">
+      <button class="btn btn-icon btn-neutral" type="button" data-bs-toggle="dropdown" aria-expanded="false" aria-controls="property-xml-export-menu" aria-haspopup="true" title="Выгрузить XML" aria-label="Выгрузить XML"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-download"></use></svg></button>
+      <ul class="dropdown-menu dropdown-menu-end" id="property-xml-export-menu"><li><a class="dropdown-item" href="{% url 'avito_export' %}">Avito</a></li><li><a class="dropdown-item" href="{% url 'cian_export' %}">ЦИАН</a></li></ul>
+    </div>
+    <a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a>
+  </div>
+</header>
 
 {% if onboarding.visible %}
   <section class="onboarding-card" aria-labelledby="onboarding-title">

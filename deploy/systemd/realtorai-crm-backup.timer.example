@@ -1,0 +1,12 @@
+# Template only. Install only after the service is adapted and tested.
+[Unit]
+Description=Daily verified RealtorAI CRM backup
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+RandomizedDelaySec=5m
+Persistent=true
+Unit=realtorai-crm-backup.service
+
+[Install]
+WantedBy=timers.target

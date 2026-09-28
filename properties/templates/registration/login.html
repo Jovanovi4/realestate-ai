@@ -3,7 +3,7 @@
 {% block main_attributes %}style="max-width: none;"{% endblock %}
 {% block content %}
 <section class="auth-page"><div class="auth-panel">
-  <a class="auth-brand" href="{% url 'login' %}"><span class="auth-brand-mark">RE</span><span>Rieltor AI</span></a>
+  <a class="auth-brand" href="{% url 'login' %}"><span class="auth-brand-mark">RE</span><span>RealtorAI</span></a>
   <div class="auth-card"><div class="auth-card-body">
     <nav class="auth-tabs" aria-label="Авторизация"><a class="is-active" href="{% url 'login' %}" aria-current="page">Вход</a><a href="{% url 'register' %}">Регистрация</a></nav>
     <h1 class="auth-heading">С возвращением</h1><p class="auth-subtitle">Войдите, чтобы продолжить работу с объектами и заявками.</p>
@@ -12,6 +12,7 @@
       <div class="app-field">{% include "includes/form_field.html" with field=form.username %}</div>
       <div class="app-field">{% include "includes/form_field.html" with field=form.password %}</div>
       <button class="btn btn-primary w-100" type="submit">Войти в кабинет</button>
+      <a class="btn btn-text w-100" href="{% url 'password_reset' %}">Забыли пароль?</a>
     </form>
   </div></div>
 </div></section>

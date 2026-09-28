@@ -3,6 +3,8 @@ from django.urls import path, reverse_lazy
 
 from .ai_views import AIAssistantView, AIBundleGenerateView, AIContentDeleteView, AIContentEditView, AIInlineGenerateView, AILeadReplyView, generate_description
 from .forms import AccountPasswordChangeForm, PhoneAuthenticationForm
+from .account_views import AccountRecoveryView, AccountResetConfirmView, ConfirmEmailView, VerifyEmailView
+from django.views.generic import TemplateView
 from .deal_views import DealBoardView, DealCreateView, DealUpdateView
 from .agency_views import (
     AgencyCreateView, AgencyDashboardView, AgencyInviteView, AgencyInviteRevokeView, AgencyJoinView,
@@ -16,6 +18,7 @@ from .views import (
     PropertyCreateView,
     PropertyDetailView,
     PropertyDeleteView,
+    PropertyRestoreView,
     PropertyImageUploadView,
     PropertyImagePrimaryView,
     PropertyImageDeleteView,
@@ -60,8 +63,23 @@ urlpatterns = [
     path("onboarding/create-object/", OnboardingStartManualView.as_view(), name="onboarding_start_manual"),
     path("onboarding/dismiss/", OnboardingDismissView.as_view(), name="onboarding_dismiss"),
     path("login/", auth_views.LoginView.as_view(authentication_form=PhoneAuthenticationForm), name="login"),
+    path("password-reset/", AccountRecoveryView.as_view(), name="password_reset"),
+    path("password-reset/done/", TemplateView.as_view(template_name="registration/account_security.html", extra_context={
+        "title": "Запрос принят", "description": "Если данные соответствуют аккаунту с подтверждённым email, мы отправим ссылку восстановления. Проверьте почту и папку «Спам».",
+        "link_name": "login", "link_label": "Вернуться ко входу",
+    }), name="password_reset_done"),
+    path("password-reset/<uidb64>/<token>/", AccountResetConfirmView.as_view(), name="password_reset_confirm"),
+    path("password-reset/complete/", TemplateView.as_view(template_name="registration/account_security.html", extra_context={
+        "title": "Пароль изменён", "description": "Войдите в кабинет с новым паролем.", "link_name": "login", "link_label": "Войти в кабинет",
+    }), name="password_reset_complete"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("profile/", RealtorProfileUpdateView.as_view(), name="edit_profile"),
+    path("profile/email/verify/", VerifyEmailView.as_view(), name="account_email_verify"),
+    path("profile/email/sent/", TemplateView.as_view(template_name="registration/account_security.html", extra_context={
+        "title": "Запрос принят", "description": "Ссылка подтверждения будет отправлена на email из профиля. Проверьте почту и папку «Спам».",
+        "link_name": "edit_profile", "link_label": "Вернуться в профиль",
+    }), name="account_email_sent"),
+    path("email-confirm/<uidb64>/<token>/", ConfirmEmailView.as_view(), name="account_email_confirm"),
     path("agency/", AgencyDashboardView.as_view(), name="agency_dashboard"),
     path("agency/create/", AgencyCreateView.as_view(), name="agency_create"),
     path("agency/invite/", AgencyInviteView.as_view(), name="agency_invite"),
@@ -112,6 +130,7 @@ urlpatterns = [
     path("create/", PropertyCreateView.as_view(), name="create_property"),
     path("<int:pk>/edit/", PropertyUpdateView.as_view(), name="edit_property"),
     path("<int:pk>/delete/", PropertyDeleteView.as_view(), name="delete_property"),
+    path("<int:pk>/restore/", PropertyRestoreView.as_view(), name="restore_property"),
     path("<int:pk>/status/", PropertyStatusUpdateView.as_view(), name="update_property_status"),
     path("<int:pk>/ai/", AIAssistantView.as_view(), name="ai_assistant"),
     path("<int:pk>/ai/inline/", AIInlineGenerateView.as_view(), name="ai_inline_generate"),

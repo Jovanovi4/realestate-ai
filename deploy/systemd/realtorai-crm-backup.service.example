@@ -1,0 +1,16 @@
+# Template only: replace paths/user and load the same environment as the site.
+[Unit]
+Description=RealtorAI CRM backup and isolated restore verification
+
+[Service]
+Type=oneshot
+User=realtorai
+Group=realtorai
+WorkingDirectory=/srv/realtorai
+EnvironmentFile=/etc/realtorai/runtime.env
+Environment=CRM_BACKUP_ROOT=/var/lib/realtorai-backups
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ExecStart=/srv/realtorai/venv/bin/python /srv/realtorai/manage.py backup_crm
+ExecStartPost=/srv/realtorai/venv/bin/python /srv/realtorai/manage.py crm_retention_report

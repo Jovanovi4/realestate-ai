@@ -169,6 +169,8 @@ class Property(models.Model):
         default="draft",
         verbose_name="Статус",
     )
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False, db_index=True, verbose_name="Дата архивирования")
+    status_before_archive = models.CharField(max_length=20, blank=True, editable=False, verbose_name="Статус до архива")
 
     avito_export = models.BooleanField(default=False, verbose_name="Включить в экспорт Avito")
     cian_export = models.BooleanField(default=False, verbose_name="Включить в экспорт ЦИАН")
@@ -330,6 +332,27 @@ class Property(models.Model):
             raise ValidationError({"owner": "Владелец записи не состоит в агентстве."})
         if not self.landing_slug:
             self.landing_slug = uuid.uuid4().hex[:12]
+        fields = kwargs.get("update_fields")
+        if fields is not None and not fields:
+            return
+        old = type(self).objects.filter(pk=self.pk).values("status", "archived_at", "status_before_archive").first() if self.pk else None
+        writes_status = fields is None or "status" in fields
+        effective_status = self.status if writes_status or not old else old["status"]
+        lifecycle_fields = set()
+        if effective_status == "archived":
+            self.archived_at = old["archived_at"] if old and old["status"] == "archived" and old["archived_at"] else timezone.now()
+            self.status_before_archive = old["status"] if old and old["status"] != "archived" else (old["status_before_archive"] if old else "draft")
+            lifecycle_fields.update({"archived_at", "status_before_archive"})
+        elif writes_status and old and old["status"] == "archived":
+            self.archived_at = None
+            self.status_before_archive = ""
+            lifecycle_fields.update({"archived_at", "status_before_archive"})
+        # Restore never republishes a landing or re-enables an XML feed implicitly.
+        if effective_status == "archived" or (writes_status and old and old["status"] == "archived"):
+            self.landing_published = self.avito_export = self.cian_export = False
+            lifecycle_fields.update({"landing_published", "avito_export", "cian_export"})
+        if fields is not None:
+            kwargs["update_fields"] = set(fields) | lifecycle_fields
         super().save(*args, **kwargs)
 
     @property
@@ -465,6 +488,8 @@ class RealtorProfile(models.Model):
     phone = models.CharField(max_length=30, blank=True, verbose_name="Телефон")
     telegram_username = models.CharField(max_length=100, blank=True, verbose_name="Telegram без @")
     email = models.EmailField(blank=True, verbose_name="Email")
+    email_verified_at = models.DateTimeField(null=True, blank=True, editable=False)
+    email_verification_nonce = models.UUIDField(default=uuid.uuid4, editable=False)
     telegram_chat_id = models.CharField(
         max_length=64,
         blank=True,
@@ -481,8 +506,37 @@ class RealtorProfile(models.Model):
     onboarding_started = models.BooleanField(default=False, verbose_name="Онбординг начат")
     onboarding_dismissed = models.BooleanField(default=False, verbose_name="Онбординг скрыт")
 
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        if update_fields is None or "email" in update_fields:
+            self.email = self.email.strip().casefold()
+            previous_email = type(self).objects.filter(pk=self.pk).values_list("email", flat=True).first() if self.pk else None
+            if previous_email is not None and previous_email != self.email:
+                self.email_verified_at = None
+                self.email_verification_nonce = uuid.uuid4()
+                if update_fields is not None:
+                    kwargs["update_fields"] = set(update_fields) | {"email_verified_at", "email_verification_nonce"}
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return self.display_name or self.user.get_full_name() or self.user.username
+
+
+class AccountEmailRequest(models.Model):
+    """Durable mail queue; unknown recovery accounts also enqueue a no-op."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="account_email_requests")
+    kind = models.CharField(max_length=10, choices=[("verify", "Подтверждение email"), ("reset", "Восстановление доступа")])
+    nonce = models.UUIDField(null=True, blank=True)
+    auth_hash = models.CharField(max_length=64, blank=True)
+    status = models.CharField(max_length=10, default="pending", choices=[("pending", "Ожидает"), ("sent", "Отправлено"), ("discarded", "Отменено"), ("failed", "Ошибка")])
+    attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_attempt_at = models.DateTimeField(null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["status", "created_at"], name="account_mail_status_created")]
 
 
 class Agency(models.Model):
@@ -588,7 +642,7 @@ class ClientInteraction(models.Model):
         ("status", "Изменение статуса"),
     ]
 
-    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="interactions")
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="interactions")
     lead = models.ForeignKey("Lead", on_delete=models.SET_NULL, null=True, blank=True, related_name="interactions")
     interaction_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="note", verbose_name="Тип")
     text = models.TextField(blank=True, verbose_name="Комментарий")
@@ -603,8 +657,8 @@ class ClientInteraction(models.Model):
 class ClientReminder(models.Model):
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="crm_tasks")
     agency = models.ForeignKey(Agency, on_delete=models.PROTECT, null=True, blank=True, related_name="tasks")
-    client = models.ForeignKey(Client, on_delete=models.CASCADE, null=True, blank=True, related_name="reminders", verbose_name="Клиент")
-    deal = models.ForeignKey("Deal", on_delete=models.CASCADE, null=True, blank=True, related_name="tasks", verbose_name="Сделка")
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, null=True, blank=True, related_name="reminders", verbose_name="Клиент")
+    deal = models.ForeignKey("Deal", on_delete=models.PROTECT, null=True, blank=True, related_name="tasks", verbose_name="Сделка")
     text = models.CharField(max_length=255, verbose_name="Задача")
     due_at = models.DateTimeField(null=True, blank=True, verbose_name="Срок выполнения")
     is_done = models.BooleanField(default=False, verbose_name="Выполнено")
@@ -668,9 +722,9 @@ class Lead(models.Model):
         ("archived", "Архив"),
     ]
 
-    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="leads")
+    property = models.ForeignKey(Property, on_delete=models.PROTECT, related_name="leads")
     assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_leads", verbose_name="Ответственный")
-    client = models.ForeignKey(Client, on_delete=models.SET_NULL, null=True, blank=True, related_name="leads")
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, null=True, blank=True, related_name="leads")
     name = models.CharField(max_length=150, verbose_name="Имя")
     phone = models.CharField(max_length=30, verbose_name="Телефон")
     contact_purpose = models.CharField(
@@ -681,6 +735,7 @@ class Lead(models.Model):
     )
     message = models.TextField(blank=True, verbose_name="Комментарий")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Статус обработки")
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False, db_index=True, verbose_name="Дата архивирования")
     interest_type = models.CharField(max_length=20, choices=INTEREST_CHOICES, default="buy", verbose_name="Интерес клиента")
     personal_data_consent_at = models.DateTimeField(null=True, blank=True, verbose_name="Согласие на обработку данных получено")
     personal_data_consent_version = models.CharField(max_length=32, blank=True, verbose_name="Версия согласия")
@@ -710,6 +765,11 @@ class Lead(models.Model):
     def save(self, *args, **kwargs):
         if not self.assigned_to_id and self.property_id:
             self.assigned_to_id = self.property.owner_id
+        fields = kwargs.get("update_fields")
+        if fields is None or "status" in fields:
+            self.archived_at = (self.archived_at or timezone.now()) if self.status == "archived" else None
+            if fields is not None:
+                kwargs["update_fields"] = set(fields) | {"archived_at"}
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -737,8 +797,8 @@ class Deal(models.Model):
         related_name="assigned_deals",
         verbose_name="Ответственный",
     )
-    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="deals", verbose_name="Клиент")
-    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="deals", verbose_name="Объект")
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="deals", verbose_name="Клиент")
+    property = models.ForeignKey(Property, on_delete=models.PROTECT, related_name="deals", verbose_name="Объект")
     lead = models.ForeignKey(Lead, on_delete=models.SET_NULL, null=True, blank=True, related_name="deals", verbose_name="Исходная заявка")
     stage = models.CharField(max_length=20, choices=STAGE_CHOICES, default="new", verbose_name="Этап сделки")
     outcome_note = models.TextField(blank=True, verbose_name="Итог или причина отказа")
@@ -815,7 +875,7 @@ class Showing(models.Model):
 
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="showings")
     agency = models.ForeignKey(Agency, on_delete=models.PROTECT, null=True, blank=True, related_name="showings")
-    deal = models.ForeignKey(Deal, on_delete=models.CASCADE, related_name="showings", verbose_name="Сделка")
+    deal = models.ForeignKey(Deal, on_delete=models.PROTECT, related_name="showings", verbose_name="Сделка")
     starts_at = models.DateTimeField(verbose_name="Начало показа")
     ends_at = models.DateTimeField(null=True, blank=True, verbose_name="Окончание показа")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="planned", verbose_name="Статус")
@@ -868,7 +928,7 @@ class UserLegalAcceptance(models.Model):
 
 
 class AuditEvent(models.Model):
-    ACTION_CHOICES = [("created", "Создано"), ("updated", "Изменено"), ("deleted", "Удалено")]
+    ACTION_CHOICES = [("created", "Создано"), ("updated", "Изменено"), ("archived", "В архив"), ("restored", "Восстановлено"), ("deleted", "Удалено")]
     agency = models.ForeignKey(Agency, on_delete=models.SET_NULL, null=True, blank=True, related_name="audit_events")
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="personal_audit_events")
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="audit_actions")

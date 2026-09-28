@@ -2,12 +2,14 @@ import json
 import re
 
 from django import forms
+from django.conf import settings
 from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from .agency_access import agency_for, may_manage_agency, workspace_queryset
 from .models import AIContent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, RealtorProfile, Showing, same_workspace
+from .services.image_upload_service import prepare_image_upload
 
 
 PHONE_MASK_ATTRS = {
@@ -33,7 +35,21 @@ def mark_invalid_fields(form):
             attrs["class"] = " ".join([*classes, "is-invalid"])
 
 
+class SafeImageField(forms.FileField):
+    """Check size before Pillow decoding, then replace input with sanitized pixels."""
+
+    def __init__(self, *args, purpose, **kwargs):
+        self.purpose = purpose
+        super().__init__(*args, **kwargs)
+        self.help_text = f"JPG, PNG или WEBP · до {settings.PROFILE_IMAGE_MAX_MB} МБ."
+
+    def to_python(self, data):
+        uploaded_file = super().to_python(data)
+        return prepare_image_upload(uploaded_file, purpose=self.purpose) if uploaded_file else None
+
+
 class PropertyForm(forms.ModelForm):
+    landing_logo = SafeImageField(purpose="logo", required=False, label="Логотип в шапке лендинга", widget=forms.ClearableFileInput)
     landing_block_order = forms.CharField(required=False, widget=forms.HiddenInput())
     landing_enabled_blocks = forms.CharField(required=False, widget=forms.HiddenInput())
     landing_benefit_1_icon = forms.CharField(label="Иконка", max_length=8, required=False)
@@ -108,6 +124,7 @@ class PropertyForm(forms.ModelForm):
         }
 
     def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
         order = self.instance.landing_block_order or [key for key, _ in Property.LANDING_BLOCKS]
         valid_keys = {key for key, _ in Property.LANDING_BLOCKS}
@@ -148,6 +165,23 @@ class PropertyForm(forms.ModelForm):
             for key in ("icon", "title", "description"):
                 self.initial[f"landing_benefit_{index}_{key}"] = benefit.get(key, "")
         mark_invalid_fields(self)
+
+    def clean_status(self):
+        status = self.cleaned_data["status"]
+        old_status = Property.objects.filter(pk=self.instance.pk).values_list("status", flat=True).first() if self.instance.pk else None
+        if old_status == "archived" and status != "archived":
+            raise ValidationError("Сначала восстановите объект отдельной кнопкой в его карточке.")
+        agency = self.instance.agency if self.instance.agency_id else (agency_for(self.user) if self.user and not self.instance.pk else None)
+        if self.user and agency:
+            if (status == "archived" or old_status == "archived") and status != old_status and not may_manage_agency(self.user):
+                raise ValidationError("Архивировать и восстанавливать общие объекты может руководитель или менеджер команды.")
+        return status
+
+    def clean_landing_published(self):
+        published = self.cleaned_data.get("landing_published", False)
+        if published and self.cleaned_data.get("status") == "archived":
+            raise ValidationError("Сначала восстановите объект из архива, затем опубликуйте лендинг.")
+        return published
 
     def save(self, commit=True):
         property = super().save(commit=False)
@@ -204,6 +238,8 @@ class PropertyForm(forms.ModelForm):
 
 
 class RealtorProfileForm(forms.ModelForm):
+    photo = SafeImageField(purpose="profile", required=False, label="Фото", widget=forms.FileInput(attrs={"accept": "image/png,image/jpeg,image/webp"}))
+
     class Meta:
         model = RealtorProfile
         fields = ("display_name", "photo", "phone", "telegram_username", "email", "telegram_chat_id")
