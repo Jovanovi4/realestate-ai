@@ -3,10 +3,13 @@ import time
 
 import requests
 from django.conf import settings
+from billing.usage import record_provider
 
 
 class AIServiceError(Exception):
-    pass
+    def __init__(self, message, *, outcome_unknown=False):
+        super().__init__(message)
+        self.outcome_unknown = outcome_unknown
 
 
 class AIService:
@@ -136,12 +139,14 @@ class AIService:
     def _run_prompt(cls, prompt):
         provider = getattr(settings, "AI_PROVIDER", "ollama").lower()
         started_at = time.monotonic()
+        record_provider(provider=provider, provider_status="started")
 
         if provider == "openai":
             text, model = cls._generate_openai(prompt)
         elif provider == "ollama":
             text, model = cls._generate_ollama(prompt)
         else:
+            record_provider(provider_status="not_sent")
             raise AIServiceError("Неизвестный AI_PROVIDER. Допустимы: ollama или openai.")
 
         cleaned_text = cls.clean_description(text)
@@ -226,6 +231,7 @@ class AIService:
     def _generate_ollama(cls, prompt):
         url = getattr(settings, "OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
         model = getattr(settings, "OLLAMA_MODEL", "qwen2.5:3b")
+        record_provider(provider="ollama", provider_model=model)
         try:
             response = requests.post(
                 url,
@@ -233,17 +239,34 @@ class AIService:
                 timeout=120,
             )
             response.raise_for_status()
-            return response.json().get("response", ""), model
+            data = response.json()
+            input_tokens, output_tokens = data.get("prompt_eval_count"), data.get("eval_count")
+            total = input_tokens + output_tokens if type(input_tokens) is int and type(output_tokens) is int else None
+            record_provider(provider_status="completed", provider_model=data.get("model", model), input_tokens=input_tokens,
+                output_tokens=output_tokens, cached_input_tokens=data.get("prompt_eval_cached_count"), total_tokens=total)
+            if data.get("done", True) is not True:
+                raise AIServiceError("Ollama не завершила генерацию.", outcome_unknown=True)
+            return data.get("response", ""), model
         except requests.exceptions.ConnectionError as error:
-            raise AIServiceError("Ollama недоступна. Запустите `ollama serve` и проверьте модель.") from error
+            record_provider(provider_status="unknown")
+            raise AIServiceError("Ollama недоступна. Запустите `ollama serve` и проверьте модель.", outcome_unknown=True) from error
+        except requests.Timeout as error:
+            record_provider(provider_status="unknown")
+            raise AIServiceError("Ollama не ответила вовремя. Исход запроса требует проверки.", outcome_unknown=True) from error
         except requests.RequestException as error:
+            record_provider(provider_status="failed")
             raise AIServiceError(f"Ошибка Ollama: {error}") from error
+        except (ValueError, AttributeError, TypeError) as error:
+            record_provider(provider_status="unknown")
+            raise AIServiceError("Ollama вернула некорректный ответ.", outcome_unknown=True) from error
 
     @classmethod
     def _generate_openai(cls, prompt):
         api_key = getattr(settings, "OPENAI_API_KEY", "")
         model = getattr(settings, "OPENAI_MODEL", "gpt-4.1-mini")
+        record_provider(provider="openai", provider_model=model)
         if not api_key:
+            record_provider(provider_status="not_sent")
             raise AIServiceError("Для OpenAI задайте переменную окружения OPENAI_API_KEY.")
         try:
             response = requests.post(
@@ -254,6 +277,13 @@ class AIService:
             )
             response.raise_for_status()
             data = response.json()
+            usage = data.get("usage") or {}
+            details = usage.get("input_tokens_details") or {}
+            record_provider(provider_model=data.get("model", model), provider_response_id=data.get("id", ""),
+                provider_status=data.get("status", "completed"), input_tokens=usage.get("input_tokens"),
+                output_tokens=usage.get("output_tokens"), cached_input_tokens=details.get("cached_tokens"), total_tokens=usage.get("total_tokens"))
+            if data.get("status", "completed") != "completed":
+                raise AIServiceError("OpenAI не завершил генерацию. Готовый текст не сохранён.", outcome_unknown=data.get("status") in {"queued", "in_progress"})
             text = data.get("output_text", "")
             if not text:
                 text = "".join(
@@ -263,8 +293,15 @@ class AIService:
                     if part.get("type") == "output_text"
                 )
             return text, model
+        except (requests.Timeout, requests.ConnectionError) as error:
+            record_provider(provider_status="unknown")
+            raise AIServiceError("OpenAI не ответил вовремя или соединение прервано. Исход запроса требует проверки.", outcome_unknown=True) from error
         except requests.RequestException as error:
+            record_provider(provider_status="failed")
             raise AIServiceError(f"Ошибка OpenAI API: {error}") from error
+        except (ValueError, AttributeError, TypeError) as error:
+            record_provider(provider_status="unknown")
+            raise AIServiceError("OpenAI вернул некорректный ответ.", outcome_unknown=True) from error
 
     @classmethod
     def generate_description(cls, property):

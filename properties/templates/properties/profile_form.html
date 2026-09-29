@@ -9,6 +9,11 @@
   <a href="{% url 'lead_list' %}?status=new" class="profile-stat"><span>Новые заявки</span><strong>{{ statistics.new_leads }}</strong></a>
 </div>
 
+<a class="profile-billing-link" href="{% url 'billing:overview' %}">
+  <span><strong>Тариф и расход</strong><small>Текущий тариф, ресурсы и остаток ИИ-кредитов.</small></span>
+  <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg>
+</a>
+
 <div class="profile-form-layout">
   <section class="app-form-panel" aria-labelledby="profile-form-title" x-data="{ preview: {% if form.instance.photo %}'{{ form.instance.photo.url|escapejs }}'{% else %}null{% endif %}, fileName: '', selectPhoto(event) { const file = event.target.files[0]; if (file) { this.preview = URL.createObjectURL(file); this.fileName = file.name; } } }">
     <div class="app-form-panel__heading"><h2 id="profile-form-title">Профиль и контакты</h2><p>Эти данные увидят посетители ваших опубликованных объектов.</p></div>

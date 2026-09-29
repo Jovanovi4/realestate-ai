@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     "rest_framework",
     "properties",
+    "billing.apps.BillingConfig",
 ]
 
 MIDDLEWARE = [
@@ -180,6 +181,11 @@ CRM_ARCHIVE_REVIEW_MONTHS = int(os.getenv("CRM_ARCHIVE_REVIEW_MONTHS", "3"))
 CRM_BACKUP_ROOT = os.getenv("CRM_BACKUP_ROOT", "")
 CRM_BACKUP_REVIEW_DAYS = int(os.getenv("CRM_BACKUP_REVIEW_DAYS", "30"))
 CRM_BACKUP_TIMEOUT_SECONDS = int(os.getenv("CRM_BACKUP_TIMEOUT_SECONDS", "300"))
+
+# Observation only: this flag must never enable plan enforcement or payment calls.
+BILLING_SHADOW_ENABLED = env_flag("BILLING_SHADOW_ENABLED", True)
+# Keep quota denials disabled until the PostgreSQL contention test and rollout audit pass.
+BILLING_ENFORCEMENT_ENABLED = env_flag("BILLING_ENFORCEMENT_ENABLED", False)
 
 # Validation limits for untrusted uploads (also cap request bodies at the proxy).
 PROPERTY_IMAGE_MAX_MB = int(os.getenv("PROPERTY_IMAGE_MAX_MB", "10"))

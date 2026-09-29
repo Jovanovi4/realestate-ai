@@ -11,6 +11,38 @@
   </div>
 </nav>
 
-{% if properties %}<div class="row g-3">{% for property in properties %}<div class="col-md-6 col-xl-4"><article class="card border-0 shadow-sm h-100 overflow-hidden">{% if property.primary_image %}<img src="{{ property.primary_image.image.url }}" alt="{{ property.title }}" class="card-img-top" style="height:190px;object-fit:cover;">{% else %}<div class="bg-light d-flex align-items-center justify-content-center text-muted" style="height:190px;">Лендинг без фото</div>{% endif %}<div class="card-body d-flex flex-column"><div class="d-flex justify-content-between align-items-start gap-2 mb-2"><span class="small text-muted">{{ property.get_landing_template_display }}</span>{% if property.landing_published %}<span class="badge text-bg-success">Опубликован</span>{% else %}<span class="badge text-bg-light border text-secondary">Черновик</span>{% endif %}</div><h2 class="h5 mb-1">{{ property.landing_title|default:property.marketing_headline|default:property.title }}</h2><p class="small text-muted mb-3">{{ property.get_property_type_display }} · {{ property.address|default:"Адрес не указан" }}</p><div class="small text-muted border-top pt-3 mb-3"><span>Заявок: {{ property.landing_leads_count }}</span><span class="mx-1">·</span><span>Просмотры — скоро</span></div><div class="mt-auto d-flex align-items-center flex-wrap gap-2"><a href="{% url 'edit_property' property.pk %}#landing-pane" class="btn btn-sm btn-outline-secondary">Редактировать</a>{% if property.landing_published %}{% url 'public_landing' property.landing_slug as public_url %}<a href="{{ public_url }}" target="_blank" class="btn btn-icon btn-sm btn-outline-secondary" title="Открыть публичный лендинг" aria-label="Открыть публичный лендинг"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 3h7v7M10 14 21 3M21 14v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h6"/></svg></a><div class="dropdown action-menu"><button class="btn btn-icon btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-label="Дополнительные действия с лендингом">•••</button><ul class="dropdown-menu dropdown-menu-end"><li><form method="post" action="{% url 'landing_unpublish' property.pk %}" data-confirm="Снять лендинг с публикации? Публичная ссылка перестанет открываться." data-confirm-title="Снять лендинг с публикации?" data-confirm-button="Снять с публикации">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="dropdown-item text-danger" type="submit">Снять с публикации</button></form></li></ul></div>{% endif %}</div></div></article></div>{% endfor %}</div>{% else %}<section class="empty-state" aria-labelledby="empty-landings-title"><div><span class="empty-state__icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-layout"></use></svg></span><h2 class="empty-state__title" id="empty-landings-title">Лендингов пока нет</h2><p class="empty-state__text mb-3">Создайте объект и настройте для него страницу в разделе «Лендинг».</p><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></section>{% endif %}
+{% if properties %}
+<div class="row g-3">
+  {% for property in properties %}
+  <div class="col-md-6 col-xl-4">
+    <article class="property-card landing-card h-100">
+      <div class="property-card__media">
+        {% if property.primary_image %}<img src="{{ property.primary_image.image.url }}" alt="{{ property.title }}" loading="lazy">
+        {% else %}<div class="property-card__placeholder"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-image"></use></svg><span>Фото не добавлено</span></div>{% endif %}
+      </div>
+      <div class="property-card__body">
+        <div class="property-card__top">
+          <span class="property-card__kind">{{ property.get_landing_template_display }}</span>
+          {% if property.landing_published %}<span class="badge text-bg-success">Опубликован</span>{% else %}<span class="badge text-bg-light">Черновик</span>{% endif %}
+        </div>
+        <h2 class="property-card__title"><a href="{% url 'edit_property' property.pk %}#landing-pane">{{ property.landing_title|default:property.marketing_headline|default:property.title }}</a></h2>
+        <p class="property-card__address">{{ property.get_property_type_display }} · {{ property.address|default:"Адрес не указан" }}</p>
+        <div class="property-card__footer">
+          <div><strong class="property-card__price">Заявок: {{ property.landing_leads_count }}</strong><span class="property-card__facts">Просмотры — скоро</span></div>
+          <div class="property-card__actions">
+            <a href="{% url 'edit_property' property.pk %}#landing-pane" class="btn btn-icon btn-sm btn-text" title="Редактировать лендинг" aria-label="Редактировать лендинг {{ property.title }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></a>
+            {% if property.landing_published %}
+            {% url 'public_landing' property.landing_slug as public_url %}
+            <a href="{{ public_url }}" target="_blank" rel="noopener" class="btn btn-icon btn-sm btn-outline-secondary" title="Открыть публичный лендинг" aria-label="Открыть публичный лендинг {{ property.title }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-external-link"></use></svg></a>
+            <div class="dropdown action-menu"><button class="btn btn-icon btn-sm btn-text" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Дополнительные действия" aria-label="Дополнительные действия с лендингом {{ property.title }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-more"></use></svg></button><ul class="dropdown-menu dropdown-menu-end"><li><form method="post" action="{% url 'landing_unpublish' property.pk %}" data-confirm="Снять лендинг с публикации? Публичная ссылка перестанет открываться." data-confirm-title="Снять лендинг с публикации?" data-confirm-button="Снять с публикации">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="dropdown-item text-danger" type="submit">Снять с публикации</button></form></li></ul></div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </article>
+  </div>
+  {% endfor %}
+</div>
+{% else %}<section class="empty-state" aria-labelledby="empty-landings-title"><div><span class="empty-state__icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-layout"></use></svg></span><h2 class="empty-state__title" id="empty-landings-title">Лендингов пока нет</h2><p class="empty-state__text mb-3">Создайте объект и настройте для него страницу в разделе «Лендинг».</p><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></section>{% endif %}
 {% if is_paginated %}<nav class="mt-4" aria-label="Страницы лендингов"><ul class="pagination mb-0">{% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.previous_page_number }}">Назад</a></li>{% endif %}<li class="page-item disabled"><span class="page-link">{{ page_obj.number }} из {{ paginator.num_pages }}</span></li>{% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.next_page_number }}">Вперёд</a></li>{% endif %}</ul></nav>{% endif %}
 {% endblock %}

@@ -6,6 +6,8 @@ from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import CreateView, TemplateView, UpdateView
+from billing.enforcement import TariffDenied, require_resource_action
+from billing.rules import Operation
 
 from .forms import DealForm
 from .agency_access import workspace_queryset
@@ -74,6 +76,11 @@ class DealCreateView(DealFormMixin, CreateView):
         return initial
 
     def form_valid(self, form):
+        try:
+            require_resource_action(self.request.user, form.cleaned_data["property"], Operation.EDIT_CRM)
+        except TariffDenied as error:
+            form.add_error(None, error.message)
+            return self.render_to_response(self.get_context_data(form=form), status=403)
         form.instance.owner = self.request.user
         form.instance.agency = form.cleaned_data["property"].agency
         if not form.instance.responsible_id:
@@ -103,6 +110,11 @@ class DealUpdateView(DealFormMixin, UpdateView):
         return context
 
     def form_valid(self, form):
+        try:
+            require_resource_action(self.request.user, self.object.property, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            form.add_error(None, error.message)
+            return self.render_to_response(self.get_context_data(form=form), status=403)
         previous_stage = Deal.objects.values_list("stage", flat=True).get(pk=self.object.pk)
         with transaction.atomic():
             response = super().form_valid(form)

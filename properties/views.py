@@ -1,5 +1,6 @@
 import json
 import csv
+import uuid
 from decimal import Decimal, InvalidOperation
 from datetime import timedelta
 
@@ -22,6 +23,12 @@ from django.urls import reverse, reverse_lazy
 from django.views import View
 from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
+
+from billing.models import BillingAccount
+from billing.enforcement import TariffDenied, enabled as billing_enforcement_enabled, require_allowed, require_new_action, require_resource_action
+from billing.reservations import DuplicateResourceRequest, request_identity, reserved_resources
+from billing.rules import Operation, PolicyService
+from billing.services import AccountService
 
 from .forms import (
     ClientDetailsForm, ClientForm, ClientInteractionForm, ClientReminderForm, LeadForm,
@@ -200,20 +207,38 @@ class PropertyCreateView(LoginRequiredMixin, CreateView):
     def get_form_kwargs(self):
         return {**super().get_form_kwargs(), "user": self.request.user}
 
-    def get(self, request, *args, **kwargs):
-        """Start a saved draft so AI tools have a property to work with."""
-        draft = Property.objects.create(
-            owner=request.user,
-            agency=agency_for(request.user),
-            title="Новый объект",
-            status="draft",
-        )
-        return redirect("edit_property", pk=draft.pk)
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["resource_request_key"] = self.request.POST.get("request_key") or str(uuid.uuid4())
+        return context
 
     def form_valid(self, form):
         form.instance.owner = self.request.user
-        form.instance.agency = agency_for(self.request.user)
-        return super().form_valid(form)
+        agency = agency_for(self.request.user)
+        form.instance.agency = agency
+        account = AccountService.ensure_agency(agency) if agency else AccountService.ensure_personal(self.request.user)
+        amounts = {"active_properties": 1, "total_properties": 1}
+        if form.cleaned_data.get("landing_published"):
+            amounts["landings"] = 1
+        logo = form.cleaned_data.get("landing_logo")
+        if logo and hasattr(logo, "size"):
+            amounts["storage_bytes"] = logo.size
+        try:
+            with reserved_resources(account=account, actor=self.request.user, action=Operation.CREATE_PROPERTY,
+                    amounts=amounts, **request_identity(self.request)) as reservation:
+                response = super().form_valid(form)
+                reservation.result_id = str(self.object.pk)
+                return response
+        except DuplicateResourceRequest as duplicate:
+            if duplicate.reservation.status == "consumed" and duplicate.reservation.result_id:
+                return redirect("edit_property", pk=duplicate.reservation.result_id)
+            return self.render_to_response(self.get_context_data(form=form), status=409)
+        except TariffDenied as error:
+            form.add_error(None, error.message)
+            return self.render_to_response(self.get_context_data(form=form), status=403)
+        except ValidationError:
+            form.add_error(None, "Ключ запроса уже использован для других данных. Обновите форму и повторите действие.")
+            return self.render_to_response(self.get_context_data(form=form), status=409)
 
     def get_success_url(self):
         return reverse("edit_property", kwargs={"pk": self.object.pk})
@@ -221,7 +246,11 @@ class PropertyCreateView(LoginRequiredMixin, CreateView):
 
 class DemoDataCreateView(LoginRequiredMixin, View):
     def post(self, request):
-        property = DemoDataService.create_for_user(request.user)
+        try:
+            property = DemoDataService.create_for_user(request.user)
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("property_list")
         if property:
             messages.success(request, "Демо-кабинет готов: объект, лендинг, заявки и клиент уже созданы.")
         else:
@@ -262,8 +291,35 @@ class PropertyUpdateView(LoginRequiredMixin, UpdateView):
     def post(self, request, *args, **kwargs):
         # Serialize full form saves with archive/restore so a stale editor
         # cannot overwrite a concurrent lifecycle change after validation.
-        with transaction.atomic():
-            return super().post(request, *args, **kwargs)
+        visible = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=kwargs["pk"])
+        try:
+            with transaction.atomic():
+                account = AccountService.ensure_for_resource(visible)
+                BillingAccount.objects.select_for_update().get(pk=account.pk)
+                require_allowed(PolicyService.evaluate(account, request.user, Operation.EDIT_CRM, resource=visible))
+                return super().post(request, *args, **kwargs)
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("edit_property", pk=kwargs["pk"])
+
+    def form_valid(self, form):
+        amounts = {}
+        if not self.object.landing_published and form.cleaned_data.get("landing_published"):
+            amounts["landings"] = 1
+        logo = form.cleaned_data.get("landing_logo")
+        if logo and hasattr(logo, "size"):
+            amounts["storage_bytes"] = logo.size
+        if amounts:
+            account = AccountService.ensure_for_resource(self.object)
+            action = Operation.PUBLISH_LANDING if "landings" in amounts else Operation.UPLOAD_FILES
+            try:
+                with reserved_resources(account=account, actor=self.request.user, action=action,
+                        amounts=amounts, resource=self.object):
+                    return super().form_valid(form)
+            except TariffDenied as error:
+                form.add_error(None, error.message)
+                return self.render_to_response(self.get_context_data(form=form), status=403)
+        return super().form_valid(form)
 
     def get_success_url(self):
         return reverse_lazy("property_detail", kwargs={"pk": self.object.pk})
@@ -360,6 +416,11 @@ class LandingListView(LoginRequiredMixin, ListView):
 class PropertyLandingUnpublishView(LoginRequiredMixin, View):
     def post(self, request, pk):
         property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
+        try:
+            require_resource_action(request.user, property, Operation.UNPUBLISH_LANDING)
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("landing_list")
         if property.landing_published:
             property.landing_published = False
             property.save(update_fields=["landing_published", "updated_at"])
@@ -373,16 +434,46 @@ class PropertyLandingUnpublishView(LoginRequiredMixin, View):
 class PropertyStatusUpdateView(LoginRequiredMixin, View):
     def post(self, request, pk):
         status = request.POST.get("status")
-        with transaction.atomic():
-            property = get_object_or_404(workspace_queryset(Property.objects.select_for_update(), request.user), pk=pk)
-            if status in dict(Property.STATUS_CHOICES):
-                if (status == "archived" or property.status == "archived") and property.agency_id and not may_manage_agency(request.user):
-                    raise PermissionDenied
-                property.status = status
-                property.save(update_fields=["status", "updated_at"])
+        visible = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
+        account = AccountService.ensure_for_resource(visible)
+        try:
+            with transaction.atomic():
+                BillingAccount.objects.select_for_update().get(pk=account.pk)
+                property = get_object_or_404(workspace_queryset(Property.objects.select_for_update(), request.user), pk=pk)
+                if status in dict(Property.STATUS_CHOICES):
+                    if (status == "archived" or property.status == "archived") and property.agency_id and not may_manage_agency(request.user):
+                        raise PermissionDenied
+                    if property.status == "archived" and status != "archived":
+                        with reserved_resources(account=account, actor=request.user, action=Operation.RESTORE_PROPERTY,
+                                amounts={"active_properties": 1}, resource=property):
+                            property.status = status
+                            property.save(update_fields=["status", "updated_at"])
+                    else:
+                        action = Operation.ARCHIVE_PROPERTY if status == "archived" and property.status != "archived" else Operation.EDIT_CRM
+                        require_allowed(PolicyService.evaluate(account, request.user, action, resource=property))
+                        property.status = status
+                        property.save(update_fields=["status", "updated_at"])
+        except TariffDenied as error:
+            if request.headers.get("HX-Request") == "true":
+                return render(request, "properties/includes/property_status_badge.html", {"property": visible, "billing_error": error.message})
+            messages.error(request, error.message)
+            return redirect("property_detail", pk=pk)
         if request.headers.get("HX-Request") != "true":
             return redirect("property_detail", pk=property.pk)
         return render(request, "properties/includes/property_status_badge.html", {"property": property})
+
+
+def check_xml_export(actor, properties):
+    if not billing_enforcement_enabled():
+        return
+    seen = set()
+    for property in properties:
+        scope = (property.agency_id, None if property.agency_id else property.owner_id)
+        if scope in seen:
+            continue
+        seen.add(scope)
+        account = AccountService.ensure_for_resource(property)
+        require_allowed(PolicyService.evaluate(account, actor, Operation.XML_EXPORT))
 
 
 class AvitoExportView(LoginRequiredMixin, View):
@@ -399,6 +490,11 @@ class AvitoExportView(LoginRequiredMixin, View):
         if request.GET.get("download") == "1":
             if not valid_properties:
                 return redirect("avito_export")
+            try:
+                check_xml_export(request.user, valid_properties)
+            except TariffDenied as error:
+                messages.error(request, error.message)
+                return redirect("avito_export")
             xml_content = AvitoExportService.build_xml(
                 valid_properties,
                 profile,
@@ -406,6 +502,9 @@ class AvitoExportView(LoginRequiredMixin, View):
             )
             response = HttpResponse(xml_content, content_type="application/xml; charset=utf-8")
             response["Content-Disposition"] = 'attachment; filename="avito-properties.xml"'
+            from billing.usage import observe_xml_export
+
+            observe_xml_export(valid_properties, request.user, "avito")
             return response
         return render(
             request,
@@ -432,6 +531,11 @@ class CianExportView(LoginRequiredMixin, View):
         if request.GET.get("download") == "1":
             if not valid_properties:
                 return redirect("cian_export")
+            try:
+                check_xml_export(request.user, valid_properties)
+            except TariffDenied as error:
+                messages.error(request, error.message)
+                return redirect("cian_export")
             xml_content = CianExportService.build_xml(
                 valid_properties,
                 profile,
@@ -439,6 +543,9 @@ class CianExportView(LoginRequiredMixin, View):
             )
             response = HttpResponse(xml_content, content_type="application/xml; charset=utf-8")
             response["Content-Disposition"] = 'attachment; filename="cian-properties.xml"'
+            from billing.usage import observe_xml_export
+
+            observe_xml_export(valid_properties, request.user, "cian")
             return response
         return render(
             request,
@@ -510,6 +617,12 @@ class PropertyDeleteView(LoginRequiredMixin, View):
     """Keep the old POST URL compatible, but never hard-delete CRM history."""
 
     def post(self, request, pk):
+        visible = get_object_or_404(deletable_queryset(Property.objects, request.user), pk=pk)
+        try:
+            require_resource_action(request.user, visible, Operation.ARCHIVE_PROPERTY)
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("property_detail", pk=pk)
         with transaction.atomic():
             property = get_object_or_404(deletable_queryset(Property.objects.select_for_update(), request.user), pk=pk)
             if property.status != "archived":
@@ -521,12 +634,19 @@ class PropertyDeleteView(LoginRequiredMixin, View):
 
 class PropertyRestoreView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        with transaction.atomic():
-            property = get_object_or_404(deletable_queryset(Property.objects.select_for_update(), request.user), pk=pk)
-            if property.status == "archived":
-                previous = property.status_before_archive
-                property.status = previous if previous in dict(Property.STATUS_CHOICES) and previous != "archived" else "draft"
-                property.save(update_fields=["status", "updated_at"])
+        visible = get_object_or_404(deletable_queryset(Property.objects, request.user), pk=pk)
+        account = AccountService.ensure_for_resource(visible)
+        try:
+            with reserved_resources(account=account, actor=request.user, action=Operation.RESTORE_PROPERTY,
+                    amounts={"active_properties": 1}, resource=visible):
+                property = get_object_or_404(deletable_queryset(Property.objects.select_for_update(), request.user), pk=pk)
+                if property.status == "archived":
+                    previous = property.status_before_archive
+                    property.status = previous if previous in dict(Property.STATUS_CHOICES) and previous != "archived" else "draft"
+                    property.save(update_fields=["status", "updated_at"])
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("property_detail", pk=pk)
         messages.success(request, "Объект восстановлен. Публикацию лендинга включите отдельно после проверки.")
         return redirect("property_detail", pk=pk)
 
@@ -682,6 +802,11 @@ class ClientCreateView(LoginRequiredMixin, CreateView):
     def form_valid(self, form):
         form.instance.owner = self.request.user
         form.instance.agency = agency_for(self.request.user)
+        try:
+            require_new_action(self.request.user, Operation.EDIT_CRM, agency=form.instance.agency)
+        except TariffDenied as error:
+            form.add_error(None, error.message)
+            return self.render_to_response(self.get_context_data(form=form), status=403)
         client_scope = Client.objects.filter(agency=form.instance.agency)
         if form.instance.agency is None:
             client_scope = client_scope.filter(owner=self.request.user)
@@ -703,6 +828,14 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
 
     def get_queryset(self):
         return workspace_queryset(Client.objects, self.request.user)
+
+    def form_valid(self, form):
+        try:
+            require_resource_action(self.request.user, self.object, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            form.add_error(None, error.message)
+            return self.render_to_response(self.get_context_data(form=form), status=403)
+        return super().form_valid(form)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -737,6 +870,13 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
 class ClientStatusUpdateView(LoginRequiredMixin, View):
     def post(self, request, pk):
         client = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
+        try:
+            require_resource_action(request.user, client, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            if request.headers.get("HX-Request") == "true":
+                return render(request, "properties/includes/client_status_control.html", {"client": client, "billing_error": error.message})
+            messages.error(request, error.message)
+            return redirect("client_detail", pk=client.pk)
         status = request.POST.get("status")
         if status in dict(Client.STATUS_CHOICES) and status != client.status:
             previous_status = client.get_status_display()
@@ -755,6 +895,11 @@ class ClientStatusUpdateView(LoginRequiredMixin, View):
 class ClientInteractionCreateView(LoginRequiredMixin, View):
     def post(self, request, pk):
         client = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
+        try:
+            require_resource_action(request.user, client, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("client_detail", pk=client.pk)
         form = ClientInteractionForm(request.POST)
         if form.is_valid():
             interaction = form.save(commit=False)
@@ -769,6 +914,11 @@ class ClientInteractionCreateView(LoginRequiredMixin, View):
 class ClientReminderCreateView(LoginRequiredMixin, View):
     def post(self, request, pk):
         client = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
+        try:
+            require_resource_action(request.user, client, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("client_detail", pk=client.pk)
         form = ClientReminderForm(request.POST)
         if form.is_valid():
             reminder = form.save(commit=False)
@@ -785,6 +935,11 @@ class ClientReminderCompleteView(LoginRequiredMixin, View):
     def post(self, request, pk, reminder_pk):
         client = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
         reminder = get_object_or_404(client.reminders, pk=reminder_pk)
+        try:
+            require_resource_action(request.user, client, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("client_detail", pk=client.pk)
         reminder.is_done = True
         reminder.completed_at = timezone.now()
         reminder.save(update_fields=["is_done", "completed_at"])
@@ -801,7 +956,11 @@ class ClientBulkActionView(LoginRequiredMixin, View):
                 raise PermissionDenied
             try:
                 with transaction.atomic():
+                    for client in clients:
+                        require_resource_action(request.user, client, Operation.EDIT_CRM)
                     clients.delete()
+            except TariffDenied as error:
+                messages.error(request, error.message)
             except ProtectedError:
                 messages.error(request, "Клиенты не удалены: у них есть CRM-история. Сначала согласуйте отдельное удаление или обезличивание данных.")
         next_url = request.POST.get("next")
@@ -921,22 +1080,33 @@ class LeadBulkStatusUpdateView(LoginRequiredMixin, View):
             if not may_manage_agency(request.user) and leads.filter(property__agency__isnull=False).exists():
                 raise PermissionDenied
             archived_count = 0
-            with transaction.atomic():
-                for lead in leads.select_for_update().exclude(status="archived"):
-                    lead.status = "archived"
-                    lead.save(update_fields=["status", "updated_at"])
-                    archived_count += 1
-            messages.success(request, f"В архив перенесено заявок: {archived_count}.")
+            try:
+                with transaction.atomic():
+                    for lead in leads.select_for_update().select_related("property").exclude(status="archived"):
+                        require_resource_action(request.user, lead.property, Operation.EDIT_CRM)
+                        lead.status = "archived"
+                        lead.save(update_fields=["status", "updated_at"])
+                        archived_count += 1
+            except TariffDenied as error:
+                messages.error(request, error.message)
+            else:
+                messages.success(request, f"В архив перенесено заявок: {archived_count}.")
         elif status not in dict(Lead.STATUS_CHOICES):
             messages.error(request, "Выберите корректный статус обработки.")
         else:
             leads = workspace_queryset(Lead.objects, request.user, prefix="property__").filter(pk__in=lead_ids)
             updated = 0
-            for lead in leads.exclude(status=status):
-                lead.status = status
-                lead.save(update_fields=["status", "updated_at"])
-                updated += 1
-            messages.success(request, f"Статус обновлён у {updated} заявок.")
+            try:
+                with transaction.atomic():
+                    for lead in leads.select_related("property").exclude(status=status):
+                        require_resource_action(request.user, lead.property, Operation.EDIT_CRM)
+                        lead.status = status
+                        lead.save(update_fields=["status", "updated_at"])
+                        updated += 1
+            except TariffDenied as error:
+                messages.error(request, error.message)
+            else:
+                messages.success(request, f"Статус обновлён у {updated} заявок.")
 
         next_url = request.POST.get("next")
         if next_url and url_has_allowed_host_and_scheme(next_url, {request.get_host()}):
@@ -946,17 +1116,25 @@ class LeadBulkStatusUpdateView(LoginRequiredMixin, View):
 
 class LeadDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
-        with transaction.atomic():
-            lead = get_object_or_404(deletable_queryset(Lead.objects.select_for_update(), request.user, prefix="property__"), pk=pk)
-            if lead.status != "archived":
-                lead.status = "archived"
-                lead.save(update_fields=["status", "updated_at"])
+        try:
+            with transaction.atomic():
+                lead = get_object_or_404(deletable_queryset(Lead.objects.select_for_update().select_related("property"), request.user, prefix="property__"), pk=pk)
+                require_resource_action(request.user, lead.property, Operation.EDIT_CRM)
+                if lead.status != "archived":
+                    lead.status = "archived"
+                    lead.save(update_fields=["status", "updated_at"])
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("lead_detail", pk=pk)
         messages.success(request, "Заявка перенесена в архив. Связи со сделками и история сохранены.")
         return redirect(f"{reverse('lead_list')}?status=archived")
 
 
 class PropertyImageUploadView(LoginRequiredMixin, View):
     template_name = "properties/upload_images.html"
+
+    class CapacityChanged(Exception):
+        pass
 
     def render_upload(self, request, property, error=None):
         return render(request, self.template_name, {
@@ -966,6 +1144,7 @@ class PropertyImageUploadView(LoginRequiredMixin, View):
             "max_upload_count": settings.PROPERTY_IMAGES_PER_UPLOAD,
             "max_image_count": settings.PROPERTY_IMAGES_MAX_COUNT,
             "image_count": property.images.count(),
+            "resource_request_key": request.POST.get("request_key") or str(uuid.uuid4()),
         }, status=400 if error else 200)
 
     def get(self, request, pk):
@@ -986,18 +1165,33 @@ class PropertyImageUploadView(LoginRequiredMixin, View):
             prepared = [prepare_image_upload(upload) for upload in uploads]
         except ValidationError as error:
             return self.render_upload(request, property, " ".join(error.messages))
-        with transaction.atomic():
-            # Serialize simultaneous uploads to the same property in PostgreSQL.
-            property = workspace_queryset(Property.objects, request.user).select_for_update().get(pk=pk)
-            if property.images.count() + len(prepared) > settings.PROPERTY_IMAGES_MAX_COUNT:
-                return self.render_upload(request, property, f"У объекта может быть не более {settings.PROPERTY_IMAGES_MAX_COUNT} фотографий.")
-            max_order = property.images.aggregate(max_order=Max("order"))["max_order"]
-            next_order = (max_order if max_order is not None else -1) + 1
-            has_primary = property.images.filter(is_primary=True).exists()
-            for image in prepared:
-                PropertyImage.objects.create(property=property, image=image, order=next_order, is_primary=not has_primary)
-                has_primary = True
-                next_order += 1
+        account = AccountService.ensure_for_resource(property)
+        try:
+            with reserved_resources(account=account, actor=request.user, action=Operation.UPLOAD_FILES,
+                    amounts={"storage_bytes": sum(image.size for image in prepared)}, resource=property,
+                    **request_identity(request)) as reservation:
+                # Serialize simultaneous uploads to the same property in PostgreSQL.
+                property = workspace_queryset(Property.objects, request.user).select_for_update().get(pk=pk)
+                if property.images.count() + len(prepared) > settings.PROPERTY_IMAGES_MAX_COUNT:
+                    raise self.CapacityChanged
+                max_order = property.images.aggregate(max_order=Max("order"))["max_order"]
+                next_order = (max_order if max_order is not None else -1) + 1
+                has_primary = property.images.filter(is_primary=True).exists()
+                for image in prepared:
+                    PropertyImage.objects.create(property=property, image=image, order=next_order, is_primary=not has_primary)
+                    has_primary = True
+                    next_order += 1
+                reservation.result_id = str(property.pk)
+        except self.CapacityChanged:
+            return self.render_upload(request, property, f"У объекта может быть не более {settings.PROPERTY_IMAGES_MAX_COUNT} фотографий.")
+        except DuplicateResourceRequest as duplicate:
+            if duplicate.reservation.status != "consumed":
+                return self.render_upload(request, property, "Загрузка уже выполняется. Подождите и обновите галерею.")
+            return redirect("property_detail", pk=property.pk)
+        except TariffDenied as error:
+            return self.render_upload(request, property, error.message)
+        except ValidationError:
+            return self.render_upload(request, property, "Ключ загрузки уже использован для других файлов. Обновите страницу и повторите действие.")
         return redirect("property_detail", pk=property.pk)
 
 
@@ -1005,6 +1199,13 @@ class PropertyImagePrimaryView(LoginRequiredMixin, View):
     def post(self, request, pk, image_pk):
         property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         image = get_object_or_404(property.images, pk=image_pk)
+        try:
+            require_resource_action(request.user, property, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            if request.headers.get("HX-Request") == "true":
+                return render(request, "properties/includes/property_gallery_card.html", {"property": property, "billing_error": error.message})
+            messages.error(request, error.message)
+            return redirect("property_detail", pk=pk)
         with transaction.atomic():
             for current in property.images.filter(is_primary=True).exclude(pk=image.pk):
                 current.is_primary = False
@@ -1020,10 +1221,27 @@ class PropertyImageDeleteView(LoginRequiredMixin, View):
     def post(self, request, pk, image_pk):
         property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
         image = get_object_or_404(property.images, pk=image_pk)
+        try:
+            require_resource_action(request.user, property, Operation.REMOVE_FILES)
+        except TariffDenied as error:
+            if request.headers.get("HX-Request") == "true":
+                return render(request, "properties/includes/property_gallery_card.html", {"property": property, "billing_error": error.message})
+            messages.error(request, error.message)
+            return redirect("property_detail", pk=pk)
         image_file = image.image
+        saved_name = image_file.name if image_file else ""
         image.delete()
         if image_file:
-            image_file.delete(save=False)
+            try:
+                image_file.delete(save=False)
+            finally:
+                # A missing DB reference alone does not prove deletion from storage.
+                from billing.inventory import refresh_saved_file
+                from billing.usage import attempt, ensure_scope
+
+                account = attempt(lambda: ensure_scope({"agency_id": property.agency_id, "personal_user_id": None if property.agency_id else property.owner_id}))
+                if account:
+                    refresh_saved_file(account, saved_name)
         property.ensure_primary_image()
         if request.headers.get("HX-Request") == "true":
             return render(request, "properties/includes/property_gallery_card.html", {"property": property})
@@ -1033,6 +1251,10 @@ class PropertyImageDeleteView(LoginRequiredMixin, View):
 class PropertyImageReorderView(LoginRequiredMixin, View):
     def post(self, request, pk):
         property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
+        try:
+            require_resource_action(request.user, property, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            return JsonResponse({"ok": False, "error": error.message, "code": error.code}, status=403)
         try:
             image_ids = json.loads(request.body).get("image_ids", [])
             image_ids = [int(image_id) for image_id in image_ids]
@@ -1136,13 +1358,31 @@ class PublicLandingView(View):
             landing_published=True,
         )
 
+    def access_response(self, property):
+        if not billing_enforcement_enabled():
+            return None
+        try:
+            account = AccountService.for_resource(property)
+            decision = PolicyService.evaluate(account, None, Operation.PUBLIC_LANDING, resource=property)
+        except BillingAccount.DoesNotExist:
+            decision = None
+        if decision is None or not decision.allowed:
+            return render(self.request, "properties/public_landing_paused.html", status=503)
+        return None
+
     def get(self, request, slug):
         property = self.get_property(slug)
+        paused = self.access_response(property)
+        if paused is not None:
+            return paused
         profile = RealtorProfile.objects.filter(user=property.owner).first()
         return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(property=property)))
 
     def post(self, request, slug):
         property = self.get_property(slug)
+        paused = self.access_response(property)
+        if paused is not None:
+            return paused
         profile = RealtorProfile.objects.filter(user=property.owner).first()
         if request.POST.get("website", "").strip():
             return render(request, self.get_template_name(property), self.get_context(property, profile, LeadForm(property=property), sent=True))

@@ -1,6 +1,7 @@
 {% load form_helpers %}
 <form method="post" enctype="multipart/form-data" novalidate class="app-form property-editor" x-data="{ propertyType: '{{ form.property_type.value|default:"apartment" }}', dealType: '{{ form.deal_type.value|default:"sale" }}', logoPreview: {% if form.instance.landing_logo %}'{{ form.instance.landing_logo.url|escapejs }}'{% else %}null{% endif %}, logoFileName: '', selectLogo(event) { const file = event.target.files[0]; if (file) { this.logoPreview = URL.createObjectURL(file); this.logoFileName = file.name; } } }">
   {% csrf_token %}
+  {% if resource_request_key %}<input type="hidden" name="request_key" value="{{ resource_request_key }}">{% endif %}
   {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
   {% if form.errors %}<div class="app-form-error-summary" role="alert">Проверьте выделенные поля. Раздел с ошибкой откроется автоматически.</div>{% endif %}
 
@@ -66,6 +67,20 @@
     const aiToneLabels = { business: 'Деловой', premium: 'Премиальный', concise: 'Лаконичный', emotional: 'Эмоциональный' };
     const aiForm = document.querySelector('form[x-data]');
     const csrfToken = aiForm?.querySelector('[name=csrfmiddlewaretoken]')?.value;
+    const aiRetryKeys = new Map();
+    const fetchAi = async (url, options) => {
+      const signature = `${url}:${options.body.toString()}`;
+      const key = aiRetryKeys.get(signature) || crypto.randomUUID();
+      aiRetryKeys.set(signature, key);
+      try {
+        const response = await fetch(url, { ...options, headers: { ...options.headers, 'Idempotency-Key': key } });
+        if (response.status !== 409) aiRetryKeys.delete(signature);
+        return response;
+      } catch (error) {
+        // A lost response retains its key; a retry replays the saved result.
+        throw error;
+      }
+    };
     const getFieldGroup = (field) => field.closest('.mb-3, .col-md-10, .col-12');
     const fieldByTarget = (target) => document.getElementById(`id_${target}`);
     const triggerMarkup = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m12 3-1.7 5.3L5 10l5.3 1.7L12 17l1.7-5.3L19 10l-5.3-1.7L12 3Z"/><path d="m19 15-.8 2.2L16 18l2.2.8L19 21l.8-2.2L22 18l-2.2-.8L19 15Z"/></svg>';
@@ -148,7 +163,7 @@
       if (landingBundlePanel && event.target.closest('[data-ai-landing-generate]')) {
         const button = landingBundlePanel.querySelector('[data-ai-landing-generate]'); const loading = landingBundlePanel.querySelector('[data-ai-landing-loading]'); const error = landingBundlePanel.querySelector('[data-ai-landing-error]');
         button.disabled = true; loading.classList.remove('d-none'); error.classList.add('d-none');
-        try { const body = new URLSearchParams({ tone: landingBundlePanel.dataset.tone, bundle: 'landing' }); const response = await fetch(aiInlineConfig.dataset.bundleUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }, body, credentials: 'same-origin' }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Не удалось подготовить тексты лендинга.'); renderLandingBundleResults(data.contents); } catch (requestError) { error.textContent = requestError.message; error.classList.remove('d-none'); button.disabled = false; loading.classList.add('d-none'); }
+        try { const body = new URLSearchParams({ tone: landingBundlePanel.dataset.tone, bundle: 'landing' }); const response = await fetchAi(aiInlineConfig.dataset.bundleUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }, body, credentials: 'same-origin' }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Не удалось подготовить тексты лендинга.'); renderLandingBundleResults(data.contents); } catch (requestError) { error.textContent = requestError.message; error.classList.remove('d-none'); button.disabled = false; loading.classList.add('d-none'); }
         return;
       }
       if (event.target.closest('[data-ai-bundle-trigger]')) { bundlePanel.classList.toggle('d-none'); if (!bundlePanel.classList.contains('d-none')) renderBundleSetup(); return; }
@@ -161,7 +176,7 @@
       if (bundlePanel && event.target.closest('[data-ai-bundle-generate]')) {
         const button = bundlePanel.querySelector('[data-ai-bundle-generate]'); const loading = bundlePanel.querySelector('[data-ai-bundle-loading]'); const error = bundlePanel.querySelector('[data-ai-bundle-error]');
         button.disabled = true; loading.classList.remove('d-none'); error.classList.add('d-none');
-        try { const body = new URLSearchParams({ tone: bundlePanel.dataset.tone }); const response = await fetch(aiInlineConfig.dataset.bundleUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }, body, credentials: 'same-origin' }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Не удалось подготовить комплект.'); renderBundleResults(data.contents); } catch (requestError) { error.textContent = requestError.message; error.classList.remove('d-none'); button.disabled = false; loading.classList.add('d-none'); }
+        try { const body = new URLSearchParams({ tone: bundlePanel.dataset.tone }); const response = await fetchAi(aiInlineConfig.dataset.bundleUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }, body, credentials: 'same-origin' }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Не удалось подготовить комплект.'); renderBundleResults(data.contents); } catch (requestError) { error.textContent = requestError.message; error.classList.remove('d-none'); button.disabled = false; loading.classList.add('d-none'); }
         return;
       }
       const trigger = event.target.closest('[data-ai-trigger]');
@@ -180,7 +195,7 @@
       panel.dataset.previousValue = field.value; button.disabled = true; loading.classList.remove('d-none'); error.classList.add('d-none');
       try {
         const body = new URLSearchParams({ target, tone: panel.dataset.tone, mode: panel.dataset.improvement ? 'improve' : 'generate', improvement: panel.dataset.improvement, source_text: field.value });
-        const response = await fetch(aiInlineConfig.dataset.url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }, body, credentials: 'same-origin' });
+        const response = await fetchAi(aiInlineConfig.dataset.url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken, 'X-Requested-With': 'XMLHttpRequest' }, body, credentials: 'same-origin' });
         const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Не удалось подготовить текст.');
         if (!field.value.trim()) { field.value = data.content; rememberPreviousVersion(field, panel.dataset.previousValue || ''); field.dispatchEvent(new Event('input', { bubbles: true })); field.dispatchEvent(new Event('change', { bubbles: true })); panel.classList.add('d-none'); getFieldGroup(field)?.classList.remove('ai-field-active'); showAppToast('ИИ-текст добавлен в поле'); }
         else { panel.innerHTML = `<div class="small fw-semibold mb-2">Вариант от ИИ</div><textarea class="form-control form-control-sm mb-2" rows="5" readonly data-ai-result></textarea><div class="d-flex flex-wrap gap-2"><button type="button" class="btn btn-sm btn-primary" data-ai-apply="replace">Заменить</button><button type="button" class="btn btn-sm btn-outline-secondary" data-ai-apply="append">Добавить в конец</button><button type="button" class="btn btn-sm btn-link text-secondary" data-ai-close>Отмена</button></div>`; panel.querySelector('[data-ai-result]').value = data.content; }

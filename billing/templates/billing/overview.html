@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% load tz %}
+{% block title %}Тариф и расход{% endblock %}
+{% block content %}
+<header class="ui-page-header">
+  <div>
+    <p class="ui-page-header__eyebrow">Личный кабинет</p>
+    <h1 class="ui-page-header__title">Тариф и расход</h1>
+  </div>
+  <div class="ui-page-header__actions"><a class="btn btn-neutral" href="{% url 'edit_profile' %}">В личный кабинет</a></div>
+</header>
+
+<p class="billing-notice"><strong>Пилотный режим.</strong> Тарифные ограничения пока не применяются; оплата не подключена.</p>
+{% if not billing_recording_enabled %}<p class="billing-notice billing-notice--warning">Учёт расхода сейчас выключен. Данные по ИИ и файлам могут быть неполными.</p>{% endif %}
+
+{% timezone billing_timezone %}
+{% if billing_has_team %}
+<ul class="nav nav-pills workspace-tabs detail-tabs billing-workspace-tabs" id="billing-workspace-tabs" role="tablist" aria-label="Пространство для просмотра тарифа">
+  <li class="nav-item" role="presentation"><button class="nav-link active" id="billing-personal-tab" data-bs-toggle="tab" data-bs-target="#billing-personal-pane" type="button" role="tab" aria-controls="billing-personal-pane" aria-selected="true">Личное пространство</button></li>
+  <li class="nav-item" role="presentation"><button class="nav-link" id="billing-team-tab" data-bs-toggle="tab" data-bs-target="#billing-team-pane" type="button" role="tab" aria-controls="billing-team-pane" aria-selected="false">Команда</button></li>
+</ul>
+{% endif %}
+<div class="billing-workspaces{% if billing_has_team %} tab-content{% endif %}" id="billing-workspace-content">
+  {% for workspace in billing_workspaces %}
+  <section class="detail-section billing-workspace{% if billing_has_team %} tab-pane fade{% if forloop.first %} show active{% endif %}{% endif %}" id="billing-{{ workspace.kind }}-pane"{% if billing_has_team %} role="tabpanel" aria-labelledby="billing-{{ workspace.kind }}-tab" tabindex="0"{% else %} aria-labelledby="billing-{{ workspace.kind }}-title"{% endif %}>
+    <div class="detail-section__heading">
+      <div>
+        <div class="billing-heading-with-help"><h2 id="billing-{{ workspace.kind }}-title">{{ workspace.title }}</h2>{% include "billing/includes/help.html" with label=workspace.title text=workspace.description only %}</div>
+      </div>
+      <span class="badge text-bg-{{ workspace.badge }}">{{ workspace.state_label }}</span>
+    </div>
+
+    <div class="billing-plan">
+      <span class="billing-plan__label">Тариф</span>
+      <strong class="billing-plan__name">{{ workspace.plan_name }}</strong>
+      {% if workspace.state == 'grace' or workspace.state == 'restricted' or workspace.state == 'suspended' or workspace.state == 'unknown' %}<p>{{ workspace.state_description }}</p>{% endif %}
+      {% if workspace.state == 'demo' and not workspace.period %}<p>Демо действует без срока окончания.</p>{% endif %}
+    </div>
+
+    <section class="billing-period" aria-labelledby="billing-{{ workspace.kind }}-resources">
+      {% with resource_rules="Объекты считаются вне архива, включая черновики, завершённые и демо. Места включают действующие приглашения; принятое приглашение не занимает место повторно. Хранилище включает сохранённые файлы, даже без актуальной ссылки. 1 МБ = 1024 КБ." %}
+      <div class="billing-heading-with-help"><h3 id="billing-{{ workspace.kind }}-resources">Ресурсы</h3>{% if workspace.state == 'suspended' %}{% include "billing/includes/help.html" with label="Ресурсы" text="Показаны лимиты назначенного тарифа при приостановке. Ограничения пока не применяются." extra=resource_rules only %}{% else %}{% include "billing/includes/help.html" with label="Ресурсы" text="Лимиты предварительные и пока не ограничивают работу." extra=resource_rules only %}{% endif %}</div>
+      {% endwith %}
+      <div class="billing-resources">
+        {% for resource in workspace.resources %}
+        <div class="billing-resource{% if resource.over_limit or resource.at_limit %} billing-resource--warning{% endif %}" data-resource="{{ resource.key }}">
+          <div class="billing-resource__heading">
+            <strong>{{ resource.label }}</strong>
+            <span class="billing-resource__value">{{ resource.used_label }} <span class="billing-resource__limit">/ {{ resource.limit_label }}</span></span>
+          </div>
+          {% if resource.known %}
+          <div class="billing-meter" role="progressbar" aria-label="{{ resource.label }}: {{ resource.used_label }} из {{ resource.limit_label }}" aria-valuenow="{{ resource.percent }}" aria-valuemin="0" aria-valuemax="100"><span style="width: {{ resource.percent }}%;"></span></div>
+          {% elif resource.limit is None %}<p class="billing-resource__message">Лимит требует проверки.</p>{% endif %}
+          <p class="billing-resource__hint">{{ resource.hint }}</p>
+          {% if resource.over_limit %}<p class="billing-resource__message">Превышение: {{ resource.excess_label }}. Ограничения пока не применяются.</p>{% elif resource.at_limit %}<p class="billing-resource__message">Предварительный лимит достигнут. Работа остаётся доступной.</p>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% if workspace.inventory_checked_at %}<p class="billing-workspace__hint">Учёт файлов обновлён: <time datetime="{{ workspace.inventory_checked_at|date:'c' }}">{{ workspace.inventory_checked_at|date:"d.m.Y, H:i" }}</time>.</p>{% endif %}
+      {% if not workspace.storage_known %}<p class="billing-workspace__hint">Неполный учёт файлов — объём уточняется.</p>{% elif workspace.storage_issues %}<p class="billing-workspace__hint">Часть файлов требует проверки. Показан известный объём.</p>{% endif %}
+    </section>
+
+    <div class="billing-workspace__lower{% if not workspace.period and not workspace.upcoming_period %} billing-workspace__lower--solo{% endif %}">
+      {% include "billing/includes/credit_usage.html" with ai=workspace.ai kind=workspace.kind only %}
+
+    {% if workspace.period %}
+    <section class="billing-period" aria-labelledby="billing-{{ workspace.kind }}-period">
+      <div class="billing-heading-with-help"><h3 id="billing-{{ workspace.kind }}-period">{{ workspace.period_label }}</h3>{% include "billing/includes/help.html" with label=workspace.period_label text="Интервал от начала до окончания. Даты показаны в часовом поясе, указанном под карточками. Пилотный доступ и назначение оператором не означают оплату." only %}</div>
+      <p class="billing-period__caption">{{ workspace.period.plan_name }} · {{ workspace.period.source_label }}</p>
+      {% include "billing/includes/period_dates.html" with period=workspace.period only %}
+      {% if workspace.period.ai %}
+      <p class="billing-workspace__hint">{% if workspace.period.ai.known %}ИИ-кредиты: {{ workspace.period.ai.spent }} из {{ workspace.period.ai.allocated }} использовано.{% if workspace.period.ai.pending %} Ожидается: {{ workspace.period.ai.pending }}.{% endif %}{% if workspace.period.ai.reserved %} В резерве: {{ workspace.period.ai.reserved }}.{% endif %}{% else %}ИИ-бюджет завершённого периода требует проверки.{% endif %}</p>
+      {% endif %}
+      {% if workspace.grace_ends_at %}
+      <dl class="billing-period__dates billing-period__grace"><div><dt>Льготный срок до</dt><dd><time datetime="{{ workspace.grace_ends_at|date:'c' }}">{{ workspace.grace_ends_at|date:"d.m.Y, H:i" }}</time></dd></div></dl>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if workspace.upcoming_period %}
+    <section class="billing-period" aria-labelledby="billing-{{ workspace.kind }}-upcoming">
+      <h3 id="billing-{{ workspace.kind }}-upcoming">Следующий период</h3>
+      <p class="billing-period__caption">{{ workspace.upcoming_period.plan_name }} · {{ workspace.upcoming_period.source_label }}</p>
+      {% include "billing/includes/period_dates.html" with period=workspace.upcoming_period only %}
+    </section>
+    {% endif %}
+    </div>
+  </section>
+  {% endfor %}
+</div>
+{% endtimezone %}
+{% if billing_has_dates %}<p class="billing-timezone">Часовой пояс дат: {{ billing_timezone }}.</p>{% endif %}
+{% endblock %}

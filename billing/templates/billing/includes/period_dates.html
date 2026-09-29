@@ -1,0 +1,4 @@
+<dl class="billing-period__dates">
+  <div><dt>Начало</dt><dd><time datetime="{{ period.starts_at|date:'c' }}">{{ period.starts_at|date:"d.m.Y, H:i" }}</time></dd></div>
+  <div><dt>Окончание</dt><dd><time datetime="{{ period.ends_at|date:'c' }}">{{ period.ends_at|date:"d.m.Y, H:i" }}</time></dd></div>
+</dl>

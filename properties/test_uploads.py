@@ -1,4 +1,5 @@
 from io import BytesIO
+import uuid
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
@@ -155,6 +156,20 @@ class ImageUploadEndpointTests(TestCase):
         self.client.post(self.url, {"images": image_upload()})
         self.client.post(self.url, {"images": image_upload()})
         self.assertEqual(list(self.property.images.order_by("order").values_list("order", flat=True)), [0, 1])
+
+    def test_retry_with_same_key_does_not_save_photo_twice(self):
+        key = str(uuid.uuid4())
+        first = self.client.post(self.url, {"images": image_upload(), "request_key": key})
+        second = self.client.post(self.url, {"images": image_upload(), "request_key": key})
+        self.assertEqual((first.status_code, second.status_code), (302, 302))
+        self.assertEqual(self.property.images.count(), 1)
+
+    def test_reusing_upload_key_for_different_file_is_rejected(self):
+        key = str(uuid.uuid4())
+        self.client.post(self.url, {"images": image_upload(), "request_key": key})
+        response = self.client.post(self.url, {"images": image_upload(name="another.jpg"), "request_key": key})
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(self.property.images.count(), 1)
 
     def test_another_users_property_cannot_receive_uploads(self):
         other = User.objects.create_user("other", password="password")

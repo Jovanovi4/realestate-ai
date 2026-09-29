@@ -6,6 +6,11 @@ from django.core.files import File
 from django.db import transaction
 from django.utils import timezone
 
+from billing.models import BillingAccount
+from billing.reservations import reserved_resources
+from billing.rules import Operation
+from billing.services import AccountService
+
 from ..models import AIContent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, PropertyImage, RealtorProfile, Showing
 
 
@@ -15,9 +20,19 @@ class DemoDataService:
     @classmethod
     @transaction.atomic
     def create_for_user(cls, user):
-        profile, _ = RealtorProfile.objects.get_or_create(user=user)
+        account = AccountService.ensure_personal(user)
+        BillingAccount.objects.select_for_update().get(pk=account.pk)
+        profile, _ = RealtorProfile.objects.select_for_update().get_or_create(user=user)
         if profile.demo_data_created:
             return None
+        filenames = ("demo-living-room.jpg", "demo-kitchen.jpg", "demo-bedroom.jpg")
+        size = sum((Path(settings.BASE_DIR) / "static" / "onboarding" / filename).stat().st_size for filename in filenames)
+        with reserved_resources(account=account, actor=user, action=Operation.CREATE_PROPERTY,
+                amounts={"active_properties": 1, "total_properties": 1, "landings": 1, "storage_bytes": size}):
+            return cls._create_for_user_locked(user, profile)
+
+    @classmethod
+    def _create_for_user_locked(cls, user, profile):
 
         property = Property.objects.create(
             owner=user,

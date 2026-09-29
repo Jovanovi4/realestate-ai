@@ -1,6 +1,11 @@
+import hashlib
+import json
+import uuid
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.http import Http404, JsonResponse
 from django.urls import reverse
 from django.core.paginator import Paginator
@@ -9,6 +14,9 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views import View
 from django.views.generic import DetailView
+from billing.enforcement import TariffDenied, require_resource_action
+from billing.rules import Operation
+from billing.usage import DuplicateAIRequest, observe_ai_generation
 
 from .forms import AIContentEditForm, AILeadReplyForm, AIRequestForm
 from .agency_access import workspace_queryset
@@ -18,6 +26,24 @@ from .services.ai_service import AIService, AIServiceError
 
 def is_htmx(request):
     return request.headers.get("HX-Request") == "true"
+
+
+def ai_request_identity(request):
+    """Bind a client retry key to the exact endpoint and submitted parameters."""
+    raw = request.headers.get("Idempotency-Key") or request.POST.get("request_key")
+    try:
+        key = uuid.UUID(raw) if raw else uuid.uuid4()
+    except (TypeError, ValueError):
+        raise ValidationError("Некорректный ключ запроса.")
+    payload = [(name, request.POST.getlist(name)) for name in sorted(request.POST) if name not in {"csrfmiddlewaretoken", "request_key"}]
+    fingerprint = hashlib.sha256(json.dumps([request.path, payload], ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+    return {"request_key": key, "request_fingerprint": fingerprint}
+
+
+def ai_retry_error(error):
+    if isinstance(error, DuplicateAIRequest):
+        return "Запрос уже выполняется или его результат требует проверки. Повторите позже."
+    return "Этот ключ уже использован для другого запроса. Обновите страницу и повторите действие."
 
 
 def get_ai_history_context(property, page_number=1):
@@ -68,6 +94,17 @@ def is_inline_target(target):
     )
 
 
+def save_generated_contents(property, tone, results, *, lead=None):
+    contents = []
+    for result in results:
+        payload = dict(result)
+        content_type = payload.pop("content_type")
+        apply_target = payload.pop("apply_target", DEFAULT_TARGETS.get(content_type, ""))
+        contents.append(AIContent.objects.create(property=property, lead=lead, content_type=content_type,
+            tone=tone, title=property.title, apply_target=apply_target, **payload))
+    return contents
+
+
 class AIEnabledMixin:
     """Keep AI endpoints unavailable when a deployment disables the feature."""
 
@@ -93,29 +130,32 @@ class AIInlineGenerateView(AIEnabledMixin, LoginRequiredMixin, View):
         if tone not in dict(AIContent.TONE_CHOICES):
             return JsonResponse({"error": "Выберите корректный тон текста."}, status=400)
 
-        try:
+        if mode == "improve" and not source_text:
+            return JsonResponse({"error": "Введите текст, который нужно улучшить."}, status=400)
+        if mode not in {"generate", "improve"}:
+            return JsonResponse({"error": "Неизвестное действие ИИ."}, status=400)
+
+        def generate():
             if mode == "improve":
-                if not source_text:
-                    return JsonResponse({"error": "Введите текст, который нужно улучшить."}, status=400)
                 content_type = "benefits" if target.startswith("landing_benefit_") else AIService.INLINE_FIELD_INSTRUCTIONS[target][0]
                 result = AIService.improve_text(property, content_type, tone, improvement, source_text)
-            elif mode == "generate":
+            else:
                 content_type, result = AIService.generate_inline_content(property, target, tone)
-            elif mode != "generate":
-                return JsonResponse({"error": "Неизвестное действие ИИ."}, status=400)
+            return [{**result, "content_type": content_type,
+                "apply_target": target if target in dict(AIContent.APPLY_TARGET_CHOICES) else ""}]
+
+        action = "improve" if mode == "improve" else "full_description" if target == "description" else "short_text"
+        try:
+            contents = observe_ai_generation(resource=property, actor=request.user, ai_action=action,
+                generate=generate, save=lambda results: save_generated_contents(property, tone, results),
+                **ai_request_identity(request))
+        except TariffDenied as error:
+            return JsonResponse({"error": error.message, "code": error.code}, status=403)
+        except (DuplicateAIRequest, ValidationError) as error:
+            return JsonResponse({"error": ai_retry_error(error)}, status=409)
         except AIServiceError as error:
             return JsonResponse({"error": str(error)}, status=400)
-
-        apply_target = target if target in dict(AIContent.APPLY_TARGET_CHOICES) else ""
-        AIContent.objects.create(
-            property=property,
-            content_type=content_type,
-            tone=tone,
-            title=property.title,
-            apply_target=apply_target,
-            **result,
-        )
-        return JsonResponse({"content": result["content"]})
+        return JsonResponse({"content": contents[0].content})
 
 
 class AIBundleGenerateView(AIEnabledMixin, LoginRequiredMixin, View):
@@ -130,23 +170,16 @@ class AIBundleGenerateView(AIEnabledMixin, LoginRequiredMixin, View):
         if bundle_type not in {"package", "landing"}:
             return JsonResponse({"error": "Неизвестный сценарий генерации."}, status=400)
         try:
-            results = AIService.generate_bundle(property, tone, bundle_type)
+            generated = observe_ai_generation(resource=property, actor=request.user, ai_action=bundle_type,
+                generate=lambda: AIService.generate_bundle(property, tone, bundle_type),
+                save=lambda results: save_generated_contents(property, tone, results), **ai_request_identity(request))
+        except TariffDenied as error:
+            return JsonResponse({"error": error.message, "code": error.code}, status=403)
+        except (DuplicateAIRequest, ValidationError) as error:
+            return JsonResponse({"error": ai_retry_error(error)}, status=409)
         except AIServiceError as error:
             return JsonResponse({"error": str(error)}, status=400)
-
-        contents = []
-        for result in results:
-            content_type = result["content_type"]
-            content_payload = {key: value for key, value in result.items() if key != "content_type"}
-            AIContent.objects.create(
-                property=property,
-                content_type=content_type,
-                tone=tone,
-                title=property.title,
-                apply_target=DEFAULT_TARGETS[content_type],
-                **content_payload,
-            )
-            contents.append({"target": DEFAULT_TARGETS[content_type], "content": result["content"]})
+        contents = [{"target": content.apply_target, "content": content.content} for content in generated]
         return JsonResponse({"contents": contents})
 
 
@@ -190,7 +223,7 @@ class AIAssistantView(AIEnabledMixin, LoginRequiredMixin, DetailView):
                 return render(request, "properties/includes/ai_generation_error.html", {"message": "Проверьте выбранные параметры генерации."})
             return self.render_to_response(self.get_context_data(form=form))
         mode = form.cleaned_data["mode"]
-        try:
+        def generate():
             if mode == "audit":
                 profile = RealtorProfile.objects.filter(user=request.user).first()
                 result = AIService.audit_property(self.object, bool(profile and (profile.phone or profile.email or profile.telegram_username)))
@@ -203,13 +236,29 @@ class AIAssistantView(AIEnabledMixin, LoginRequiredMixin, DetailView):
             else:
                 result = AIService.generate_content(self.object, form.cleaned_data["content_type"], form.cleaned_data["tone"])
                 results = [{**result, "content_type": form.cleaned_data["content_type"], "apply_target": DEFAULT_TARGETS.get(form.cleaned_data["content_type"], "")}]
+            return results
+
+        action = mode if mode in {"audit", "package", "landing", "improve"} else "full_description" if form.cleaned_data["content_type"] in {"full_description", "description"} else "short_text"
+        try:
+            contents = observe_ai_generation(resource=self.object, actor=request.user, ai_action=action,
+                generate=generate, save=lambda results: save_generated_contents(self.object, form.cleaned_data["tone"], results),
+                **ai_request_identity(request))
+        except TariffDenied as error:
+            if is_htmx(request):
+                return render(request, "properties/includes/ai_generation_error.html", {"message": error.message, "billing_denied": True})
+            messages.error(request, error.message)
+            return self.render_to_response(self.get_context_data(form=form))
+        except (DuplicateAIRequest, ValidationError) as error:
+            if is_htmx(request):
+                return render(request, "properties/includes/ai_generation_error.html", {"message": ai_retry_error(error)}, status=409)
+            messages.error(request, ai_retry_error(error))
+            return self.render_to_response(self.get_context_data(form=form))
         except AIServiceError as error:
             if is_htmx(request):
                 return render(request, "properties/includes/ai_generation_error.html", {"message": str(error)})
             messages.error(request, str(error))
             return self.render_to_response(self.get_context_data(form=form))
 
-        contents = [AIContent.objects.create(property=self.object, tone=form.cleaned_data["tone"], title=self.object.title, **result) for result in results]
         content = contents[0]
         if is_htmx(request):
             return render_ai_content_response(request, content)
@@ -248,6 +297,13 @@ class AIContentEditView(AIEnabledMixin, LoginRequiredMixin, DetailView):
 
     def post(self, request, *args, **kwargs):
         self.object = self.get_object()
+        try:
+            require_resource_action(request.user, self.object.property, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            if is_htmx(request):
+                return render(request, "properties/includes/ai_generation_error.html", {"message": error.message, "billing_denied": True})
+            messages.error(request, error.message)
+            return redirect("edit_property", pk=self.object.property.pk)
         form = AIContentEditForm(request.POST, instance=self.object)
         if not form.is_valid():
             return self.render_to_response(self.get_context_data(form=form))
@@ -297,21 +353,26 @@ class AILeadReplyView(AIEnabledMixin, LoginRequiredMixin, View):
             messages.error(request, "Выберите корректный тон ответа.")
             return redirect("lead_detail", pk=lead.pk)
         try:
-            result = AIService.generate_lead_reply(lead.property, lead, form.cleaned_data["tone"])
+            contents = observe_ai_generation(resource=lead.property, actor=request.user, ai_action="lead_reply",
+                generate=lambda: [{**AIService.generate_lead_reply(lead.property, lead, form.cleaned_data["tone"]), "content_type": "lead_reply", "apply_target": ""}],
+                save=lambda results: save_generated_contents(lead.property, form.cleaned_data["tone"], results, lead=lead),
+                **ai_request_identity(request))
+        except TariffDenied as error:
+            if is_htmx(request):
+                return render(request, "properties/includes/lead_ai_reply.html", {"lead": lead, "error": error.message, "billing_denied": True})
+            messages.error(request, error.message)
+            return redirect("lead_detail", pk=lead.pk)
+        except (DuplicateAIRequest, ValidationError) as error:
+            if is_htmx(request):
+                return render(request, "properties/includes/lead_ai_reply.html", {"lead": lead, "error": ai_retry_error(error)}, status=409)
+            messages.error(request, ai_retry_error(error))
+            return redirect("lead_detail", pk=lead.pk)
         except AIServiceError as error:
             if is_htmx(request):
                 return render(request, "properties/includes/lead_ai_reply.html", {"lead": lead, "error": str(error)})
             messages.error(request, str(error))
             return redirect("lead_detail", pk=lead.pk)
-        ai_content = AIContent.objects.create(
-            property=lead.property,
-            lead=lead,
-            content_type="lead_reply",
-            tone=form.cleaned_data["tone"],
-            title=lead.property.title,
-            apply_target="",
-            **result,
-        )
+        ai_content = contents[0]
         if is_htmx(request):
             return render(request, "properties/includes/lead_ai_reply.html", {"lead": lead, "ai_content": ai_content})
         messages.success(request, "ИИ подготовил ответ клиенту.")

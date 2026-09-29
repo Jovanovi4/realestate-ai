@@ -6,8 +6,8 @@
 <div class="ai-workspace">
   <section class="ai-panel" x-data="{ mode: '{{ form.mode.value|default:'package' }}', tone: '{{ form.tone.value|default:'business' }}' }" aria-labelledby="ai-task-title">
     <div class="ai-panel__heading"><h2 id="ai-task-title">Что нужно сделать?</h2><p>Выберите сценарий — покажем только нужные параметры.</p></div>
-    <form method="post" hx-post="{% url 'ai_assistant' property.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" hx-indicator="#ai-generation-indicator" hx-disabled-elt="find button" class="app-form">
-      {% csrf_token %}<input type="hidden" name="mode" x-model="mode"><input type="hidden" name="tone" x-model="tone">
+    <form method="post" hx-post="{% url 'ai_assistant' property.pk %}" hx-target="#ai-editor" hx-swap="outerHTML" hx-indicator="#ai-generation-indicator" hx-disabled-elt="find button" hx-on::after-request="if (event.detail.successful) this.querySelector('[name=request_key]').value = ''" x-on:submit="if (!$event.target.elements.request_key.value) $event.target.elements.request_key.value = crypto.randomUUID()" class="app-form">
+      {% csrf_token %}<input type="hidden" name="request_key"><input type="hidden" name="mode" x-model="mode"><input type="hidden" name="tone" x-model="tone">
       {% if form.non_field_errors %}<div class="app-form-error-summary" role="alert">{{ form.non_field_errors|striptags }}</div>{% endif %}
       <div class="ai-scenario-grid" role="group" aria-label="Сценарий ИИ">
         <button type="button" class="ai-scenario" :class="{ 'is-active': mode === 'package' }" :aria-pressed="(mode === 'package').toString()" @click="mode = 'package'"><span class="ai-scenario-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-sparkles"></use></svg></span><strong>Создать объявление</strong><small>Заголовок и описания.</small></button>

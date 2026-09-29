@@ -1,5 +1,8 @@
 from io import BytesIO, StringIO
+import uuid
 from datetime import datetime, time, timedelta
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from urllib.parse import parse_qs, urlsplit
 from unittest.mock import Mock, patch
 
@@ -94,6 +97,18 @@ class NavigationStructureTests(TestCase):
         self.assertContains(response, "Лендингов пока нет")
         self.assertNotContains(response, '<div class="fs-3 mb-2">▱</div>')
 
+    def test_landing_cards_share_property_layout_and_keep_publication_actions(self):
+        published = Property.objects.create(owner=self.user, title="Опубликованный объект", landing_published=True)
+        response = self.client.get(reverse("landing_list"))
+
+        self.assertContains(response, 'class="property-card landing-card h-100"', count=2)
+        self.assertContains(response, 'class="property-card__footer"', count=2)
+        self.assertContains(response, f'href="{reverse("edit_property", args=[published.pk])}#landing-pane"')
+        self.assertContains(response, f'href="{reverse("public_landing", args=[published.landing_slug])}"', count=1)
+        self.assertContains(response, f'action="{reverse("landing_unpublish", args=[published.pk])}"', count=1)
+        self.assertContains(response, "Опубликован")
+        self.assertContains(response, "Черновик")
+
     def test_agency_screen_is_available_from_profile_menu(self):
         response = self.client.get(reverse("agency_dashboard"))
         self.assertEqual(response.status_code, 200)
@@ -127,6 +142,14 @@ class AgencyWorkflowTests(TestCase):
         response = self.client.post(reverse("agency_join", args=[invitation.code]))
         self.assertRedirects(response, reverse("agency_dashboard"))
         return invitation
+
+    def test_invitation_retry_uses_original_link(self):
+        self.create_agency()
+        key = str(uuid.uuid4())
+        first = self.client.post(reverse("agency_invite"), {"role": "agent", "request_key": key})
+        second = self.client.post(reverse("agency_invite"), {"role": "agent", "request_key": key})
+        self.assertEqual((first.status_code, second.status_code), (302, 302))
+        self.assertEqual(AgencyInvitation.objects.count(), 1)
 
     def test_founder_conversion_and_invite_share_data_but_not_other_users_data(self):
         private_property = Property.objects.create(owner=self.agent, title="Личный объект сотрудника")
@@ -296,6 +319,12 @@ class AgencyWorkflowTests(TestCase):
 class AccountAndPropertyAccessTests(TestCase):
     def setUp(self):
         cache.clear()
+        media_dir = TemporaryDirectory()
+        self.addCleanup(media_dir.cleanup)
+        self.media_root = Path(media_dir.name)
+        media_settings = override_settings(MEDIA_ROOT=media_dir.name)
+        media_settings.enable()
+        self.addCleanup(media_settings.disable)
 
     @staticmethod
     def image_upload():
@@ -318,6 +347,7 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertRedirects(response, reverse("property_list"))
         user = User.objects.get(username="+79991234567")
         self.assertTrue(UserLegalAcceptance.objects.filter(user=user).exists())
+        self.assertFalse(any(path.is_file() for path in self.media_root.rglob("*")))
 
     def test_auth_forms_match_workspace_brand_and_include_favicon(self):
         favicon_link = f'<link rel="icon" type="image/svg+xml" sizes="any" href="{static("branding/favicon.svg")}" />'
@@ -638,16 +668,24 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertRedirects(response, reverse("create_property"), fetch_redirect_response=False)
         self.assertTrue(RealtorProfile.objects.get(user=user).onboarding_started)
 
-    def test_starting_a_property_opens_a_saved_draft_with_ai_tools(self):
+    def test_starting_a_property_uses_safe_get_then_creates_a_draft_with_ai_tools(self):
         user = User.objects.create_user("new-agent", password="password")
         self.client.force_login(user)
 
         response = self.client.get(reverse("create_property"))
-
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(Property.objects.filter(owner=user).exists())
+        key = response.context["resource_request_key"]
+        form = {"title": "Новый объект", "property_type": "apartment", "deal_type": "sale", "status": "draft",
+                "avito_operation": "sell", "currency": "RUB", "landing_template": "classic", "request_key": key}
+        response = self.client.post(reverse("create_property"), form)
         draft = Property.objects.get(owner=user)
         self.assertEqual(draft.title, "Новый объект")
         self.assertEqual(draft.status, "draft")
         self.assertRedirects(response, reverse("edit_property", args=[draft.pk]))
+        repeat = self.client.post(reverse("create_property"), form)
+        self.assertRedirects(repeat, reverse("edit_property", args=[draft.pk]))
+        self.assertEqual(Property.objects.filter(owner=user).count(), 1)
 
         response = self.client.get(reverse("edit_property", args=[draft.pk]))
         self.assertContains(response, "data-ai-bundle-trigger")
@@ -656,6 +694,7 @@ class AccountAndPropertyAccessTests(TestCase):
     def test_new_user_can_create_personal_demo_data(self):
         user = User.objects.create_user("new-agent", password="password")
         self.client.force_login(user)
+        self.assertFalse(any(path.is_file() for path in self.media_root.rglob("*")))
 
         response = self.client.post(reverse("onboarding_demo_create"))
 
@@ -670,6 +709,9 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertEqual(Showing.objects.filter(owner=user, deal__is_demo=True).count(), 1)
         self.assertEqual(ClientReminder.objects.filter(owner=user, deal__is_demo=True).count(), 1)
         self.assertTrue(RealtorProfile.objects.get(user=user).demo_data_created)
+        self.assertEqual(sum(path.is_file() for path in self.media_root.rglob("*")), 3)
+        self.client.post(reverse("onboarding_demo_create"))
+        self.assertEqual(sum(path.is_file() for path in self.media_root.rglob("*")), 3)
 
     def test_user_can_hide_the_first_steps_checklist(self):
         user = User.objects.create_user("new-agent", password="password")

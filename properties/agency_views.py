@@ -1,15 +1,24 @@
 from datetime import timedelta
+import uuid
 
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views import View
+from billing.models import BillingAccount
+from billing.enforcement import TariffDenied, enabled as billing_enforcement_enabled, require_allowed
+from billing.rules import PolicyService
+from billing.reservations import DuplicateResourceRequest, request_identity, reserved_resources
+from billing.rules import Operation
+from billing.services import AccountService
+from billing.usage import attempt
 
 from .agency_access import membership_for, may_manage_agency, workspace_queryset
 from .models import (
@@ -43,6 +52,7 @@ class AgencyDashboardView(LoginRequiredMixin, View):
             "audit_events": audit_events,
             "can_manage": may_manage_agency(request.user),
             "is_owner": membership.role == "owner",
+            "resource_request_key": str(uuid.uuid4()),
         })
 
 
@@ -53,14 +63,25 @@ class AgencyCreateView(LoginRequiredMixin, View):
         form = AgencyCreateForm(request.POST)
         if not form.is_valid():
             return render(request, "properties/agency_dashboard.html", {"create_form": form}, status=400)
-        with transaction.atomic():
-            agency, _ = Agency.objects.get_or_create(owner=request.user, defaults={"name": form.cleaned_data["name"]})
-            AgencyMembership.objects.get_or_create(agency=agency, user=request.user, defaults={"role": "owner"})
-            # The founder explicitly converts their existing personal database into shared agency data.
-            for model in (Property, Client, Deal, ClientReminder, Showing):
-                for record in model.objects.filter(owner=request.user, agency__isnull=True).iterator():
-                    record.agency = agency
-                    record.save(update_fields=["agency"])
+        try:
+            with transaction.atomic():
+                personal = AccountService.ensure_personal(request.user)
+                BillingAccount.objects.select_for_update().get(pk=personal.pk)
+                require_allowed(PolicyService.evaluate(personal, request.user, Operation.CREATE_AGENCY))
+                agency, _ = Agency.objects.get_or_create(owner=request.user, defaults={"name": form.cleaned_data["name"]})
+                if billing_enforcement_enabled():
+                    AccountService.convert_founder_account(agency, request.user)
+                else:
+                    attempt(lambda: AccountService.convert_founder_account(agency, request.user))
+                AgencyMembership.objects.get_or_create(agency=agency, user=request.user, defaults={"role": "owner"})
+                # The founder explicitly converts their existing personal database into shared agency data.
+                for model in (Property, Client, Deal, ClientReminder, Showing):
+                    for record in model.objects.filter(owner=request.user, agency__isnull=True).iterator():
+                        record.agency = agency
+                        record.save(update_fields=["agency"])
+        except TariffDenied as error:
+            form.add_error(None, error.message)
+            return render(request, "properties/agency_dashboard.html", {"create_form": form}, status=403)
         messages.success(request, "Агентство создано. Ваши объекты, клиенты и сделки стали общей базой команды.")
         return redirect("agency_dashboard")
 
@@ -72,10 +93,27 @@ class AgencyInviteView(LoginRequiredMixin, View):
             raise Http404
         form = InvitationForm(request.POST)
         if form.is_valid() and (membership.role == "owner" or form.cleaned_data["role"] == "agent"):
-            invite = AgencyInvitation.objects.create(
-                agency=membership.agency, role=form.cleaned_data["role"], created_by=request.user,
-                expires_at=timezone.now() + timedelta(days=7),
-            )
+            account = AccountService.ensure_agency(membership.agency)
+            try:
+                with reserved_resources(account=account, actor=request.user, action=Operation.INVITE_MEMBER,
+                        amounts={"invited_seats": 1}, invited_role=form.cleaned_data["role"],
+                        **request_identity(request)) as reservation:
+                    invite = AgencyInvitation.objects.create(
+                        agency=membership.agency, role=form.cleaned_data["role"], created_by=request.user,
+                        expires_at=timezone.now() + timedelta(days=7),
+                    )
+                    reservation.result_id = str(invite.pk)
+            except DuplicateResourceRequest as duplicate:
+                invite = AgencyInvitation.objects.filter(pk=duplicate.reservation.result_id, agency=membership.agency).first()
+                if invite is None:
+                    messages.info(request, "Этот запрос уже обрабатывается или приглашение отозвано.")
+                    return redirect("agency_dashboard")
+            except ValidationError:
+                messages.error(request, "Ключ запроса уже использован для другого приглашения. Обновите страницу и повторите действие.")
+                return redirect("agency_dashboard")
+            except TariffDenied as error:
+                messages.error(request, error.message)
+                return redirect("agency_dashboard")
             messages.success(request, f"Приглашение создано. Передайте сотруднику ссылку: {request.build_absolute_uri(reverse('agency_join', args=[invite.code]))}")
         else:
             messages.error(request, "Выберите роль сотрудника.")
@@ -91,14 +129,23 @@ class AgencyJoinView(LoginRequiredMixin, View):
         return render(request, "properties/agency_join.html", {"invite": invite})
 
     def post(self, request, code):
-        with transaction.atomic():
-            invite = get_object_or_404(AgencyInvitation.objects.select_for_update().select_related("agency"), code=code, accepted_by__isnull=True, expires_at__gt=timezone.now())
-            if membership_for(request.user):
-                messages.error(request, "Вы уже состоите в агентстве.")
-                return redirect("agency_dashboard")
-            AgencyMembership.objects.create(agency=invite.agency, user=request.user, role=invite.role)
-            invite.accepted_by = request.user
-            invite.save(update_fields=["accepted_by"])
+        visible = get_object_or_404(AgencyInvitation.objects.select_related("agency"), code=code,
+            accepted_by__isnull=True, expires_at__gt=timezone.now())
+        account = AccountService.ensure_agency(visible.agency)
+        try:
+            with transaction.atomic():
+                BillingAccount.objects.select_for_update().get(pk=account.pk)
+                invite = get_object_or_404(AgencyInvitation.objects.select_for_update().select_related("agency"), code=code, accepted_by__isnull=True, expires_at__gt=timezone.now())
+                if membership_for(request.user):
+                    messages.error(request, "Вы уже состоите в агентстве.")
+                    return redirect("agency_dashboard")
+                require_allowed(PolicyService.evaluate(account, request.user, Operation.ACCEPT_INVITE, resource=invite))
+                AgencyMembership.objects.create(agency=invite.agency, user=request.user, role=invite.role)
+                invite.accepted_by = request.user
+                invite.save(update_fields=["accepted_by"])
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("agency_join", code=code)
         messages.success(request, f"Вы присоединились к агентству «{invite.agency.name}».")
         return redirect("agency_dashboard")
 
@@ -111,6 +158,12 @@ class AgencyInviteRevokeView(LoginRequiredMixin, View):
         invite = get_object_or_404(AgencyInvitation, pk=pk, agency=membership.agency, accepted_by__isnull=True)
         if membership.role == "manager" and invite.created_by_id != request.user.pk:
             raise Http404
+        try:
+            account = AccountService.ensure_agency(membership.agency)
+            require_allowed(PolicyService.evaluate(account, request.user, Operation.EDIT_CRM))
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("agency_dashboard")
         invite.delete()
         messages.success(request, "Приглашение отозвано.")
         return redirect("agency_dashboard")
@@ -125,6 +178,13 @@ class AgencyMemberRoleView(LoginRequiredMixin, View):
         role = request.POST.get("role")
         if target.role == "owner" or role not in {"manager", "agent"}:
             raise Http404
+        try:
+            account = AccountService.ensure_agency(membership.agency)
+            require_allowed(PolicyService.evaluate(account, request.user, Operation.CHANGE_MEMBER_ROLE,
+                resource=target, invited_role=role))
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("agency_dashboard")
         target.role = role
         target.save(update_fields=["role"])
         messages.success(request, "Роль сотрудника обновлена.")
@@ -139,6 +199,12 @@ class AgencyMemberRemoveView(LoginRequiredMixin, View):
         target = get_object_or_404(AgencyMembership, pk=pk, agency=membership.agency)
         if target.role == "owner":
             raise Http404
+        try:
+            account = AccountService.ensure_agency(membership.agency)
+            require_allowed(PolicyService.evaluate(account, request.user, Operation.REMOVE_MEMBER, resource=target))
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("agency_dashboard")
         replacement = membership.agency.owner
         with transaction.atomic():
             for model in (Property, Client, Deal, ClientReminder, Showing):
@@ -166,6 +232,12 @@ class LeadAssignView(LoginRequiredMixin, View):
         if not assignee_id.isdigit():
             raise Http404
         assignee = get_object_or_404(AgencyMembership, agency=membership.agency, user_id=assignee_id)
+        try:
+            account = AccountService.ensure_agency(membership.agency)
+            require_allowed(PolicyService.evaluate(account, request.user, Operation.EDIT_CRM, resource=lead.property))
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("lead_detail", pk=lead.pk)
         lead.assigned_to = assignee.user
         lead.save(update_fields=["assigned_to", "updated_at"])
         messages.success(request, "Ответственный за заявку назначен.")

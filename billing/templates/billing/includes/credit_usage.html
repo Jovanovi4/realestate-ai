@@ -1,0 +1,17 @@
+<section class="billing-period billing-credits{% if ai.over_limit %} billing-credits--warning{% endif %}" aria-labelledby="billing-{{ kind }}-credits">
+  <div class="billing-heading-with-help"><h3 id="billing-{{ kind }}-credits">{{ ai.title }}</h3>{% include "billing/includes/help.html" with label=ai.title text=ai.hint extra="Ожидаемый расход незавершённых генераций предварительно уменьшает остаток; неизвестный исход требует проверки." only %}</div>
+  {% if ai.known %}
+  <div class="billing-credits__balance"><strong>{{ ai.remaining }}</strong><span>{{ ai.remaining_label }}</span></div>
+  <dl class="billing-credits__details">
+    <div><dt>Всего начислено</dt><dd>{{ ai.allocated }}</dd></div>
+    <div><dt>Использовано</dt><dd>{{ ai.spent }}</dd></div>
+    {% if ai.pending %}<div><dt>Ожидается</dt><dd>{{ ai.pending }}</dd></div>{% endif %}
+    {% if ai.reserved %}<div><dt>В резерве</dt><dd>{{ ai.reserved }}</dd></div>{% endif %}
+  </dl>
+  {% if ai.allocated %}<div class="billing-meter" role="progressbar" aria-label="Расход ИИ-кредитов, включая ожидаемый расход и резервы" aria-valuenow="{{ ai.percent }}" aria-valuemin="0" aria-valuemax="100"><span style="width: {{ ai.percent }}%;"></span></div>{% endif %}
+  {% else %}<p class="billing-credits__unknown">Остаток уточняется</p>{% endif %}
+  {% if ai.profile_link or not ai.known or ai.allocated == 0 %}<p class="billing-workspace__hint">{{ ai.hint }}</p>{% endif %}
+  {% if ai.unknown_operations %}<p class="billing-resource__message">Есть генерации с неизвестным исходом. Их расход требует проверки.</p>{% endif %}
+  {% if ai.over_limit %}<p class="billing-resource__message">Учтённый и ожидаемый расход превышают бюджет на {{ ai.excess }}. Ограничения пока не применяются.</p>{% endif %}
+  {% if ai.profile_link %}<a class="btn btn-neutral btn-sm mt-3" href="{% url 'edit_profile' %}">Открыть личный кабинет</a>{% endif %}
+</section>

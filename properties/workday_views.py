@@ -9,6 +9,8 @@ from django.utils import timezone
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views import View
 from django.views.generic import CreateView, TemplateView, UpdateView
+from billing.enforcement import TariffDenied, require_new_action, require_resource_action
+from billing.rules import Operation
 
 from .forms import ShowingForm, TaskForm
 from .agency_access import workspace_queryset
@@ -60,6 +62,15 @@ class TaskCreateView(WorkdayFormMixin, CreateView):
         return initial
 
     def form_valid(self, form):
+        target = form.cleaned_data.get("deal") or form.cleaned_data.get("client")
+        try:
+            if target:
+                require_resource_action(self.request.user, target, Operation.EDIT_CRM)
+            else:
+                require_new_action(self.request.user, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            form.add_error(None, error.message)
+            return self.render_to_response(self.get_context_data(form=form), status=403)
         form.instance.owner = self.request.user
         response = super().form_valid(form)
         messages.success(self.request, "Задача добавлена.")
@@ -76,6 +87,14 @@ class TaskUpdateView(WorkdayFormMixin, UpdateView):
         return ClientReminder.objects.filter(owner=self.request.user).select_related("client", "deal")
 
     def form_valid(self, form):
+        try:
+            require_resource_action(self.request.user, self.object, Operation.EDIT_CRM)
+            target = form.cleaned_data.get("deal") or form.cleaned_data.get("client")
+            if target:
+                require_resource_action(self.request.user, target, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            form.add_error(None, error.message)
+            return self.render_to_response(self.get_context_data(form=form), status=403)
         response = super().form_valid(form)
         messages.success(self.request, "Задача сохранена.")
         return response
@@ -84,6 +103,11 @@ class TaskUpdateView(WorkdayFormMixin, UpdateView):
 class TaskCompleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         task = get_object_or_404(ClientReminder, pk=pk, owner=request.user)
+        try:
+            require_resource_action(request.user, task, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("workday")
         if not task.is_done:
             task.is_done = True
             task.completed_at = timezone.now()
@@ -109,6 +133,11 @@ class ShowingCreateView(WorkdayFormMixin, CreateView):
         return initial
 
     def form_valid(self, form):
+        try:
+            require_resource_action(self.request.user, form.cleaned_data["deal"], Operation.EDIT_CRM)
+        except TariffDenied as error:
+            form.add_error(None, error.message)
+            return self.render_to_response(self.get_context_data(form=form), status=403)
         form.instance.owner = self.request.user
         with transaction.atomic():
             response = super().form_valid(form)
@@ -135,6 +164,11 @@ class ShowingUpdateView(WorkdayFormMixin, UpdateView):
         return Showing.objects.filter(owner=self.request.user).select_related("deal", "deal__client", "deal__property")
 
     def form_valid(self, form):
+        try:
+            require_resource_action(self.request.user, self.object, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            form.add_error(None, error.message)
+            return self.render_to_response(self.get_context_data(form=form), status=403)
         previous = Showing.objects.values("status", "starts_at").get(pk=self.object.pk)
         with transaction.atomic():
             response = super().form_valid(form)

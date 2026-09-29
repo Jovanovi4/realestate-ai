@@ -15,6 +15,10 @@ TRACKED_MODELS = (
 )
 
 
+def current_actor():
+    return _actor.get()
+
+
 class AuditActorMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response

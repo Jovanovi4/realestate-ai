@@ -1,12 +1,27 @@
 from django.contrib import admin
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from billing.enforcement import enabled as billing_enforcement_enabled
 from .forms import SafeImageField
 
 from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, RealtorProfile, Showing, UserLegalAcceptance
 
 
+class BillingReadOnlyWhenEnforced:
+    """Admin may inspect CRM, but quota and access writes use cabinet workflows."""
+
+    def has_add_permission(self, request):
+        return not billing_enforcement_enabled() and super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return not billing_enforcement_enabled() and super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return not billing_enforcement_enabled() and super().has_delete_permission(request, obj)
+
+
 @admin.register(Property)
-class PropertyAdmin(admin.ModelAdmin):
+class PropertyAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
     actions = ("archive_selected", "restore_selected")
     readonly_fields = ("archived_at", "status_before_archive")
 
@@ -22,11 +37,23 @@ class PropertyAdmin(admin.ModelAdmin):
 
     @admin.action(description="Восстановить объекты без перепубликации", permissions=["change"])
     def restore_selected(self, request, queryset):
+        if billing_enforcement_enabled():
+            self.message_user(request, "Восстановите объекты через кабинет: там проверяется свободное место тарифа.", level="error")
+            return
         with transaction.atomic():
             for property in queryset.select_for_update().filter(status="archived"):
                 previous = property.status_before_archive
                 property.status = previous if previous in dict(Property.STATUS_CHOICES) and previous != "archived" else "draft"
                 property.save(update_fields=["status", "updated_at"])
+
+    def save_model(self, request, obj, form, change):
+        if billing_enforcement_enabled() and change:
+            old = Property.objects.get(pk=obj.pk)
+            if ((old.status == "archived" and obj.status != "archived") or
+                    (not old.landing_published and obj.landing_published and obj.status != "archived") or
+                    bool(request.FILES.get("landing_logo"))):
+                raise PermissionDenied("Квотируемые изменения объекта выполняйте через кабинет.")
+        super().save_model(request, obj, form, change)
 
     def formfield_for_dbfield(self, db_field, request, **kwargs):
         if db_field.name == "landing_logo":
@@ -57,7 +84,7 @@ class PropertyAdmin(admin.ModelAdmin):
 
 
 @admin.register(Lead)
-class LeadAdmin(admin.ModelAdmin):
+class LeadAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
     readonly_fields = ("archived_at",)
 
     def has_delete_permission(self, request, obj=None):
@@ -69,26 +96,26 @@ class LeadAdmin(admin.ModelAdmin):
 
 
 @admin.register(Client)
-class ClientAdmin(admin.ModelAdmin):
+class ClientAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
     list_display = ("name", "phone", "owner", "agency", "status", "source", "created_at")
     search_fields = ("name", "phone", "preferred_area")
     list_filter = ("status", "source")
 
 
 @admin.register(ClientInteraction)
-class ClientInteractionAdmin(admin.ModelAdmin):
+class ClientInteractionAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
     list_display = ("client", "interaction_type", "created_at")
     list_filter = ("interaction_type",)
 
 
 @admin.register(ClientReminder)
-class ClientReminderAdmin(admin.ModelAdmin):
+class ClientReminderAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
     list_display = ("text", "owner", "agency", "client", "deal", "due_at", "is_done")
     list_filter = ("is_done",)
 
 
 @admin.register(Deal)
-class DealAdmin(admin.ModelAdmin):
+class DealAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
@@ -98,7 +125,7 @@ class DealAdmin(admin.ModelAdmin):
 
 
 @admin.register(Showing)
-class ShowingAdmin(admin.ModelAdmin):
+class ShowingAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
     list_display = ("deal", "starts_at", "status", "owner", "agency")
     list_filter = ("status",)
     search_fields = ("deal__client__name", "deal__property__title")
@@ -115,7 +142,7 @@ class RealtorProfileAdmin(admin.ModelAdmin):
 
 
 @admin.register(AIContent)
-class AIContentAdmin(admin.ModelAdmin):
+class AIContentAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
     list_display = ("property", "content_type", "tone", "provider", "model", "is_applied", "created_at")
     list_filter = ("content_type", "tone", "provider", "is_applied")
     search_fields = ("property__title", "content")
@@ -132,16 +159,34 @@ class AgencyAdmin(admin.ModelAdmin):
     list_display = ("name", "owner", "created_at")
     search_fields = ("name", "owner__username")
 
+    def has_add_permission(self, request):
+        return not billing_enforcement_enabled() and super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return not billing_enforcement_enabled() and super().has_change_permission(request, obj)
+
 
 @admin.register(AgencyMembership)
 class AgencyMembershipAdmin(admin.ModelAdmin):
     list_display = ("agency", "user", "role", "joined_at")
     list_filter = ("role",)
 
+    def has_add_permission(self, request):
+        return not billing_enforcement_enabled() and super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return not billing_enforcement_enabled() and super().has_change_permission(request, obj)
+
 
 @admin.register(AgencyInvitation)
 class AgencyInvitationAdmin(admin.ModelAdmin):
     list_display = ("agency", "role", "created_by", "expires_at", "accepted_by")
+
+    def has_add_permission(self, request):
+        return not billing_enforcement_enabled() and super().has_add_permission(request)
+
+    def has_change_permission(self, request, obj=None):
+        return not billing_enforcement_enabled() and super().has_change_permission(request, obj)
 
 
 @admin.register(AuditEvent)
