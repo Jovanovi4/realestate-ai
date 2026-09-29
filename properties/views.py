@@ -1006,15 +1006,10 @@ class LeadListView(LoginRequiredMixin, ListView):
         queryset = workspace_queryset(Lead.objects, self.request.user, prefix="property__").select_related("property", "client", "assigned_to").prefetch_related("client__leads")
         if self.request.GET.get("assigned") == "mine":
             queryset = queryset.filter(assigned_to=self.request.user)
-        queue = self.request.GET.get("queue")
-        if queue == "reply":
-            queryset = queryset.exclude(status="archived").filter(first_contacted_at__isnull=True)
-        elif queue == "overdue":
-            queryset = queryset.exclude(status="archived").filter(Lead.overdue_filter(timezone.now()))
         status = self.request.GET.get("status")
         if status in dict(Lead.STATUS_CHOICES):
             queryset = queryset.filter(status=status)
-        return queryset.order_by("next_action_due_at", "pk") if queue in ("reply", "overdue") else queryset
+        return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1022,19 +1017,10 @@ class LeadListView(LoginRequiredMixin, ListView):
         requested_status = self.request.GET.get("status", "")
         selected_status = requested_status if requested_status in dict(Lead.STATUS_CHOICES) else ""
         selected_assigned = self.request.GET.get("assigned") == "mine"
-        selected_queue = self.request.GET.get("queue", "")
-        if selected_queue not in ("reply", "overdue"):
-            selected_queue = ""
         count_queryset = workspace_queryset(Lead.objects, self.request.user, prefix="property__")
         if selected_assigned:
             count_queryset = count_queryset.filter(assigned_to=self.request.user)
         total_leads = count_queryset.count()
-        reply_count = count_queryset.exclude(status="archived").filter(first_contacted_at__isnull=True).count()
-        overdue_count = count_queryset.exclude(status="archived").filter(Lead.overdue_filter(timezone.now())).count()
-        if selected_queue == "reply":
-            count_queryset = count_queryset.exclude(status="archived").filter(first_contacted_at__isnull=True)
-        elif selected_queue == "overdue":
-            count_queryset = count_queryset.exclude(status="archived").filter(Lead.overdue_filter(timezone.now()))
         counts = {
             row["status"]: row["total"]
             for row in count_queryset
@@ -1044,13 +1030,7 @@ class LeadListView(LoginRequiredMixin, ListView):
         filtered_total = sum(counts.values())
         context["selected_status"] = selected_status
         context["selected_assigned"] = selected_assigned
-        context["selected_queue"] = selected_queue
         context["queue_now"] = timezone.now()
-        context["queue_tabs"] = [
-            {"value": "", "label": "Все", "count": total_leads},
-            {"value": "reply", "label": "Требует ответа", "count": reply_count},
-            {"value": "overdue", "label": "Просрочено", "count": overdue_count},
-        ]
         context["status_tabs"] = [
             {"value": "", "label": "Все", "count": filtered_total},
             *[
@@ -1060,7 +1040,7 @@ class LeadListView(LoginRequiredMixin, ListView):
         ]
         context["has_any_leads"] = total_leads > 0
         context["can_bulk_delete"] = not agency_for(self.request.user) or may_manage_agency(self.request.user)
-        context["pagination_query"] = "&".join(filter(None, [f"queue={selected_queue}" if selected_queue else "", f"status={selected_status}" if selected_status else "", "assigned=mine" if selected_assigned else ""]))
+        context["pagination_query"] = "&".join(filter(None, [f"status={selected_status}" if selected_status else "", "assigned=mine" if selected_assigned else ""]))
         context["demo_test_completed"] = (
             self.request.GET.get("demo_test") == "1"
             and workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(is_demo=True).exists()

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Личный кабинет{% endblock %}
 {% block content %}
-<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Настройки</p><h1 class="ui-page-header__title">Личный кабинет</h1><p class="ui-page-header__description">Контакты для лендингов и уведомлений о заявках.</p></div></header>
+<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Настройки</p><h1 class="ui-page-header__title">Личный кабинет</h1></div></header>
 
 <div class="profile-stat-grid">
   <div class="profile-stat"><span>Объекты</span><strong>{{ statistics.properties }}</strong></div>
@@ -10,16 +10,16 @@
 </div>
 
 <a class="profile-billing-link" href="{% url 'billing:overview' %}">
-  <span><strong>Тариф и расход</strong><small>Текущий тариф, ресурсы и остаток ИИ-кредитов.</small></span>
+  <span><strong>Тариф и расход</strong></span>
   <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg>
 </a>
 
 <div class="profile-form-layout">
   <section class="app-form-panel" aria-labelledby="profile-form-title" x-data="{ preview: {% if form.instance.photo %}'{{ form.instance.photo.url|escapejs }}'{% else %}null{% endif %}, fileName: '', selectPhoto(event) { const file = event.target.files[0]; if (file) { this.preview = URL.createObjectURL(file); this.fileName = file.name; } } }">
-    <div class="app-form-panel__heading"><h2 id="profile-form-title">Профиль и контакты</h2><p>Эти данные увидят посетители ваших опубликованных объектов.</p></div>
+    <div class="app-form-panel__heading"><div class="billing-heading-with-help"><h2 id="profile-form-title">Профиль и контакты</h2>{% include "billing/includes/help.html" with label="Профиль и контакты" text="Контакты и описание профиля появятся на опубликованных лендингах." only %}</div></div>
     <form method="post" enctype="multipart/form-data" class="app-form" novalidate>{% csrf_token %}
       {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
-      <div class="upload-control upload-control--avatar"><button type="button" class="upload-control__preview" @click="$refs.photoInput.click()" aria-label="Загрузить или заменить фотографию"><template x-if="preview"><img :src="preview" alt="Фото риелтора"></template><span x-show="!preview" class="upload-control__placeholder"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-users"></use></svg></span><span class="upload-control__overlay" aria-hidden="true">Изменить</span></button><div class="upload-control__content"><h3>Фотография риелтора</h3><p>Появится в профиле и на лендингах.</p><span class="upload-control__hint">{{ form.photo.help_text }}</span><span class="upload-control__filename" x-show="fileName" x-text="fileName"></span><div class="d-none">{{ form.photo }}</div>{% if form.photo.errors %}<div class="app-field-error text-danger" role="alert">{{ form.photo.errors|striptags }}</div>{% endif %}</div></div>
+      <div class="upload-control upload-control--avatar"><button type="button" class="upload-control__preview" @click="$refs.photoInput.click()" aria-label="Загрузить или заменить фотографию"><template x-if="preview"><img :src="preview" alt="Фото риелтора"></template><span x-show="!preview" class="upload-control__placeholder"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-users"></use></svg></span><span class="upload-control__overlay" aria-hidden="true">Изменить</span></button><div class="upload-control__content"><h3>Фотография риелтора</h3><span class="upload-control__hint">{{ form.photo.help_text }}</span><span class="upload-control__filename" x-show="fileName" x-text="fileName"></span><div class="d-none">{{ form.photo }}</div>{% if form.photo.errors %}<div class="app-field-error text-danger" role="alert">{{ form.photo.errors|striptags }}</div>{% endif %}</div></div>
       <div class="app-form-grid">{% for field in form %}{% if field.name != 'photo' %}{% if field.name == 'telegram_chat_id' %}<div class="app-form-divider is-wide"><h3>Уведомления о заявках</h3><p>Укажите Telegram chat ID, чтобы получать обращения после настройки бота. На email из профиля тоже могут приходить уведомления.</p></div>{% endif %}<div class="app-field {% if field.name == 'telegram_chat_id' %}is-wide{% endif %}">{% include "includes/form_field.html" with field=field %}</div>{% endif %}{% endfor %}</div>
       <div class="app-form-actions"><button class="btn btn-primary" type="submit">Сохранить изменения</button></div>
     </form>
@@ -27,7 +27,6 @@
   <aside class="app-form-panel profile-account" aria-labelledby="profile-account-title">
     <div class="app-form-panel__heading">
       <h2 id="profile-account-title">Доступ к аккаунту</h2>
-      <p>Вход, пароль и восстановление доступа.</p>
     </div>
     <div class="profile-account__section">
       <dl class="profile-account__credentials">
@@ -47,12 +46,10 @@
           {% if form.instance.email %}<p class="profile-account__email-address">{{ form.instance.email }}</p>{% endif %}
         </div>
       </div>
-      {% if form.instance.email_verified_at %}
-        <p class="profile-account__hint">Если забудете пароль, сможете восстановить его через эту почту.</p>
-      {% elif form.instance.email %}
+      {% if not form.instance.email_verified_at and form.instance.email %}
         <p class="profile-account__hint">Подтвердите почту, чтобы использовать её для восстановления пароля.</p>
         <a href="{% url 'account_email_verify' %}" class="btn btn-neutral">Подтвердить email</a>
-      {% else %}
+      {% elif not form.instance.email_verified_at %}
         <p class="profile-account__hint">Укажите email в профиле и сохраните изменения. Затем подтвердите почту для восстановления пароля.</p>
       {% endif %}
     </section>

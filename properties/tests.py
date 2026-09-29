@@ -390,7 +390,7 @@ class AccountAndPropertyAccessTests(TestCase):
         response = self.client.get(reverse("edit_property", args=[property.pk]))
 
         self.assertContains(response, "Можно написать текст вручную или получить черновик от ИИ")
-        self.assertContains(response, "Предпросмотр покажет лендинг так, как его увидит клиент")
+        self.assertContains(response, "После сохранения откройте предпросмотр в карточке объекта")
 
     def test_property_editor_uses_light_sections_and_highlights_invalid_fields(self):
         owner = User.objects.create_user("form-owner", password="password")

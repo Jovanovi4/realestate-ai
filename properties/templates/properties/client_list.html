@@ -11,12 +11,13 @@
 </header>
 
 {% if overdue_reminders or today_reminders %}
-  <section class="client-reminders" aria-labelledby="client-reminders-title">
-    <div class="client-reminders__heading"><div><h2 id="client-reminders-title">Задачи по клиентам</h2><p>Ближайшие действия и просроченные задачи</p></div><a href="{% url 'workday' %}" class="btn btn-text btn-sm">Весь день</a></div>
+  <details class="client-reminders" {% if overdue_reminders %}open{% endif %}>
+    <summary class="client-reminders__heading"><strong role="heading" aria-level="2">Задачи по клиентам</strong>{% if overdue_reminders %}<span class="client-reminders__urgent">Просрочено · {{ overdue_reminder_count }}</span>{% endif %}{% if today_reminders %}<span>Сегодня · {{ today_reminder_count }}</span>{% endif %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
+    <div class="client-reminders__content"><a href="{% url 'workday' %}" class="btn btn-text btn-sm">Мой день</a>
     <div class="client-reminders__groups">
       {% if overdue_reminders %}
         <div class="client-reminder-group is-overdue">
-          <h3>Просрочено <span>{{ overdue_reminder_count }}</span></h3>
+          <h3>Просрочено</h3>
           <div class="client-reminder-group__items">
             {% for reminder in overdue_reminders %}
               <a class="client-reminder" href="{% url 'client_detail' reminder.client.pk %}">
@@ -30,7 +31,7 @@
       {% endif %}
       {% if today_reminders %}
         <div class="client-reminder-group is-today">
-          <h3>Сегодня <span>{{ today_reminder_count }}</span></h3>
+          <h3>Сегодня</h3>
           <div class="client-reminder-group__items">
             {% for reminder in today_reminders %}
               <a class="client-reminder" href="{% url 'client_detail' reminder.client.pk %}">
@@ -42,8 +43,8 @@
           {% if today_reminder_count > 5 %}<p class="client-reminder-group__more">Показаны первые 5 из {{ today_reminder_count }}</p>{% endif %}
         </div>
       {% endif %}
-    </div>
-  </section>
+    </div></div>
+  </details>
 {% endif %}
 
 <section class="client-toolbar" aria-label="Поиск и фильтры клиентов">
@@ -93,17 +94,16 @@
         <table class="table lead-table client-table align-middle mb-0">
           <thead><tr>
             {% if can_bulk_delete %}<th scope="col" class="lead-table__selection"><input class="form-check-input" type="checkbox" aria-label="Выбрать всех клиентов на странице" @change="selected = $event.target.checked ? [{% for client in clients %}'{{ client.pk }}'{% if not forloop.last %}, {% endif %}{% endfor %}] : []" :checked="selected.length === {{ clients|length }}"></th>{% endif %}
-            <th scope="col">Клиент</th><th scope="col">Интерес</th><th scope="col">Этап</th><th scope="col">Заявки</th><th scope="col">Добавлен</th><th scope="col"><span class="visually-hidden">Действия</span></th>
+            <th scope="col">Клиент</th><th scope="col">Интерес</th><th scope="col">Этап</th><th scope="col">Заявки</th><th scope="col"><span class="visually-hidden">Действия</span></th>
           </tr></thead>
           <tbody>
             {% for client in clients %}
               <tr class="lead-table__row" :class="{ 'is-selected': selected.includes('{{ client.pk }}') }">
                 {% if can_bulk_delete %}<td class="lead-table__selection"><input class="form-check-input" type="checkbox" name="client_ids" value="{{ client.pk }}" aria-label="Выбрать {{ client.name }}" x-model="selected"></td>{% endif %}
-                <td><a class="lead-table__name" href="{% url 'client_detail' client.pk %}">{{ client.name }}</a><a class="lead-table__phone" href="tel:{{ client.phone }}">{{ client.phone }}</a><span class="client-table__source">{{ client.get_source_display }}</span></td>
-                <td><span class="lead-table__property">{{ client.preferred_area|default:"Не указан" }}</span>{% if client.budget %}<span class="lead-table__type">Бюджет: {{ client.budget }}</span>{% endif %}</td>
+                <td><a class="lead-table__name" href="{% url 'client_detail' client.pk %}">{{ client.name }}</a><a class="lead-table__phone" href="tel:{{ client.phone }}">{{ client.phone }}</a><details class="record-details"><summary aria-label="Подробнее о клиенте {{ client.name }}">Подробнее<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary><dl><div><dt>Источник</dt><dd>{{ client.get_source_display }}</dd></div><div><dt>Добавлен</dt><dd><time datetime="{{ client.created_at|date:'c' }}">{{ client.created_at|date:"d.m.Y" }}</time></dd></div>{% if client.budget %}<div><dt>Бюджет</dt><dd>{{ client.budget }}</dd></div>{% endif %}</dl></details></td>
+                <td><span class="lead-table__property">{{ client.preferred_area|default:"Не указан" }}</span></td>
                 <td>{% include "properties/includes/client_status_badge.html" %}</td>
                 <td><span class="client-table__leads">{{ client.leads.count }}</span></td>
-                <td><time class="lead-table__date" datetime="{{ client.created_at|date:'c' }}">{{ client.created_at|date:"d.m.Y" }}</time></td>
                 <td class="lead-table__actions"><a class="btn btn-icon btn-sm btn-text lead-table__open" href="{% url 'client_detail' client.pk %}" title="Открыть карточку клиента" aria-label="Открыть карточку клиента {{ client.name }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a></td>
               </tr>
             {% endfor %}
@@ -116,11 +116,10 @@
         <article class="lead-mobile-card client-mobile-card" :class="{ 'is-selected': selected.includes('{{ client.pk }}') }">
           <div class="lead-mobile-card__head">
             {% if can_bulk_delete %}<input class="form-check-input" type="checkbox" name="client_ids" value="{{ client.pk }}" aria-label="Выбрать {{ client.name }}" x-model="selected">{% endif %}
-            <div class="lead-mobile-card__person"><a class="lead-mobile-card__name" href="{% url 'client_detail' client.pk %}">{{ client.name }}</a><a class="lead-mobile-card__phone" href="tel:{{ client.phone }}">{{ client.phone }}</a></div>
+            <div class="lead-mobile-card__person"><a class="lead-mobile-card__name" href="{% url 'client_detail' client.pk %}">{{ client.name }}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a><a class="lead-mobile-card__phone" href="tel:{{ client.phone }}">{{ client.phone }}</a></div>
             {% include "properties/includes/client_status_badge.html" %}
           </div>
-          <div class="lead-mobile-card__body"><p class="lead-mobile-card__object"><span>Интерес</span><strong>{{ client.preferred_area|default:"Не указан" }}</strong></p><p class="client-mobile-card__meta">{{ client.get_source_display }} · Заявок: {{ client.leads.count }}</p></div>
-          <div class="lead-mobile-card__footer"><time datetime="{{ client.created_at|date:'c' }}">Добавлен {{ client.created_at|date:"d.m.Y" }}</time><a class="btn btn-icon btn-sm btn-outline-secondary" href="{% url 'client_detail' client.pk %}" title="Открыть карточку клиента" aria-label="Открыть карточку клиента {{ client.name }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a></div>
+          <div class="lead-mobile-card__body"><p class="lead-mobile-card__object"><span>Интерес</span><strong>{{ client.preferred_area|default:"Не указан" }}</strong></p><p class="client-mobile-card__meta">Заявок: {{ client.leads.count }}</p><details class="record-details"><summary aria-label="Подробнее о клиенте {{ client.name }}">Подробнее<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary><dl><div><dt>Источник</dt><dd>{{ client.get_source_display }}</dd></div><div><dt>Добавлен</dt><dd><time datetime="{{ client.created_at|date:'c' }}">{{ client.created_at|date:"d.m.Y" }}</time></dd></div>{% if client.budget %}<div><dt>Бюджет</dt><dd>{{ client.budget }}</dd></div>{% endif %}</dl></details></div>
         </article>
       {% endfor %}
     </div>

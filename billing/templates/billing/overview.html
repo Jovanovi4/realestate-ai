@@ -52,7 +52,7 @@
           <div class="billing-meter" role="progressbar" aria-label="{{ resource.label }}: {{ resource.used_label }} из {{ resource.limit_label }}" aria-valuenow="{{ resource.percent }}" aria-valuemin="0" aria-valuemax="100"><span style="width: {{ resource.percent }}%;"></span></div>
           {% elif resource.limit is None %}<p class="billing-resource__message">Лимит требует проверки.</p>{% endif %}
           <p class="billing-resource__hint">{{ resource.hint }}</p>
-          {% if resource.over_limit %}<p class="billing-resource__message">Превышение: {{ resource.excess_label }}. Ограничения пока не применяются.</p>{% elif resource.at_limit %}<p class="billing-resource__message">Предварительный лимит достигнут. Работа остаётся доступной.</p>{% endif %}
+          {% if resource.over_limit %}<p class="billing-resource__message">Превышение: {{ resource.excess_label }} · пока без блокировки.</p>{% elif resource.at_limit %}<p class="billing-resource__message">Лимит достигнут · пока без блокировки.</p>{% endif %}
         </div>
         {% endfor %}
       </div>

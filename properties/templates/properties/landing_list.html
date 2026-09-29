@@ -28,7 +28,7 @@
         <h2 class="property-card__title"><a href="{% url 'edit_property' property.pk %}#landing-pane">{{ property.landing_title|default:property.marketing_headline|default:property.title }}</a></h2>
         <p class="property-card__address">{{ property.get_property_type_display }} · {{ property.address|default:"Адрес не указан" }}</p>
         <div class="property-card__footer">
-          <div><strong class="property-card__price">Заявок: {{ property.landing_leads_count }}</strong><span class="property-card__facts">Просмотры — скоро</span></div>
+          <div><strong class="property-card__price">Заявок: {{ property.landing_leads_count }}</strong></div>
           <div class="property-card__actions">
             <a href="{% url 'edit_property' property.pk %}#landing-pane" class="btn btn-icon btn-sm btn-text" title="Редактировать лендинг" aria-label="Редактировать лендинг {{ property.title }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></a>
             {% if property.landing_published %}

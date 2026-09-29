@@ -152,19 +152,30 @@ class LeadProcessingTests(TestCase):
         self.assertContains(response, 'id="id_lead_next_action"')
         self.assertContains(response, 'id="id_complete_next_action"')
 
-    def test_reply_queue_includes_read_lead_and_excludes_contacted_and_archived(self):
+    def test_lead_list_keeps_contacted_and_archived_leads_visible(self):
         self.lead.status = "read"
         self.lead.save(update_fields=["status"])
-        response = self.client.get(reverse("lead_list"), {"queue": "reply"})
+        response = self.client.get(reverse("lead_list"))
         self.assertEqual(list(response.context["leads"]), [self.lead])
-        self.assertContains(response, "Требует ответа")
+        self.assertNotContains(response, 'aria-label="Очереди заявок"')
         self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data())
         response = self.client.get(reverse("lead_list"), {"queue": "reply"})
-        self.assertEqual(list(response.context["leads"]), [])
+        self.assertEqual(list(response.context["leads"]), [self.lead])
         self.lead.status = "archived"
         self.lead.save(update_fields=["status"])
-        response = self.client.get(reverse("lead_list"), {"queue": "reply"})
+        response = self.client.get(reverse("lead_list"), {"queue": "overdue"})
+        self.assertEqual(list(response.context["leads"]), [self.lead])
+        response = self.client.get(reverse("lead_list"), {"status": "new"})
         self.assertEqual(list(response.context["leads"]), [])
+
+    def test_list_highlights_overdue_first_response_without_marking_future_action_overdue(self):
+        now = timezone.now()
+        Lead.objects.filter(pk=self.lead.pk).update(
+            created_at=now - timedelta(hours=1), next_action_due_at=now + timedelta(hours=2),
+        )
+        response = self.client.get(reverse("lead_list"))
+        self.assertContains(response, "Ответ просрочен")
+        self.assertEqual(response.content.decode().count("lead-deadline--overdue"), 2)
 
     def test_first_contact_is_recorded_once_and_next_action_is_required(self):
         url = reverse("lead_process", args=[self.lead.pk])
@@ -200,11 +211,11 @@ class LeadProcessingTests(TestCase):
         self.lead.refresh_from_db()
         self.assertIsNone(self.lead.first_contacted_at)
 
-    def test_overdue_queue_and_today_show_assigned_next_step(self):
+    def test_overdue_lead_list_and_today_show_assigned_next_step(self):
         Lead.objects.filter(pk=self.lead.pk).update(next_action_due_at=timezone.now() - timedelta(minutes=1))
-        queue = self.client.get(reverse("lead_list"), {"queue": "overdue"})
-        self.assertEqual(list(queue.context["leads"]), [self.lead])
-        self.assertContains(queue, "Просрочено")
+        lead_list = self.client.get(reverse("lead_list"))
+        self.assertEqual(list(lead_list.context["leads"]), [self.lead])
+        self.assertContains(lead_list, "Просрочено")
         today = self.client.get(reverse("workday"))
         self.assertContains(today, "Квартира у парка")
         self.assertEqual(today.context["nav_overdue_count"], 1)
@@ -214,8 +225,9 @@ class LeadProcessingTests(TestCase):
             created_at=timezone.now() - timedelta(minutes=31),
             next_action_due_at=timezone.now() + timedelta(days=1),
         )
-        queue = self.client.get(reverse("lead_list"), {"queue": "overdue"})
-        self.assertEqual([lead.pk for lead in queue.context["leads"]], [self.lead.pk])
+        lead_list = self.client.get(reverse("lead_list"))
+        self.assertEqual([lead.pk for lead in lead_list.context["leads"]], [self.lead.pk])
+        self.assertContains(lead_list, "Ответ просрочен")
         detail = self.client.get(reverse("lead_detail", args=[self.lead.pk]))
         self.assertContains(detail, "Первый ответ просрочен")
         self.assertEqual(self.client.get(reverse("workday")).context["nav_overdue_count"], 1)

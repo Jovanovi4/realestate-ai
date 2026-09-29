@@ -11,9 +11,8 @@
               <th scope="col">Клиент</th>
               <th scope="col">Объект</th>
               <th scope="col">Ответственный</th>
-              <th scope="col">Статус</th>
               <th scope="col">Следующее действие</th>
-              <th scope="col">Поступила · источник</th>
+              <th scope="col">Статус</th>
               <th scope="col"><span class="visually-hidden">Действия</span></th>
             </tr>
           </thead>
@@ -26,24 +25,16 @@
                 <td>
                   <a class="lead-table__name" href="{% url 'lead_detail' lead.pk %}">{{ lead.name }}</a>
                   <a class="lead-table__phone" href="tel:{{ lead.phone }}">{{ lead.phone }}</a>
-                  {% if lead.message %}<p class="lead-table__message" title="{{ lead.message }}">{{ lead.message|truncatechars:80 }}</p>{% endif %}
-                  {% if lead.client and lead.client.leads.count > 1 %}<span class="lead-table__repeat">Повторное обращение</span>{% endif %}
+                  <details class="record-details"><summary aria-label="Подробнее о заявке {{ lead.name }}">Подробнее<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary><dl><div><dt>Поступила</dt><dd><time datetime="{{ lead.created_at|date:'c' }}">{{ lead.created_at|date:"d.m.Y · H:i" }}</time></dd></div><div><dt>Источник</dt><dd>{{ lead.get_source_display }}</dd></div><div><dt>Квалификация</dt><dd>{{ lead.get_qualification_display }}</dd></div>{% if lead.client %}<div><dt>Этап клиента</dt><dd>{{ lead.client.get_status_display }}</dd></div>{% endif %}</dl>{% if lead.client and lead.client.leads.count > 1 %}<p>Повторное обращение</p>{% endif %}{% if lead.message %}<p class="record-details__message">{{ lead.message|linebreaksbr }}</p>{% endif %}</details>
                 </td>
                 <td>
                   <span class="lead-table__property">{{ lead.property.title }}</span>
-                  <span class="lead-table__type">{{ lead.property.get_property_type_display }}</span>
                 </td>
                 <td>{% if lead.assigned_to %}{% if lead.assigned_to.realtor_profile.display_name %}{{ lead.assigned_to.realtor_profile.display_name }}{% else %}{{ lead.assigned_to.username }}{% endif %}{% else %}Не назначен{% endif %}</td>
+                <td><span class="lead-table__property">{{ lead.next_action }}</span><time class="lead-table__date {% if lead.next_action_due_at < queue_now and lead.status != 'archived' %}lead-deadline--overdue{% endif %}" datetime="{{ lead.next_action_due_at|date:'c' }}">{{ lead.next_action_due_at|date:"d.m.Y · H:i" }}{% if lead.next_action_due_at < queue_now and lead.status != 'archived' %} · Просрочено{% endif %}</time>{% if not lead.first_contacted_at and lead.status != 'archived' %}<span class="lead-table__stage {% if lead.first_response_overdue %}lead-deadline--overdue{% endif %}">{% if lead.first_response_overdue %}Ответ просрочен{% else %}Ответить до{% endif %} {{ lead.first_response_due_at|date:"d.m · H:i" }}</span>{% endif %}</td>
                 <td>
                   {% include "properties/includes/lead_status_badge.html" %}
                   {% if not lead.first_contacted_at and lead.status != 'archived' %}<span class="lead-table__stage">Требует ответа</span>{% endif %}
-                  <span class="lead-table__stage">{{ lead.get_qualification_display }}</span>
-                  {% if lead.client %}<span class="lead-table__stage">Этап клиента: {{ lead.client.get_status_display }}</span>{% endif %}
-                </td>
-                <td><span class="lead-table__property">{{ lead.next_action }}</span><time class="lead-table__date {% if lead.is_overdue %}lead-deadline--overdue{% endif %}" datetime="{{ lead.next_action_due_at|date:'c' }}">{{ lead.next_action_due_at|date:"d.m.Y · H:i" }}{% if lead.is_overdue %} · Просрочено{% endif %}</time>{% if not lead.first_contacted_at and lead.status != 'archived' %}<span class="lead-table__stage">Ответить до {{ lead.first_response_due_at|date:"d.m · H:i" }}</span>{% endif %}</td>
-                <td>
-                  <time class="lead-table__date" datetime="{{ lead.created_at|date:'c' }}">{{ lead.created_at|date:"d.m.Y" }}<span>{{ lead.created_at|date:"H:i" }}</span></time>
-                  <span class="lead-table__stage">{{ lead.get_source_display }}</span>
                 </td>
                 <td class="lead-table__actions">
                   <a class="btn btn-icon btn-sm btn-text lead-table__open" href="{% url 'lead_detail' lead.pk %}" title="Открыть заявку" aria-label="Открыть заявку от {{ lead.name }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>
@@ -61,25 +52,17 @@
           <div class="lead-mobile-card__head">
             <input class="form-check-input" type="checkbox" name="lead_ids" value="{{ lead.pk }}" form="lead-bulk-form" aria-label="Выбрать заявку от {{ lead.name }}" x-model="selected">
             <div class="lead-mobile-card__person">
-              <a class="lead-mobile-card__name" href="{% url 'lead_detail' lead.pk %}">{{ lead.name }}</a>
+              <a class="lead-mobile-card__name" href="{% url 'lead_detail' lead.pk %}">{{ lead.name }}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>
               <a class="lead-mobile-card__phone" href="tel:{{ lead.phone }}">{{ lead.phone }}</a>
             </div>
             {% include "properties/includes/lead_status_badge.html" %}
           </div>
           <div class="lead-mobile-card__body">
-            <p class="lead-mobile-card__object"><span>Объект</span><strong>{{ lead.property.title }}</strong></p>
-            {% if lead.message %}<p class="lead-mobile-card__message">{{ lead.message|truncatechars:120 }}</p>{% endif %}
-            <p class="detail-muted small mb-0">Ответственный: {% if lead.assigned_to %}{{ lead.assigned_to.username }}{% else %}Не назначен{% endif %}</p>
-            <p class="detail-muted small mb-0">Источник: {{ lead.get_source_display }} · {{ lead.get_qualification_display }}</p>
-            <p class="lead-mobile-card__message {% if lead.is_overdue %}lead-deadline--overdue{% endif %}"><strong>{{ lead.next_action }}</strong> · {{ lead.next_action_due_at|date:"d.m · H:i" }}{% if lead.is_overdue %} · Просрочено{% endif %}</p>
-            {% if not lead.first_contacted_at and lead.status != 'archived' %}<p class="lead-mobile-card__message">Требует ответа до {{ lead.first_response_due_at|date:"d.m · H:i" }}</p>{% endif %}
-          </div>
-          <div class="lead-mobile-card__footer">
-            <div>
-              <time datetime="{{ lead.created_at|date:'c' }}">{{ lead.created_at|date:"d.m.Y · H:i" }}</time>
-              {% if lead.client %}<span class="lead-mobile-card__stage">Этап клиента: {{ lead.client.get_status_display }}</span>{% endif %}
-            </div>
-            <a class="btn btn-icon btn-sm btn-outline-secondary lead-mobile-card__open" href="{% url 'lead_detail' lead.pk %}" title="Открыть заявку" aria-label="Открыть заявку от {{ lead.name }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>
+            <p class="lead-mobile-card__object"><strong>{{ lead.property.title }}</strong></p>
+            <p class="lead-mobile-card__message {% if lead.next_action_due_at < queue_now and lead.status != 'archived' %}lead-deadline--overdue{% endif %}"><strong>{{ lead.next_action }}</strong> · <time datetime="{{ lead.next_action_due_at|date:'c' }}">{{ lead.next_action_due_at|date:"d.m · H:i" }}</time>{% if lead.next_action_due_at < queue_now and lead.status != 'archived' %} · Просрочено{% endif %}</p>
+            <p class="lead-mobile-card__meta">Ответственный: {% if lead.assigned_to %}{% if lead.assigned_to.realtor_profile.display_name %}{{ lead.assigned_to.realtor_profile.display_name }}{% else %}{{ lead.assigned_to.username }}{% endif %}{% else %}Не назначен{% endif %}</p>
+            {% if not lead.first_contacted_at and lead.status != 'archived' %}<p class="lead-mobile-card__message {% if lead.first_response_overdue %}lead-deadline--overdue{% endif %}">{% if lead.first_response_overdue %}Ответ просрочен{% else %}Ответить до{% endif %} {{ lead.first_response_due_at|date:"d.m · H:i" }}</p>{% endif %}
+            <details class="record-details"><summary aria-label="Подробнее о заявке {{ lead.name }}">Подробнее<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary><dl><div><dt>Поступила</dt><dd><time datetime="{{ lead.created_at|date:'c' }}">{{ lead.created_at|date:"d.m.Y · H:i" }}</time></dd></div><div><dt>Источник</dt><dd>{{ lead.get_source_display }}</dd></div><div><dt>Квалификация</dt><dd>{{ lead.get_qualification_display }}</dd></div>{% if lead.client %}<div><dt>Этап клиента</dt><dd>{{ lead.client.get_status_display }}</dd></div>{% endif %}</dl>{% if lead.client and lead.client.leads.count > 1 %}<p>Повторное обращение</p>{% endif %}{% if lead.message %}<p class="record-details__message">{{ lead.message|linebreaksbr }}</p>{% endif %}</details>
           </div>
         </article>
       {% endfor %}
@@ -100,11 +83,7 @@
     {% endif %}
   {% else %}
     <section class="empty-state">
-      {% if has_any_leads and selected_queue %}
-        <h2>Очередь пуста</h2>
-        <p>Здесь появятся заявки, требующие внимания.</p>
-        <a class="btn btn-neutral" href="{% url 'lead_list' %}">Показать все</a>
-      {% elif has_any_leads and selected_status %}
+      {% if has_any_leads and selected_status %}
         <h2>В этом статусе заявок нет</h2>
         <p>Выберите другой статус или покажите все обращения.</p>
         <a class="btn btn-neutral" href="{% url 'lead_list' %}">Показать все</a>

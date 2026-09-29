@@ -2,7 +2,7 @@
 {% block title %}{% if object %}Сделка · {{ object.client.name }}{% else %}Новая сделка{% endif %}{% endblock %}
 {% block content %}
 <header class="ui-page-header detail-page-header">
-  <div><p class="ui-page-header__eyebrow">CRM · сделка</p><h1 class="ui-page-header__title">{% if object %}{{ object.client.name }} · {{ object.property.title }}{% else %}Новая сделка{% endif %}</h1><p class="ui-page-header__description">У сделки свой этап, задачи и показы — независимо от других обращений клиента.</p></div>
+  <div><p class="ui-page-header__eyebrow">CRM · сделка</p><h1 class="ui-page-header__title">{% if object %}{{ object.client.name }} · {{ object.property.title }}{% else %}Новая сделка{% endif %}</h1></div>
   <div class="ui-page-header__actions"><a href="{% url 'deal_board' %}" class="btn btn-neutral">Все сделки</a></div>
 </header>
 
@@ -15,7 +15,7 @@
 {% endif %}
 
 <section class="app-form-panel deal-form-panel">
-  <div class="app-form-panel__heading"><h2>{% if object %}Данные сделки{% else %}Начните работу по объекту{% endif %}</h2><p>Укажите клиента и объект, затем зафиксируйте этап. Задачи и показы добавляются ниже после создания сделки.</p></div>
+  <div class="app-form-panel__heading"><h2>{% if object %}Данные сделки{% else %}Начните работу по объекту{% endif %}</h2>{% if not object %}<p>Задачи и показы можно добавить после создания сделки.</p>{% endif %}</div>
   <form method="post" class="app-form" novalidate>
     {% csrf_token %}
     {{ form.lead }}
