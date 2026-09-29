@@ -3,6 +3,7 @@ from datetime import timedelta
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -14,7 +15,7 @@ from billing.rules import Operation
 
 from .forms import ShowingForm, TaskForm
 from .agency_access import workspace_queryset
-from .models import ClientInteraction, ClientReminder, Deal, Showing
+from .models import ClientInteraction, ClientReminder, Deal, Lead, Showing
 
 
 class WorkdayView(LoginRequiredMixin, TemplateView):
@@ -26,8 +27,9 @@ class WorkdayView(LoginRequiredMixin, TemplateView):
         today = timezone.localdate(now)
         today_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow = today_start + timedelta(days=1)
-        tasks = ClientReminder.objects.filter(owner=self.request.user, is_done=False).select_related("client", "deal", "deal__property")
+        tasks = ClientReminder.objects.filter(owner=self.request.user, is_done=False, lead__isnull=True).select_related("client", "deal", "deal__property")
         showings = Showing.objects.filter(owner=self.request.user).select_related("deal", "deal__client", "deal__property")
+        leads = workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(assigned_to=self.request.user).exclude(status="archived").select_related("property")
         context.update({
             "today": today,
             "overdue_tasks": tasks.filter(due_at__lt=now).order_by("due_at"),
@@ -35,6 +37,11 @@ class WorkdayView(LoginRequiredMixin, TemplateView):
             "unscheduled_tasks": tasks.filter(due_at__isnull=True).order_by("-created_at"),
             "today_showings": showings.filter(starts_at__date=today).order_by("starts_at"),
             "overdue_showings": showings.filter(status="planned", starts_at__lt=today_start).order_by("starts_at"),
+            "overdue_leads": leads.filter(Lead.overdue_filter(now)).order_by("next_action_due_at"),
+            "today_leads": leads.exclude(Lead.overdue_filter(now)).filter(
+                Q(next_action_due_at__gte=now, next_action_due_at__lt=tomorrow)
+                | Q(first_contacted_at__isnull=True, created_at__gte=today_start - timedelta(minutes=30), created_at__lt=tomorrow - timedelta(minutes=30))
+            ).order_by("next_action_due_at"),
         })
         return context
 
@@ -84,7 +91,7 @@ class TaskUpdateView(WorkdayFormMixin, UpdateView):
     context_object_name = "task"
 
     def get_queryset(self):
-        return ClientReminder.objects.filter(owner=self.request.user).select_related("client", "deal")
+        return ClientReminder.objects.filter(owner=self.request.user, lead__isnull=True).select_related("client", "deal")
 
     def form_valid(self, form):
         try:
@@ -103,6 +110,9 @@ class TaskUpdateView(WorkdayFormMixin, UpdateView):
 class TaskCompleteView(LoginRequiredMixin, View):
     def post(self, request, pk):
         task = get_object_or_404(ClientReminder, pk=pk, owner=request.user)
+        if task.lead_id:
+            messages.info(request, "Запишите итог и назначьте следующий шаг в карточке заявки.")
+            return redirect(f"{reverse('lead_detail', kwargs={'pk': task.lead_id})}?complete=1#lead-action")
         try:
             require_resource_action(request.user, task, Operation.EDIT_CRM)
         except TariffDenied as error:

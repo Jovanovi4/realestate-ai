@@ -227,6 +227,7 @@ class AgencyWorkflowTests(TestCase):
         self.assertRedirects(response, reverse("lead_detail", args=[self.lead.pk]))
         self.lead.refresh_from_db()
         self.assertEqual(self.lead.assigned_to, self.agent)
+        self.assertEqual(ClientReminder.objects.get(lead=self.lead, is_done=False).owner, self.agent)
         self.assertEqual(agency.memberships.count(), 2)
 
     def test_removed_member_loses_access_and_assignments_return_to_founder(self):
@@ -245,6 +246,7 @@ class AgencyWorkflowTests(TestCase):
         employee_client.refresh_from_db()
         employee_deal.refresh_from_db()
         self.assertEqual(self.lead.assigned_to, agency.owner)
+        self.assertEqual(ClientReminder.objects.get(lead=self.lead, is_done=False).owner, agency.owner)
         self.assertEqual((employee_property.owner, employee_client.owner, employee_deal.owner, employee_deal.responsible), (self.founder,) * 4)
         self.client.force_login(self.agent)
         self.assertEqual(self.client.get(reverse("property_detail", args=[self.property.pk])).status_code, 404)

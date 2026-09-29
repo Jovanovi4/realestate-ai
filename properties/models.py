@@ -1,8 +1,11 @@
+import builtins
 import uuid
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 
@@ -20,6 +23,10 @@ def default_realtor_benefits():
         {"icon": "◌", "title": "На связи", "description": "Отвечаем на вопросы и организуем просмотр в удобное время."},
         {"icon": "✓", "title": "Внимание к сделке", "description": "Сопровождаем процесс бережно и прозрачно."},
     ]
+
+
+def default_lead_next_action_due_at():
+    return timezone.now() + timedelta(minutes=30)
 
 
 def same_workspace(left, right):
@@ -659,10 +666,13 @@ class ClientReminder(models.Model):
     agency = models.ForeignKey(Agency, on_delete=models.PROTECT, null=True, blank=True, related_name="tasks")
     client = models.ForeignKey(Client, on_delete=models.PROTECT, null=True, blank=True, related_name="reminders", verbose_name="Клиент")
     deal = models.ForeignKey("Deal", on_delete=models.PROTECT, null=True, blank=True, related_name="tasks", verbose_name="Сделка")
+    lead = models.ForeignKey("Lead", on_delete=models.PROTECT, null=True, blank=True, related_name="action_tasks", verbose_name="Заявка")
     text = models.CharField(max_length=255, verbose_name="Задача")
     due_at = models.DateTimeField(null=True, blank=True, verbose_name="Срок выполнения")
     is_done = models.BooleanField(default=False, verbose_name="Выполнено")
     completed_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True, verbose_name="Отменено")
+    outcome_note = models.TextField(blank=True, verbose_name="Итог")
     overdue_notified_at = models.DateTimeField(null=True, blank=True, verbose_name="Уведомление о просрочке отправлено")
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -670,6 +680,9 @@ class ClientReminder(models.Model):
         ordering = ["is_done", "due_at"]
         verbose_name = "Задача"
         verbose_name_plural = "Задачи"
+        constraints = [
+            models.UniqueConstraint(fields=["lead"], condition=Q(lead__isnull=False, is_done=False), name="unique_open_task_per_lead"),
+        ]
 
     def clean(self):
         errors = {}
@@ -682,6 +695,11 @@ class ClientReminder(models.Model):
                 errors["deal"] = "Сделка находится в другом рабочем пространстве."
             if self.client_id and self.client_id != self.deal.client_id:
                 errors["client"] = "Клиент должен совпадать с клиентом сделки."
+        if self.lead_id:
+            if self.owner_id and not same_workspace(self, self.lead.property):
+                errors["lead"] = "Заявка находится в другом рабочем пространстве."
+            if self.client_id and self.lead.client_id and self.client_id != self.lead.client_id:
+                errors["client"] = "Клиент должен совпадать с клиентом заявки."
         if errors:
             raise ValidationError(errors)
 
@@ -707,6 +725,20 @@ class ClientReminder(models.Model):
 
 
 class Lead(models.Model):
+    SOURCE_CHOICES = [
+        ("landing", "Лендинг"),
+        ("avito", "Avito"),
+        ("cian", "Циан"),
+        ("recommendation", "Рекомендация"),
+        ("manual", "Добавлена вручную"),
+        ("other", "Другое"),
+    ]
+    QUALIFICATION_CHOICES = [
+        ("pending", "Не определён"),
+        ("qualified", "Целевой клиент"),
+        ("follow_up", "Требует уточнения"),
+        ("not_target", "Не целевой"),
+    ]
     CONTACT_PURPOSE_CHOICES = [
         ("viewing", "Записаться на просмотр"),
         ("presentation", "Получить презентацию"),
@@ -735,6 +767,11 @@ class Lead(models.Model):
     )
     message = models.TextField(blank=True, verbose_name="Комментарий")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Статус обработки")
+    source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default="landing", verbose_name="Источник обращения")
+    first_contacted_at = models.DateTimeField(null=True, blank=True, verbose_name="Первый контакт")
+    qualification = models.CharField(max_length=20, choices=QUALIFICATION_CHOICES, default="pending", verbose_name="Результат квалификации")
+    next_action = models.CharField(max_length=255, default="Связаться с клиентом", verbose_name="Следующее действие")
+    next_action_due_at = models.DateTimeField(default=default_lead_next_action_due_at, db_index=True, verbose_name="Срок следующего действия")
     archived_at = models.DateTimeField(null=True, blank=True, editable=False, db_index=True, verbose_name="Дата архивирования")
     interest_type = models.CharField(max_length=20, choices=INTEREST_CHOICES, default="buy", verbose_name="Интерес клиента")
     personal_data_consent_at = models.DateTimeField(null=True, blank=True, verbose_name="Согласие на обработку данных получено")
@@ -748,8 +785,35 @@ class Lead(models.Model):
         verbose_name = "Заявка"
         verbose_name_plural = "Заявки"
 
+    @classmethod
+    def overdue_filter(cls, now):
+        return Q(first_contacted_at__isnull=True, created_at__lt=now - timedelta(minutes=30)) | Q(next_action_due_at__lt=now)
+
+    @builtins.property
+    def first_response_due_at(self):
+        return self.created_at + timedelta(minutes=30) if self.created_at else None
+
+    @builtins.property
+    def first_response_overdue(self):
+        return bool(self.first_response_due_at and not self.first_contacted_at and self.first_response_due_at < timezone.now())
+
+    @builtins.property
+    def attention_due_at(self):
+        if not self.first_contacted_at and self.first_response_due_at:
+            return min(self.first_response_due_at, self.next_action_due_at)
+        return self.next_action_due_at
+
+    @builtins.property
+    def is_overdue(self):
+        return self.status != "archived" and (self.first_response_overdue or self.next_action_due_at < timezone.now())
+
     def clean(self):
         errors = {}
+        if self.status != "archived":
+            if not (self.next_action or "").strip():
+                errors["next_action"] = "Укажите следующее действие."
+            if self.next_action_due_at is None:
+                errors["next_action_due_at"] = "Укажите срок следующего действия."
         if self.client_id and self.property_id and not same_workspace(self.client, self.property):
             errors["client"] = "Клиент находится в другом рабочем пространстве."
         if self.assigned_to_id and self.property_id:
@@ -771,7 +835,36 @@ class Lead(models.Model):
             if fields is not None:
                 kwargs["update_fields"] = set(fields) | {"archived_at"}
         self.full_clean()
-        super().save(*args, **kwargs)
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            relevant = {"status", "assigned_to", "client", "property", "next_action", "next_action_due_at"}
+            if fields is None or relevant.intersection(fields):
+                self.sync_action_task()
+
+    def sync_action_task(self):
+        task = self.action_tasks.filter(is_done=False).select_for_update().first()
+        if self.status == "archived":
+            if task:
+                task.is_done = True
+                task.cancelled_at = timezone.now()
+                task.completed_at = None
+                task.save(update_fields=["is_done", "cancelled_at", "completed_at"])
+            return
+        expected = {
+            "owner_id": self.assigned_to_id,
+            "agency_id": self.property.agency_id,
+            "client_id": self.client_id,
+            "text": self.next_action,
+            "due_at": self.next_action_due_at,
+        }
+        if task is None:
+            ClientReminder.objects.create(lead=self, **expected)
+            return
+        changed = [key for key, value in expected.items() if getattr(task, key) != value]
+        if changed:
+            for key in changed:
+                setattr(task, key, expected[key])
+            task.save(update_fields=changed)
 
 
 class Deal(models.Model):

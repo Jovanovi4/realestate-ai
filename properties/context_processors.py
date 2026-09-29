@@ -10,13 +10,16 @@ def realtor_profile(request):
     if not request.user.is_authenticated:
         return {"ai_enabled": settings.AI_ENABLED}
     membership = membership_for(request.user)
-    new_leads = workspace_queryset(Lead.objects, request.user, prefix="property__").filter(status="new")
+    new_leads = workspace_queryset(Lead.objects, request.user, prefix="property__").exclude(status="archived").filter(first_contacted_at__isnull=True)
     if membership and membership.role == "agent":
         new_leads = new_leads.filter(assigned_to=request.user)
     new_leads_count = new_leads.count()
     today_start = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
-    overdue_count = ClientReminder.objects.filter(owner=request.user, is_done=False, due_at__lt=timezone.now()).count()
+    overdue_count = ClientReminder.objects.filter(owner=request.user, is_done=False, lead__isnull=True, due_at__lt=timezone.now()).count()
     overdue_count += Showing.objects.filter(owner=request.user, status="planned", starts_at__lt=today_start).count()
+    overdue_count += workspace_queryset(Lead.objects, request.user, prefix="property__").filter(
+        Lead.overdue_filter(timezone.now()), assigned_to=request.user,
+    ).exclude(status="archived").count()
     return {
         "ai_enabled": settings.AI_ENABLED,
         "nav_profile": RealtorProfile.objects.filter(user=request.user).first(),

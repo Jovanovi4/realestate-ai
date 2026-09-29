@@ -291,6 +291,81 @@ class LeadForm(forms.ModelForm):
         return normalize_phone(self.cleaned_data["phone"])
 
 
+class LeadProcessingForm(forms.Form):
+    source = forms.ChoiceField(label="Источник", choices=Lead.SOURCE_CHOICES)
+    qualification = forms.ChoiceField(label="Результат квалификации", choices=Lead.QUALIFICATION_CHOICES)
+    next_action = forms.CharField(label="Следующее действие", max_length=255)
+    next_action_due_at = forms.DateTimeField(
+        label="Когда выполнить",
+        input_formats=["%Y-%m-%dT%H:%M"],
+        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+    )
+    contact_method = forms.ChoiceField(
+        label="Способ связи", required=False,
+        choices=[("", "Выберите способ"), ("call", "Звонок"), ("message", "Сообщение")],
+    )
+    contact_note = forms.CharField(label="Итог разговора", required=False, max_length=2000, widget=forms.Textarea(attrs={"rows": 2}))
+
+    def __init__(self, *args, lead=None, **kwargs):
+        if lead is not None and not args and "initial" not in kwargs:
+            kwargs["initial"] = {
+                "source": lead.source,
+                "qualification": lead.qualification,
+                "next_action": lead.next_action,
+                "next_action_due_at": lead.next_action_due_at,
+            }
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            field.widget.attrs["id"] = f"id_lead_{name}"
+        mark_invalid_fields(self)
+
+    def clean_next_action(self):
+        value = self.cleaned_data["next_action"].strip()
+        if not value:
+            raise forms.ValidationError("Укажите следующее действие.")
+        return value
+
+    def clean_next_action_due_at(self):
+        value = self.cleaned_data["next_action_due_at"]
+        from django.utils import timezone
+        if value <= timezone.now():
+            raise forms.ValidationError("Укажите время в будущем.")
+        return value
+
+
+class LeadActionCompleteForm(forms.Form):
+    task_id = forms.IntegerField(widget=forms.HiddenInput)
+    outcome_note = forms.CharField(label="Итог действия", max_length=2000, widget=forms.Textarea(attrs={"rows": 3}))
+    next_action = forms.CharField(label="Следующее действие", max_length=255)
+    next_action_due_at = forms.DateTimeField(
+        label="Когда выполнить",
+        input_formats=["%Y-%m-%dT%H:%M"],
+        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for name, field in self.fields.items():
+            field.widget.attrs["id"] = f"id_complete_{name}"
+            if not isinstance(field.widget, forms.HiddenInput):
+                field.widget.attrs["class"] = "form-control"
+        mark_invalid_fields(self)
+
+    def clean_outcome_note(self):
+        return self.cleaned_data["outcome_note"].strip()
+
+    def clean_next_action(self):
+        return self.cleaned_data["next_action"].strip()
+
+    def clean_next_action_due_at(self):
+        from django.utils import timezone
+        value = self.cleaned_data["next_action_due_at"]
+        if value <= timezone.now():
+            raise forms.ValidationError("Укажите время в будущем.")
+        return value
+
+
 class ClientForm(forms.ModelForm):
     class Meta:
         model = Client

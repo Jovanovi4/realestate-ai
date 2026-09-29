@@ -31,7 +31,7 @@ from billing.rules import Operation, PolicyService
 from billing.services import AccountService
 
 from .forms import (
-    ClientDetailsForm, ClientForm, ClientInteractionForm, ClientReminderForm, LeadForm,
+    ClientDetailsForm, ClientForm, ClientInteractionForm, ClientReminderForm, LeadActionCompleteForm, LeadForm, LeadProcessingForm,
     PropertyForm, RegistrationForm, RealtorProfileForm,
 )
 from .agency_access import agency_for, deletable_queryset, may_manage_agency, workspace_queryset
@@ -935,6 +935,9 @@ class ClientReminderCompleteView(LoginRequiredMixin, View):
     def post(self, request, pk, reminder_pk):
         client = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
         reminder = get_object_or_404(client.reminders, pk=reminder_pk)
+        if reminder.lead_id:
+            messages.info(request, "Запишите итог и назначьте следующий шаг в карточке заявки.")
+            return redirect(f"{reverse('lead_detail', kwargs={'pk': reminder.lead_id})}?complete=1#lead-action")
         try:
             require_resource_action(request.user, client, Operation.EDIT_CRM)
         except TariffDenied as error:
@@ -1003,10 +1006,15 @@ class LeadListView(LoginRequiredMixin, ListView):
         queryset = workspace_queryset(Lead.objects, self.request.user, prefix="property__").select_related("property", "client", "assigned_to").prefetch_related("client__leads")
         if self.request.GET.get("assigned") == "mine":
             queryset = queryset.filter(assigned_to=self.request.user)
+        queue = self.request.GET.get("queue")
+        if queue == "reply":
+            queryset = queryset.exclude(status="archived").filter(first_contacted_at__isnull=True)
+        elif queue == "overdue":
+            queryset = queryset.exclude(status="archived").filter(Lead.overdue_filter(timezone.now()))
         status = self.request.GET.get("status")
         if status in dict(Lead.STATUS_CHOICES):
             queryset = queryset.filter(status=status)
-        return queryset
+        return queryset.order_by("next_action_due_at", "pk") if queue in ("reply", "overdue") else queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1014,20 +1022,37 @@ class LeadListView(LoginRequiredMixin, ListView):
         requested_status = self.request.GET.get("status", "")
         selected_status = requested_status if requested_status in dict(Lead.STATUS_CHOICES) else ""
         selected_assigned = self.request.GET.get("assigned") == "mine"
+        selected_queue = self.request.GET.get("queue", "")
+        if selected_queue not in ("reply", "overdue"):
+            selected_queue = ""
         count_queryset = workspace_queryset(Lead.objects, self.request.user, prefix="property__")
         if selected_assigned:
             count_queryset = count_queryset.filter(assigned_to=self.request.user)
+        total_leads = count_queryset.count()
+        reply_count = count_queryset.exclude(status="archived").filter(first_contacted_at__isnull=True).count()
+        overdue_count = count_queryset.exclude(status="archived").filter(Lead.overdue_filter(timezone.now())).count()
+        if selected_queue == "reply":
+            count_queryset = count_queryset.exclude(status="archived").filter(first_contacted_at__isnull=True)
+        elif selected_queue == "overdue":
+            count_queryset = count_queryset.exclude(status="archived").filter(Lead.overdue_filter(timezone.now()))
         counts = {
             row["status"]: row["total"]
             for row in count_queryset
             .values("status")
             .annotate(total=Count("id"))
         }
-        total_leads = sum(counts.values())
+        filtered_total = sum(counts.values())
         context["selected_status"] = selected_status
         context["selected_assigned"] = selected_assigned
-        context["status_tabs"] = [
+        context["selected_queue"] = selected_queue
+        context["queue_now"] = timezone.now()
+        context["queue_tabs"] = [
             {"value": "", "label": "Все", "count": total_leads},
+            {"value": "reply", "label": "Требует ответа", "count": reply_count},
+            {"value": "overdue", "label": "Просрочено", "count": overdue_count},
+        ]
+        context["status_tabs"] = [
+            {"value": "", "label": "Все", "count": filtered_total},
             *[
                 {"value": value, "label": label, "count": counts.get(value, 0)}
                 for value, label in Lead.STATUS_CHOICES
@@ -1035,7 +1060,7 @@ class LeadListView(LoginRequiredMixin, ListView):
         ]
         context["has_any_leads"] = total_leads > 0
         context["can_bulk_delete"] = not agency_for(self.request.user) or may_manage_agency(self.request.user)
-        context["pagination_query"] = "&".join(filter(None, [f"status={selected_status}" if selected_status else "", "assigned=mine" if selected_assigned else ""]))
+        context["pagination_query"] = "&".join(filter(None, [f"queue={selected_queue}" if selected_queue else "", f"status={selected_status}" if selected_status else "", "assigned=mine" if selected_assigned else ""]))
         context["demo_test_completed"] = (
             self.request.GET.get("demo_test") == "1"
             and workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(is_demo=True).exists()
@@ -1053,6 +1078,15 @@ class LeadDetailView(LoginRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context["processing_form"] = kwargs.get("processing_form") or LeadProcessingForm(lead=self.object)
+        context["queue_now"] = timezone.now()
+        context["current_task"] = self.object.action_tasks.filter(is_done=False).first()
+        context["completed_actions"] = self.object.action_tasks.filter(is_done=True).order_by("-completed_at", "-pk")
+        context["complete_open"] = self.request.GET.get("complete") == "1"
+        context["complete_form"] = kwargs.get("complete_form") or LeadActionCompleteForm(initial={
+            "task_id": context["current_task"].pk if context["current_task"] else None,
+            "next_action_due_at": timezone.localtime(timezone.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M"),
+        })
         context["latest_ai_reply"] = self.object.ai_contents.filter(content_type="lead_reply").first()
         context["can_assign"] = bool(self.object.property.agency_id and may_manage_agency(self.request.user))
         context["can_delete"] = not self.object.property.agency_id or may_manage_agency(self.request.user)
@@ -1067,6 +1101,129 @@ class LeadDetailView(LoginRequiredMixin, DetailView):
             ).first()
         context["linked_deal"] = active_deal or workspace_queryset(self.object.deals.all(), self.request.user).first()
         return context
+
+
+class LeadProcessView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        lead = get_object_or_404(
+            workspace_queryset(Lead.objects, request.user, prefix="property__").select_related("property", "client"),
+            pk=pk,
+        )
+        if lead.status == "archived":
+            messages.error(request, "Заявка в архиве. Сначала восстановите её через список заявок.")
+            return redirect("lead_detail", pk=pk)
+        form = LeadProcessingForm(request.POST)
+        action = request.POST.get("action")
+        if action not in ("save", "contacted"):
+            form.add_error(None, "Неизвестное действие.")
+        if form.is_valid() and action == "contacted":
+            if not form.cleaned_data["contact_method"]:
+                form.add_error("contact_method", "Укажите способ связи.")
+            if form.cleaned_data["qualification"] == "pending":
+                form.add_error("qualification", "Укажите результат квалификации или выберите «Требует уточнения».")
+        if form.is_valid():
+            try:
+                require_resource_action(request.user, lead.property, Operation.EDIT_CRM)
+            except TariffDenied as error:
+                form.add_error(None, error.message)
+                return self.render_invalid(request, lead, form, status=403)
+            with transaction.atomic():
+                lead = get_object_or_404(
+                    workspace_queryset(Lead.objects.select_for_update(), request.user, prefix="property__"), pk=pk,
+                )
+                if lead.status == "archived":
+                    messages.error(request, "Заявка уже перенесена в архив.")
+                    return redirect("lead_detail", pk=pk)
+                if action == "contacted" and lead.first_contacted_at:
+                    messages.info(request, "Первый контакт по этой заявке уже зафиксирован.")
+                    return redirect("lead_detail", pk=pk)
+                lead.source = form.cleaned_data["source"]
+                lead.qualification = form.cleaned_data["qualification"]
+                lead.next_action = form.cleaned_data["next_action"]
+                lead.next_action_due_at = form.cleaned_data["next_action_due_at"]
+                fields = ["source", "qualification", "next_action", "next_action_due_at", "updated_at"]
+                if action == "contacted":
+                    lead.first_contacted_at = timezone.now()
+                    fields.append("first_contacted_at")
+                    if lead.status == "new":
+                        lead.status = "read"
+                        fields.append("status")
+                lead.save(update_fields=fields)
+                if action == "contacted" and lead.client_id:
+                    Client.objects.filter(pk=lead.client_id, first_contacted_at__isnull=True).update(first_contacted_at=lead.first_contacted_at)
+                    ClientInteraction.objects.create(
+                        client_id=lead.client_id,
+                        lead=lead,
+                        interaction_type=form.cleaned_data["contact_method"],
+                        text=form.cleaned_data["contact_note"] or "Первый контакт по заявке.",
+                    )
+            messages.success(request, "Первый контакт и следующий шаг сохранены." if action == "contacted" else "Обработка заявки обновлена.")
+            return redirect("lead_detail", pk=pk)
+        return self.render_invalid(request, lead, form)
+
+    @staticmethod
+    def render_invalid(request, lead, form, status=200):
+        detail = LeadDetailView()
+        detail.request = request
+        detail.object = lead
+        context = detail.get_context_data(processing_form=form)
+        return render(request, detail.template_name, context, status=status)
+
+
+class LeadActionCompleteView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        lead = get_object_or_404(
+            workspace_queryset(Lead.objects, request.user, prefix="property__").select_related("property", "client"), pk=pk,
+        )
+        if lead.status == "archived":
+            messages.error(request, "Заявка в архиве. Сначала восстановите её.")
+            return redirect("lead_detail", pk=pk)
+        form = LeadActionCompleteForm(request.POST)
+        if not form.is_valid():
+            return self.render_invalid(request, lead, form)
+        try:
+            require_resource_action(request.user, lead.property, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            form.add_error(None, error.message)
+            return self.render_invalid(request, lead, form, status=403)
+        with transaction.atomic():
+            lead = get_object_or_404(
+                workspace_queryset(Lead.objects.select_for_update(), request.user, prefix="property__"), pk=pk,
+            )
+            task = get_object_or_404(lead.action_tasks.select_for_update(), pk=form.cleaned_data["task_id"])
+            if task.is_done:
+                messages.info(request, "Это действие уже завершено.")
+                return redirect("lead_detail", pk=pk)
+            if lead.status == "archived":
+                messages.error(request, "Заявка уже перенесена в архив.")
+                return redirect("lead_detail", pk=pk)
+            task.is_done = True
+            task.completed_at = timezone.now()
+            task.outcome_note = form.cleaned_data["outcome_note"]
+            task.save(update_fields=["is_done", "completed_at", "outcome_note"])
+            lead.next_action = form.cleaned_data["next_action"]
+            lead.next_action_due_at = form.cleaned_data["next_action_due_at"]
+            lead.save(update_fields=["next_action", "next_action_due_at", "updated_at"])
+            if lead.client_id:
+                ClientInteraction.objects.create(
+                    client_id=lead.client_id,
+                    lead=lead,
+                    interaction_type="note",
+                    text=(
+                        f"Действие «{task.text}» завершено. Итог: {task.outcome_note} "
+                        f"Следующий шаг: {lead.next_action} до {timezone.localtime(lead.next_action_due_at):%d.%m.%Y %H:%M}."
+                    ),
+                )
+        messages.success(request, "Итог сохранён. Следующее действие назначено.")
+        return redirect("lead_detail", pk=pk)
+
+    @staticmethod
+    def render_invalid(request, lead, form, status=200):
+        detail = LeadDetailView()
+        detail.request = request
+        detail.object = lead
+        context = detail.get_context_data(complete_form=form)
+        return render(request, detail.template_name, context, status=status)
 
 class LeadBulkStatusUpdateView(LoginRequiredMixin, View):
     def post(self, request):

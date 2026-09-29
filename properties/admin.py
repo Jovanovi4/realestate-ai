@@ -90,9 +90,9 @@ class LeadAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
-    list_display = ("name", "phone", "contact_purpose", "client", "property", "assigned_to", "status", "personal_data_consent_at", "created_at")
+    list_display = ("name", "phone", "source", "assigned_to", "qualification", "first_contacted_at", "next_action_due_at", "status", "created_at")
     search_fields = ("name", "phone", "property__title")
-    list_filter = ("contact_purpose", "status")
+    list_filter = ("source", "qualification", "contact_purpose", "status")
 
 
 @admin.register(Client)
@@ -110,8 +110,16 @@ class ClientInteractionAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
 
 @admin.register(ClientReminder)
 class ClientReminderAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
-    list_display = ("text", "owner", "agency", "client", "deal", "due_at", "is_done")
+    actions = None
+    exclude = ("lead",)
+    list_display = ("text", "owner", "agency", "client", "deal", "lead", "due_at", "is_done", "cancelled_at")
     list_filter = ("is_done",)
+
+    def has_change_permission(self, request, obj=None):
+        return not (obj and obj.lead_id) and super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return not (obj and obj.lead_id) and super().has_delete_permission(request, obj)
 
 
 @admin.register(Deal)

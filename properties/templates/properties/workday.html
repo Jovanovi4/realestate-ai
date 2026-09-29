@@ -2,13 +2,16 @@
 {% block title %}Мой день{% endblock %}
 {% block content %}
 <header class="ui-page-header">
-  <div><p class="ui-page-header__eyebrow">Рабочее пространство</p><h1 class="ui-page-header__title">Мой день</h1><p class="ui-page-header__description">Показы, задачи и то, что требует внимания сегодня · {{ today|date:"d.m.Y" }}.</p></div>
+  <div><p class="ui-page-header__eyebrow">Рабочее пространство</p><h1 class="ui-page-header__title">Мой день</h1><p class="ui-page-header__description">Заявки, показы и задачи на сегодня · {{ today|date:"d.m.Y" }}.</p></div>
   <div class="ui-page-header__actions"><a href="{% url 'showing_create' %}" class="btn btn-neutral">Назначить показ</a><a href="{% url 'task_create' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Новая задача</a></div>
 </header>
 
-{% if overdue_tasks or overdue_showings %}
+{% if overdue_tasks or overdue_showings or overdue_leads %}
 <section class="detail-section workday-section workday-section--urgent" aria-labelledby="workday-overdue-title">
   <div class="detail-section__heading"><div><span class="detail-kicker">Требует внимания</span><h2 id="workday-overdue-title">Просрочено</h2></div></div>
+  {% for lead in overdue_leads %}
+    <article class="workday-item"><div class="workday-item__time lead-deadline--overdue">{{ lead.attention_due_at|date:"d.m · H:i" }}</div><div class="workday-item__body"><a href="{% url 'lead_detail' lead.pk %}"><strong>{% if lead.first_response_overdue %}Ответить клиенту{% else %}{{ lead.next_action }}{% endif %}</strong></a><span>Заявка · {{ lead.name }} · {{ lead.property.title }}{% if not lead.first_contacted_at %} · Требует первого ответа{% endif %}</span></div><a class="btn btn-sm btn-neutral" href="{% url 'lead_detail' lead.pk %}?complete=1#lead-action">Записать итог</a></article>
+  {% endfor %}
   {% for task in overdue_tasks %}
     <article class="workday-item"><div class="workday-item__time">{{ task.due_at|date:"d.m · H:i" }}</div><div class="workday-item__body"><a href="{% url 'task_detail' task.pk %}"><strong>{{ task.text }}</strong></a><span>{% if task.deal %}{{ task.deal.property.title }} · {% endif %}{% if task.client %}{{ task.client.name }}{% else %}Общая задача{% endif %}</span></div><form method="post" action="{% url 'task_complete' task.pk %}">{% csrf_token %}<input type="hidden" name="next" value="{% url 'workday' %}"><button class="btn btn-sm btn-neutral" type="submit">Готово</button></form></article>
   {% endfor %}
@@ -17,6 +20,8 @@
   {% endfor %}
 </section>
 {% endif %}
+
+{% if today_leads %}<section class="detail-section workday-section" aria-labelledby="workday-leads-title"><div class="detail-section__heading"><div><span class="detail-kicker">Обращения</span><h2 id="workday-leads-title">Заявки сегодня</h2></div></div>{% for lead in today_leads %}<article class="workday-item"><div class="workday-item__time">{{ lead.attention_due_at|date:"H:i" }}</div><div class="workday-item__body"><a href="{% url 'lead_detail' lead.pk %}"><strong>{% if not lead.first_contacted_at and lead.first_response_due_at < lead.next_action_due_at %}Ответить клиенту{% else %}{{ lead.next_action }}{% endif %}</strong></a><span>{{ lead.name }} · {{ lead.property.title }}{% if not lead.first_contacted_at %} · Требует ответа{% endif %}</span></div><a class="btn btn-sm btn-neutral" href="{% url 'lead_detail' lead.pk %}?complete=1#lead-action">Записать итог</a></article>{% endfor %}</section>{% endif %}
 
 <div class="workday-grid">
   <section class="detail-section workday-section" aria-labelledby="workday-showings-title"><div class="detail-section__heading"><div><span class="detail-kicker">Встречи</span><h2 id="workday-showings-title">Показы сегодня</h2></div></div>
