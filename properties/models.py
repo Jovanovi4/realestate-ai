@@ -286,6 +286,7 @@ class Property(models.Model):
 
     landing_slug = models.SlugField(max_length=64, unique=True, null=True, blank=True)
     landing_published = models.BooleanField(default=False, verbose_name="Лендинг опубликован")
+    telegram_published = models.BooleanField(default=False, verbose_name="Объявление в Telegram")
     landing_template = models.CharField(
         max_length=30,
         choices=LANDING_TEMPLATES,
@@ -356,8 +357,11 @@ class Property(models.Model):
             lifecycle_fields.update({"archived_at", "status_before_archive"})
         # Restore never republishes a landing or re-enables an XML feed implicitly.
         if effective_status == "archived" or (writes_status and old and old["status"] == "archived"):
-            self.landing_published = self.avito_export = self.cian_export = False
-            lifecycle_fields.update({"landing_published", "avito_export", "cian_export"})
+            self.landing_published = self.telegram_published = self.avito_export = self.cian_export = False
+            lifecycle_fields.update({"landing_published", "telegram_published", "avito_export", "cian_export"})
+        elif writes_status and effective_status not in {"published", "available", "showing"}:
+            self.telegram_published = False
+            lifecycle_fields.add("telegram_published")
         if fields is not None:
             kwargs["update_fields"] = set(fields) | lifecycle_fields
         super().save(*args, **kwargs)
@@ -600,6 +604,7 @@ class Client(models.Model):
     ]
     SOURCE_CHOICES = [
         ("landing", "Лендинг"),
+        ("telegram_bot", "Telegram-бот"),
         ("avito", "Avito"),
         ("recommendation", "Рекомендация"),
         ("manual", "Добавлен вручную"),
@@ -725,8 +730,14 @@ class ClientReminder(models.Model):
 
 
 class Lead(models.Model):
+    OUTCOME_CHOICES = [
+        ("open", "В работе"),
+        ("converted", "Переведена в сделку"),
+        ("declined", "Закрыта без сделки"),
+    ]
     SOURCE_CHOICES = [
         ("landing", "Лендинг"),
+        ("telegram_bot", "Telegram-бот"),
         ("avito", "Avito"),
         ("cian", "Циан"),
         ("recommendation", "Рекомендация"),
@@ -757,6 +768,7 @@ class Lead(models.Model):
     property = models.ForeignKey(Property, on_delete=models.PROTECT, related_name="leads")
     assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_leads", verbose_name="Ответственный")
     client = models.ForeignKey(Client, on_delete=models.PROTECT, null=True, blank=True, related_name="leads")
+    telegram_subscriber = models.ForeignKey("TelegramSubscriber", on_delete=models.SET_NULL, null=True, blank=True, related_name="leads")
     name = models.CharField(max_length=150, verbose_name="Имя")
     phone = models.CharField(max_length=30, verbose_name="Телефон")
     contact_purpose = models.CharField(
@@ -770,6 +782,10 @@ class Lead(models.Model):
     source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default="landing", verbose_name="Источник обращения")
     first_contacted_at = models.DateTimeField(null=True, blank=True, verbose_name="Первый контакт")
     qualification = models.CharField(max_length=20, choices=QUALIFICATION_CHOICES, default="pending", verbose_name="Результат квалификации")
+    outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES, default="open", db_index=True, verbose_name="Итог обработки")
+    outcome_reason = models.TextField(blank=True, verbose_name="Причина закрытия")
+    outcome_at = models.DateTimeField(null=True, blank=True, verbose_name="Дата завершения обработки")
+    outcome_deal = models.ForeignKey("Deal", on_delete=models.PROTECT, null=True, blank=True, related_name="converted_leads", verbose_name="Сделка по заявке")
     next_action = models.CharField(max_length=255, default="Связаться с клиентом", verbose_name="Следующее действие")
     next_action_due_at = models.DateTimeField(default=default_lead_next_action_due_at, db_index=True, verbose_name="Срок следующего действия")
     archived_at = models.DateTimeField(null=True, blank=True, editable=False, db_index=True, verbose_name="Дата архивирования")
@@ -787,7 +803,7 @@ class Lead(models.Model):
 
     @classmethod
     def overdue_filter(cls, now):
-        return Q(first_contacted_at__isnull=True, created_at__lt=now - timedelta(minutes=30)) | Q(next_action_due_at__lt=now)
+        return Q(outcome="open") & (Q(first_contacted_at__isnull=True, created_at__lt=now - timedelta(minutes=30)) | Q(next_action_due_at__lt=now))
 
     @builtins.property
     def first_response_due_at(self):
@@ -795,7 +811,7 @@ class Lead(models.Model):
 
     @builtins.property
     def first_response_overdue(self):
-        return bool(self.first_response_due_at and not self.first_contacted_at and self.first_response_due_at < timezone.now())
+        return bool(self.outcome == "open" and self.first_response_due_at and not self.first_contacted_at and self.first_response_due_at < timezone.now())
 
     @builtins.property
     def attention_due_at(self):
@@ -805,15 +821,21 @@ class Lead(models.Model):
 
     @builtins.property
     def is_overdue(self):
-        return self.status != "archived" and (self.first_response_overdue or self.next_action_due_at < timezone.now())
+        return self.status != "archived" and self.outcome == "open" and (self.first_response_overdue or self.next_action_due_at < timezone.now())
 
     def clean(self):
         errors = {}
-        if self.status != "archived":
+        if self.status != "archived" and self.outcome == "open":
             if not (self.next_action or "").strip():
                 errors["next_action"] = "Укажите следующее действие."
             if self.next_action_due_at is None:
                 errors["next_action_due_at"] = "Укажите срок следующего действия."
+        if self.outcome == "declined" and not self.outcome_reason.strip():
+            errors["outcome_reason"] = "Укажите причину закрытия заявки."
+        if self.outcome == "converted" and not self.outcome_deal_id:
+            errors["outcome_deal"] = "Укажите сделку по заявке."
+        if self.outcome_deal_id and (self.outcome_deal.client_id != self.client_id or self.outcome_deal.property_id != self.property_id):
+            errors["outcome_deal"] = "Сделка должна относиться к клиенту и объекту заявки."
         if self.client_id and self.property_id and not same_workspace(self.client, self.property):
             errors["client"] = "Клиент находится в другом рабочем пространстве."
         if self.assigned_to_id and self.property_id:
@@ -830,20 +852,24 @@ class Lead(models.Model):
         if not self.assigned_to_id and self.property_id:
             self.assigned_to_id = self.property.owner_id
         fields = kwargs.get("update_fields")
+        if fields is None or "outcome" in fields:
+            self.outcome_at = (self.outcome_at or timezone.now()) if self.outcome != "open" else None
+            if fields is not None:
+                kwargs["update_fields"] = set(kwargs.get("update_fields", fields)) | {"outcome_at"}
         if fields is None or "status" in fields:
             self.archived_at = (self.archived_at or timezone.now()) if self.status == "archived" else None
             if fields is not None:
-                kwargs["update_fields"] = set(fields) | {"archived_at"}
+                kwargs["update_fields"] = set(kwargs.get("update_fields", fields)) | {"archived_at"}
         self.full_clean()
         with transaction.atomic():
             super().save(*args, **kwargs)
-            relevant = {"status", "assigned_to", "client", "property", "next_action", "next_action_due_at"}
+            relevant = {"status", "outcome", "assigned_to", "client", "property", "next_action", "next_action_due_at"}
             if fields is None or relevant.intersection(fields):
                 self.sync_action_task()
 
     def sync_action_task(self):
         task = self.action_tasks.filter(is_done=False).select_for_update().first()
-        if self.status == "archived":
+        if self.status == "archived" or self.outcome != "open":
             if task:
                 task.is_done = True
                 task.cancelled_at = timezone.now()
@@ -1037,3 +1063,66 @@ class AuditEvent(models.Model):
 
     def __str__(self):
         return f"{self.get_action_display()}: {self.model_name} #{self.object_pk}"
+
+
+class TelegramFeed(models.Model):
+    """One buyer audience for a personal or team workspace."""
+
+    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True, related_name="telegram_feed")
+    agency = models.OneToOneField(Agency, on_delete=models.CASCADE, null=True, blank=True, related_name="telegram_feed")
+    code = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+
+    def clean(self):
+        if bool(self.owner_id) == bool(self.agency_id):
+            raise ValidationError("Укажите одно рабочее пространство.")
+
+    def __str__(self):
+        return str(self.agency or self.owner)
+
+
+class TelegramSubscriber(models.Model):
+    feed = models.ForeignKey(TelegramFeed, on_delete=models.CASCADE, related_name="subscribers")
+    chat_id = models.BigIntegerField()
+    user_id = models.BigIntegerField()
+    display_name = models.CharField(max_length=150, blank=True)
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["feed", "chat_id"], name="unique_telegram_feed_chat")]
+
+    def __str__(self):
+        return self.display_name or str(self.chat_id)
+
+
+class TelegramConversation(models.Model):
+    chat_id = models.BigIntegerField(unique=True)
+    pending_property = models.ForeignKey(Property, on_delete=models.SET_NULL, null=True, blank=True)
+    pending_phone = models.CharField(max_length=30, blank=True)
+    pending_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class TelegramInboundUpdate(models.Model):
+    update_id = models.BigIntegerField(unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class TelegramPublication(models.Model):
+    property = models.ForeignKey(Property, on_delete=models.PROTECT, related_name="telegram_publications")
+    feed = models.ForeignKey(TelegramFeed, on_delete=models.PROTECT, related_name="publications")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.property} · {self.created_at:%d.%m.%Y %H:%M}"
+
+
+class TelegramDelivery(models.Model):
+    publication = models.ForeignKey(TelegramPublication, on_delete=models.CASCADE, related_name="deliveries")
+    subscriber = models.ForeignKey(TelegramSubscriber, on_delete=models.CASCADE, related_name="deliveries")
+    sent_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_error = models.CharField(max_length=255, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["publication", "subscriber"], name="unique_telegram_publication_delivery")]

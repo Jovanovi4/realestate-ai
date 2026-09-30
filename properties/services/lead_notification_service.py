@@ -22,7 +22,7 @@ class LeadNotificationService:
     @staticmethod
     def _message(lead, lead_url):
         lines = [
-            "Новая заявка с лендинга",
+            "Новая заявка с лендинга" if lead.source == "landing" else f"Новая заявка: {lead.get_source_display()}",
             f"Объект: {lead.property.title}",
             f"Клиент: {lead.name}",
             f"Телефон: {lead.phone}",

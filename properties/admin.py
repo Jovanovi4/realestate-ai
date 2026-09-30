@@ -4,7 +4,7 @@ from django.db import transaction
 from billing.enforcement import enabled as billing_enforcement_enabled
 from .forms import SafeImageField
 
-from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, RealtorProfile, Showing, UserLegalAcceptance
+from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, RealtorProfile, Showing, TelegramDelivery, TelegramPublication, TelegramSubscriber, UserLegalAcceptance
 
 
 class BillingReadOnlyWhenEnforced:
@@ -18,6 +18,36 @@ class BillingReadOnlyWhenEnforced:
 
     def has_delete_permission(self, request, obj=None):
         return not billing_enforcement_enabled() and super().has_delete_permission(request, obj)
+
+
+class TelegramReadOnlyAdmin(admin.ModelAdmin):
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(TelegramSubscriber)
+class TelegramSubscriberAdmin(TelegramReadOnlyAdmin):
+    list_display = ("feed", "chat_id", "display_name", "active", "created_at")
+    list_filter = ("active",)
+    search_fields = ("chat_id", "display_name")
+
+
+@admin.register(TelegramPublication)
+class TelegramPublicationAdmin(TelegramReadOnlyAdmin):
+    list_display = ("property", "feed", "created_at")
+    search_fields = ("property__title",)
+
+
+@admin.register(TelegramDelivery)
+class TelegramDeliveryAdmin(TelegramReadOnlyAdmin):
+    list_display = ("publication", "subscriber", "sent_at", "attempts", "last_error")
+    list_filter = ("sent_at",)
 
 
 @admin.register(Property)
@@ -85,14 +115,14 @@ class PropertyAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
 
 @admin.register(Lead)
 class LeadAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
-    readonly_fields = ("archived_at",)
+    readonly_fields = ("archived_at", "outcome_at")
 
     def has_delete_permission(self, request, obj=None):
         return False
 
-    list_display = ("name", "phone", "source", "assigned_to", "qualification", "first_contacted_at", "next_action_due_at", "status", "created_at")
+    list_display = ("name", "phone", "source", "assigned_to", "qualification", "outcome", "first_contacted_at", "next_action_due_at", "status", "created_at")
     search_fields = ("name", "phone", "property__title")
-    list_filter = ("source", "qualification", "contact_purpose", "status")
+    list_filter = ("source", "qualification", "outcome", "contact_purpose", "status")
 
 
 @admin.register(Client)

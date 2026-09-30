@@ -3,9 +3,10 @@
 {% block content %}
 <header class="ui-page-header">
   <div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Клиенты</h1><p class="ui-page-header__description">Единая база обращений, задач и сделок.</p></div>
-  <div class="ui-page-header__actions">
-    <a class="btn btn-neutral" href="{% url 'client_board' %}">Статусы клиентов</a>
-    <a class="btn btn-neutral" href="{% url 'client_export' %}">Экспорт CSV</a>
+  <div class="ui-page-header__actions client-page-actions">
+    <a class="btn btn-icon btn-neutral" href="{% url 'client_board' %}" aria-label="Статусы клиентов" data-tooltip="Статусы клиентов"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-kanban"></use></svg></a>
+    <a class="btn btn-icon btn-neutral" href="{% url 'client_export' %}" aria-label="Экспорт CSV" data-tooltip="Экспорт CSV"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-download"></use></svg></a>
+    <a class="btn btn-icon btn-neutral" href="{% url 'client_import' %}" aria-label="Импорт CSV" data-tooltip="Импорт CSV"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-upload"></use></svg></a>
     <a class="btn btn-primary" href="{% url 'client_create' %}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Добавить клиента</a>
   </div>
 </header>

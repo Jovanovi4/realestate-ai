@@ -25,6 +25,7 @@
     <div class="detail-form-grid">
       <div class="app-field">{% include "includes/form_field.html" with field=form.client %}</div>
       <div class="app-field">{% include "includes/form_field.html" with field=form.property %}</div>
+      {% if form.responsible %}<div class="app-field">{% include "includes/form_field.html" with field=form.responsible %}</div>{% endif %}
       <div class="app-field">{% include "includes/form_field.html" with field=form.stage %}</div>
       <div class="app-field">{% include "includes/form_field.html" with field=form.expected_commission %}<p class="form-text">Укажите сумму в валюте выбранного объекта.</p></div>
       <div class="app-field is-wide">{% include "includes/form_field.html" with field=form.outcome_note %}</div>

@@ -366,6 +366,19 @@ class LeadActionCompleteForm(forms.Form):
         return value
 
 
+class LeadDeclineForm(forms.Form):
+    reason = forms.CharField(
+        label="Причина закрытия", max_length=2000,
+        widget=forms.Textarea(attrs={"class": "form-control", "id": "id_lead_decline_reason", "rows": 3, "placeholder": "Почему работа по заявке завершена?"}),
+    )
+
+    def clean_reason(self):
+        reason = self.cleaned_data["reason"].strip()
+        if not reason:
+            raise forms.ValidationError("Укажите причину закрытия заявки.")
+        return reason
+
+
 class ClientForm(forms.ModelForm):
     class Meta:
         model = Client
@@ -395,6 +408,16 @@ class ClientDetailsForm(ClientForm):
             "name", "phone", "preferred_contact_time", "budget", "preferred_area",
             "source", "notes", "outcome_reason",
         )
+
+
+class ClientCsvImportForm(forms.Form):
+    file = forms.FileField(label="Файл CSV", widget=forms.FileInput(attrs={"accept": ".csv,text/csv", "class": "form-control"}))
+
+    def clean_file(self):
+        upload = self.cleaned_data["file"]
+        if upload.size > 1_000_000:
+            raise forms.ValidationError("Файл слишком большой. Максимум — 1 МБ.")
+        return upload
 
 
 class DealForm(forms.ModelForm):
@@ -437,6 +460,14 @@ class DealForm(forms.ModelForm):
         lead = cleaned_data.get("lead")
         responsible = cleaned_data.get("responsible")
         stage = cleaned_data.get("stage")
+        if "responsible" in self.fields and not responsible and "responsible" not in self.errors:
+            if self.instance.pk:
+                responsible = self.instance.responsible
+            elif lead and lead.assigned_to_id and self.fields["responsible"].queryset.filter(pk=lead.assigned_to_id).exists():
+                responsible = lead.assigned_to
+            else:
+                responsible = self.owner
+            cleaned_data["responsible"] = responsible
         if not self.instance.pk:
             self.instance.owner = self.owner
             if property:
@@ -447,6 +478,11 @@ class DealForm(forms.ModelForm):
             self.add_error("responsible", "Личная сделка может быть назначена только вам.")
         if lead and client and property and (lead.client_id != client.pk or lead.property_id != property.pk):
             self.add_error("lead", "Заявка не относится к выбранным клиенту и объекту.")
+        if lead and not self.instance.pk:
+            if lead.status == "archived" or lead.outcome != "open":
+                self.add_error("lead", "Заявка уже завершена или находится в архиве.")
+            elif lead.qualification != "qualified" or not lead.first_contacted_at:
+                self.add_error("lead", "Сначала зафиксируйте первый контакт и квалифицируйте заявку.")
         if client and property and stage in Deal.ACTIVE_STAGES:
             if Deal.objects.filter(client=client, property=property, stage__in=Deal.ACTIVE_STAGES).exclude(pk=self.instance.pk).exists():
                 self.add_error(None, "По этому клиенту и объекту уже есть активная сделка.")

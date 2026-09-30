@@ -12,6 +12,7 @@ from billing.rules import Operation
 from .forms import DealForm
 from .agency_access import workspace_queryset
 from .models import ClientInteraction, ClientReminder, Deal, Lead, Showing
+from .services.lead_outcome_service import convert_lead_to_deal
 
 
 class DealBoardView(LoginRequiredMixin, TemplateView):
@@ -86,13 +87,23 @@ class DealCreateView(DealFormMixin, CreateView):
         if not form.instance.responsible_id:
             form.instance.responsible = self.request.user
         with transaction.atomic():
+            lead = form.cleaned_data.get("lead")
+            if lead:
+                lead = get_object_or_404(
+                    workspace_queryset(Lead.objects.select_for_update(), self.request.user, prefix="property__"), pk=lead.pk,
+                )
+                if lead.status == "archived" or lead.outcome != "open" or lead.qualification != "qualified" or not lead.first_contacted_at:
+                    form.add_error("lead", "Заявка уже завершена либо не прошла первый контакт и квалификацию.")
+                    return self.render_to_response(self.get_context_data(form=form))
             response = super().form_valid(form)
-            ClientInteraction.objects.create(
-                client=self.object.client,
-                lead=self.object.lead,
-                interaction_type="status",
-                text=f"Создана сделка по объекту «{self.object.property.title}».",
-            )
+            if lead:
+                convert_lead_to_deal(lead, self.object)
+            else:
+                ClientInteraction.objects.create(
+                    client=self.object.client,
+                    interaction_type="status",
+                    text=f"Создана сделка по объекту «{self.object.property.title}».",
+                )
         messages.success(self.request, "Сделка создана.")
         return response
 

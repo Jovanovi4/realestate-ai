@@ -29,7 +29,7 @@ class WorkdayView(LoginRequiredMixin, TemplateView):
         tomorrow = today_start + timedelta(days=1)
         tasks = ClientReminder.objects.filter(owner=self.request.user, is_done=False, lead__isnull=True).select_related("client", "deal", "deal__property")
         showings = Showing.objects.filter(owner=self.request.user).select_related("deal", "deal__client", "deal__property")
-        leads = workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(assigned_to=self.request.user).exclude(status="archived").select_related("property")
+        leads = workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(assigned_to=self.request.user, outcome="open").exclude(status="archived").select_related("property")
         context.update({
             "today": today,
             "overdue_tasks": tasks.filter(due_at__lt=now).order_by("due_at"),

@@ -10,7 +10,7 @@ def realtor_profile(request):
     if not request.user.is_authenticated:
         return {"ai_enabled": settings.AI_ENABLED}
     membership = membership_for(request.user)
-    new_leads = workspace_queryset(Lead.objects, request.user, prefix="property__").exclude(status="archived").filter(first_contacted_at__isnull=True)
+    new_leads = workspace_queryset(Lead.objects, request.user, prefix="property__").exclude(status="archived").filter(outcome="open", first_contacted_at__isnull=True)
     if membership and membership.role == "agent":
         new_leads = new_leads.filter(assigned_to=request.user)
     new_leads_count = new_leads.count()

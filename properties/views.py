@@ -31,15 +31,16 @@ from billing.rules import Operation, PolicyService
 from billing.services import AccountService
 
 from .forms import (
-    ClientDetailsForm, ClientForm, ClientInteractionForm, ClientReminderForm, LeadActionCompleteForm, LeadForm, LeadProcessingForm,
+    ClientDetailsForm, ClientForm, ClientInteractionForm, ClientReminderForm, LeadActionCompleteForm, LeadDeclineForm, LeadForm, LeadProcessingForm,
     PropertyForm, RegistrationForm, RealtorProfileForm,
 )
 from .agency_access import agency_for, deletable_queryset, may_manage_agency, workspace_queryset
-from .models import AIContent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, PropertyImage, RealtorProfile, UserLegalAcceptance
+from .models import AIContent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, PropertyImage, RealtorProfile, TelegramFeed, UserLegalAcceptance
 from .services.avito_service import AvitoExportService
 from .services.cian_service import CianExportService
 from .services.demo_data_service import DemoDataService
 from .services.lead_notification_service import LeadNotificationService
+from .services.lead_outcome_service import convert_lead_to_deal
 from .services.public_form_security import PublicLeadFormSecurity
 from .services.presentation_service import PresentationError, PresentationService
 from .services.presentation_docx_service import PresentationDocxService
@@ -376,6 +377,11 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
         context["property_setup_hint"] = not (self.object.price and self.object.address and has_primary_image)
         context["can_delete"] = not self.object.agency_id or may_manage_agency(self.request.user)
         context["property_deals"] = workspace_queryset(Deal.objects.filter(property=self.object), self.request.user).select_related("client")[:5]
+        context["telegram_bot_ready"] = bool(settings.TELEGRAM_PUBLIC_ENABLED and settings.TELEGRAM_PUBLIC_BOT_TOKEN and settings.TELEGRAM_PUBLIC_BOT_USERNAME and settings.TELEGRAM_PUBLIC_WEBHOOK_SECRET and settings.ACCOUNT_PUBLIC_BASE_URL.startswith("https://"))
+        context["telegram_bot_username"] = settings.TELEGRAM_PUBLIC_BOT_USERNAME
+        if self.object.telegram_published:
+            feed = TelegramFeed.objects.filter(agency=self.object.agency).first() if self.object.agency_id else TelegramFeed.objects.filter(owner=self.object.owner).first()
+            context["telegram_subscriber_count"] = feed.subscribers.filter(active=True).count() if feed else 0
         return context
 
 
@@ -669,7 +675,7 @@ class RealtorProfileUpdateView(LoginRequiredMixin, UpdateView):
         context["statistics"] = {
             "properties": properties.count(),
             "published_landings": properties.filter(landing_published=True).count(),
-            "new_leads": workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(status="new").count(),
+            "new_leads": workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(status="new", outcome="open").count(),
         }
         return context
 
@@ -1059,6 +1065,7 @@ class LeadDetailView(LoginRequiredMixin, DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["processing_form"] = kwargs.get("processing_form") or LeadProcessingForm(lead=self.object)
+        context["decline_form"] = kwargs.get("decline_form") or LeadDeclineForm()
         context["queue_now"] = timezone.now()
         context["current_task"] = self.object.action_tasks.filter(is_done=False).first()
         context["completed_actions"] = self.object.action_tasks.filter(is_done=True).order_by("-completed_at", "-pk")
@@ -1067,8 +1074,7 @@ class LeadDetailView(LoginRequiredMixin, DetailView):
             "task_id": context["current_task"].pk if context["current_task"] else None,
             "next_action_due_at": timezone.localtime(timezone.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M"),
         })
-        context["latest_ai_reply"] = self.object.ai_contents.filter(content_type="lead_reply").first()
-        context["can_assign"] = bool(self.object.property.agency_id and may_manage_agency(self.request.user))
+        context["can_assign"] = bool(self.object.outcome == "open" and self.object.property.agency_id and may_manage_agency(self.request.user))
         context["can_delete"] = not self.object.property.agency_id or may_manage_agency(self.request.user)
         if context["can_assign"]:
             context["team_members"] = self.object.property.agency.memberships.select_related("user", "user__realtor_profile").order_by("user__username")
@@ -1079,7 +1085,8 @@ class LeadDetailView(LoginRequiredMixin, DetailView):
                 property_id=self.object.property_id,
                 stage__in=Deal.ACTIVE_STAGES,
             ).first()
-        context["linked_deal"] = active_deal or workspace_queryset(self.object.deals.all(), self.request.user).first()
+        context["linked_deal"] = self.object.outcome_deal or (active_deal if self.object.outcome == "open" else None) or workspace_queryset(self.object.deals.all(), self.request.user).first()
+        context["can_convert"] = bool(self.object.outcome == "open" and self.object.status != "archived" and self.object.client_id and self.object.first_contacted_at and self.object.qualification == "qualified")
         return context
 
 
@@ -1089,8 +1096,8 @@ class LeadProcessView(LoginRequiredMixin, View):
             workspace_queryset(Lead.objects, request.user, prefix="property__").select_related("property", "client"),
             pk=pk,
         )
-        if lead.status == "archived":
-            messages.error(request, "Заявка в архиве. Сначала восстановите её через список заявок.")
+        if lead.status == "archived" or lead.outcome != "open":
+            messages.error(request, "Заявка уже завершена или находится в архиве.")
             return redirect("lead_detail", pk=pk)
         form = LeadProcessingForm(request.POST)
         action = request.POST.get("action")
@@ -1111,8 +1118,8 @@ class LeadProcessView(LoginRequiredMixin, View):
                 lead = get_object_or_404(
                     workspace_queryset(Lead.objects.select_for_update(), request.user, prefix="property__"), pk=pk,
                 )
-                if lead.status == "archived":
-                    messages.error(request, "Заявка уже перенесена в архив.")
+                if lead.status == "archived" or lead.outcome != "open":
+                    messages.error(request, "Заявка уже завершена или находится в архиве.")
                     return redirect("lead_detail", pk=pk)
                 if action == "contacted" and lead.first_contacted_at:
                     messages.info(request, "Первый контакт по этой заявке уже зафиксирован.")
@@ -1155,8 +1162,8 @@ class LeadActionCompleteView(LoginRequiredMixin, View):
         lead = get_object_or_404(
             workspace_queryset(Lead.objects, request.user, prefix="property__").select_related("property", "client"), pk=pk,
         )
-        if lead.status == "archived":
-            messages.error(request, "Заявка в архиве. Сначала восстановите её.")
+        if lead.status == "archived" or lead.outcome != "open":
+            messages.error(request, "Заявка уже завершена или находится в архиве.")
             return redirect("lead_detail", pk=pk)
         form = LeadActionCompleteForm(request.POST)
         if not form.is_valid():
@@ -1174,8 +1181,8 @@ class LeadActionCompleteView(LoginRequiredMixin, View):
             if task.is_done:
                 messages.info(request, "Это действие уже завершено.")
                 return redirect("lead_detail", pk=pk)
-            if lead.status == "archived":
-                messages.error(request, "Заявка уже перенесена в архив.")
+            if lead.status == "archived" or lead.outcome != "open":
+                messages.error(request, "Заявка уже завершена или находится в архиве.")
                 return redirect("lead_detail", pk=pk)
             task.is_done = True
             task.completed_at = timezone.now()
@@ -1204,6 +1211,82 @@ class LeadActionCompleteView(LoginRequiredMixin, View):
         detail.object = lead
         context = detail.get_context_data(complete_form=form)
         return render(request, detail.template_name, context, status=status)
+
+
+class LeadOutcomeView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        lead = get_object_or_404(
+            workspace_queryset(Lead.objects, request.user, prefix="property__").select_related("property"), pk=pk,
+        )
+        action = request.POST.get("action")
+        if action not in ("decline", "reopen", "convert_existing"):
+            return redirect("lead_detail", pk=pk)
+        form = LeadDeclineForm(request.POST) if action == "decline" else None
+        if form and not form.is_valid():
+            detail = LeadDetailView()
+            detail.request = request
+            detail.object = lead
+            return render(request, detail.template_name, detail.get_context_data(decline_form=form))
+        try:
+            require_resource_action(request.user, lead.property, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            messages.error(request, error.message)
+            return redirect("lead_detail", pk=pk)
+        with transaction.atomic():
+            lead = get_object_or_404(
+                workspace_queryset(Lead.objects.select_for_update(), request.user, prefix="property__"), pk=pk,
+            )
+            if lead.status == "archived":
+                messages.error(request, "Сначала восстановите заявку из архива.")
+                return redirect("lead_detail", pk=pk)
+            if action == "convert_existing":
+                deal_id = request.POST.get("deal_id", "")
+                if not deal_id.isdecimal():
+                    messages.error(request, "Выберите сделку для заявки.")
+                    return redirect("lead_detail", pk=pk)
+                deal = get_object_or_404(
+                    workspace_queryset(Deal.objects.select_for_update(), request.user),
+                    pk=int(deal_id), stage__in=Deal.ACTIVE_STAGES,
+                    client_id=lead.client_id, property_id=lead.property_id,
+                )
+                try:
+                    convert_lead_to_deal(lead, deal)
+                except ValidationError as error:
+                    messages.error(request, error.messages[0])
+                    return redirect("lead_detail", pk=pk)
+                messages.success(request, "Заявка привязана к сделке. Следующее действие перенесено.")
+            elif action == "decline":
+                if lead.outcome != "open":
+                    messages.info(request, "Заявка уже завершена.")
+                    return redirect("lead_detail", pk=pk)
+                lead.outcome = "declined"
+                lead.outcome_reason = form.cleaned_data["reason"]
+                lead.save(update_fields=["outcome", "outcome_reason", "updated_at"])
+                if lead.client_id:
+                    ClientInteraction.objects.create(
+                        client_id=lead.client_id, lead=lead, interaction_type="status",
+                        text=f"Заявка закрыта без сделки. Причина: {lead.outcome_reason}",
+                    )
+                messages.success(request, "Заявка закрыта. Причина сохранена в истории.")
+            else:
+                if lead.outcome != "declined":
+                    messages.info(request, "Заявка уже в работе или переведена в сделку.")
+                    return redirect("lead_detail", pk=pk)
+                lead.outcome = "open"
+                lead.outcome_reason = ""
+                update_fields = ["outcome", "outcome_reason", "updated_at"]
+                reopened_at = timezone.now()
+                if lead.next_action_due_at <= reopened_at:
+                    lead.next_action_due_at = reopened_at + timedelta(minutes=30)
+                    update_fields.append("next_action_due_at")
+                lead.save(update_fields=update_fields)
+                if lead.client_id:
+                    ClientInteraction.objects.create(
+                        client_id=lead.client_id, lead=lead, interaction_type="status", text="Работа по заявке возобновлена.",
+                    )
+                messages.success(request, "Заявка снова в работе. Следующее действие восстановлено.")
+        return redirect("lead_detail", pk=pk)
+
 
 class LeadBulkStatusUpdateView(LoginRequiredMixin, View):
     def post(self, request):

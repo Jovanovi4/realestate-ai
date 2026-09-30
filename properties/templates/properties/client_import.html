@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Импорт клиентов{% endblock %}
+{% block content %}
+<div class="app-form-page app-form-page--narrow">
+  <header class="ui-page-header"><div><p class="ui-page-header__eyebrow">CRM · клиенты</p><h1 class="ui-page-header__title">Импорт клиентов</h1><p class="ui-page-header__description">Добавьте контакты из CSV. Существующие карточки останутся без изменений.</p></div><div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Все клиенты</a></div></header>
+  <form method="post" enctype="multipart/form-data" class="app-form app-form-panel" novalidate>
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    {% if row_errors %}<div class="alert alert-danger" role="alert"><strong>Проверьте строки:</strong><ul class="mb-0 mt-2">{% for error in row_errors %}<li>{{ error }}</li>{% endfor %}</ul></div>{% endif %}
+    <div class="app-field">{% include "includes/form_field.html" with field=form.file %}</div>
+    <p class="form-text mt-3">Столбцы «Имя» и «Телефон» обязательны. Поддерживаются CSV из экспорта клиентов, UTF-8 и Windows-1251, разделители «,» и «;». До 1000 контактов в файле.</p>
+    <p class="form-text">{% if agency %}Контакты попадут в общую базу команды «{{ agency.name }}».{% else %}Контакты попадут в вашу личную базу.{% endif %} Номера-дубли пропускаются; заявки и сделки не создаются. Если в файле есть ошибки, ни один контакт не добавится.</p>
+    <div class="app-form-actions"><button class="btn btn-primary" type="submit">Импортировать</button></div>
+  </form>
+</div>
+{% endblock %}

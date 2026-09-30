@@ -193,6 +193,9 @@ class AgencyWorkflowTests(TestCase):
         self.invite_and_join()
         self.client.force_login(self.founder)
         second_property = Property.objects.create(owner=self.founder, agency=agency, title="Сделка для сотрудника")
+        form_page = self.client.get(reverse("deal_create"))
+        self.assertContains(form_page, '<label class="form-label" for="id_responsible"')
+        self.assertContains(form_page, 'name="responsible"')
         response = self.client.post(reverse("deal_create"), {
             "client": self.client_record.pk, "property": second_property.pk,
             "responsible": self.agent.pk, "stage": "new", "expected_commission": "1000",
@@ -200,6 +203,50 @@ class AgencyWorkflowTests(TestCase):
         new_deal = Deal.objects.get(property=second_property)
         self.assertRedirects(response, reverse("deal_detail", args=[new_deal.pk]))
         self.assertEqual(new_deal.responsible, self.agent)
+
+    def test_team_deal_edit_preserves_or_changes_responsible(self):
+        self.create_agency()
+        self.invite_and_join()
+        self.client.force_login(self.founder)
+        self.deal.refresh_from_db()
+        self.deal.responsible = self.agent
+        self.deal.save(update_fields=["responsible"])
+        url = reverse("deal_detail", args=[self.deal.pk])
+        self.assertContains(self.client.get(url), 'name="responsible"')
+        data = {
+            "client": self.client_record.pk, "property": self.property.pk, "lead": self.lead.pk,
+            "stage": "in_progress", "expected_commission": "1000", "outcome_note": "",
+        }
+
+        self.assertRedirects(self.client.post(url, data), url)
+        self.deal.refresh_from_db()
+        self.assertEqual(self.deal.responsible, self.agent)
+
+        self.assertRedirects(self.client.post(url, {**data, "responsible": self.founder.pk}), url)
+        self.deal.refresh_from_db()
+        self.assertEqual(self.deal.responsible, self.founder)
+
+    def test_deal_from_team_lead_inherits_its_responsible(self):
+        agency = self.create_agency()
+        self.invite_and_join()
+        self.client.force_login(self.founder)
+        self.client_record.refresh_from_db()
+        second_property = Property.objects.create(owner=self.founder, agency=agency, title="Объект заявки")
+        lead = Lead.objects.create(
+            property=second_property, client=self.client_record, name="Анна", phone=self.client_record.phone,
+            assigned_to=self.agent, qualification="qualified", first_contacted_at=timezone.now(),
+        )
+        url = f"{reverse('deal_create')}?lead={lead.pk}"
+        page = self.client.get(url)
+        self.assertEqual(page.context["form"]["responsible"].value(), self.agent.pk)
+
+        response = self.client.post(reverse("deal_create"), {
+            "client": self.client_record.pk, "property": second_property.pk, "lead": lead.pk,
+            "stage": "new", "expected_commission": "1000", "outcome_note": "",
+        })
+        deal = Deal.objects.get(property=second_property)
+        self.assertRedirects(response, reverse("deal_detail", args=[deal.pk]))
+        self.assertEqual(deal.responsible, self.agent)
 
     @override_settings(TURNSTILE_ENABLED=False, EMAIL_NOTIFICATIONS_ENABLED=False, TELEGRAM_NOTIFICATIONS_ENABLED=False)
     def test_public_team_landing_creates_shared_lead_and_reuses_shared_client(self):
@@ -1086,7 +1133,7 @@ class AccountAndPropertyAccessTests(TestCase):
 
         response = self.client.get(reverse("lead_detail", args=[lead.pk]))
 
-        self.assertContains(response, 'class="detail-two-column"')
+        self.assertContains(response, 'class="detail-two-column lead-detail-layout"')
         self.assertContains(response, "Хочу посмотреть")
         self.assertContains(response, reverse("client_detail", args=[client.pk]))
         self.assertContains(response, reverse("property_detail", args=[property.pk]))
@@ -1336,6 +1383,9 @@ class DealWorkflowTests(TestCase):
         self.lead = Lead.objects.create(
             property=self.property, client=self.client_record, name="Анна", phone=self.client_record.phone,
         )
+        self.lead.qualification = "qualified"
+        self.lead.first_contacted_at = timezone.now()
+        self.lead.save(update_fields=["qualification", "first_contacted_at"])
         self.client.force_login(self.owner)
 
     def payload(self, **overrides):
@@ -1350,16 +1400,42 @@ class DealWorkflowTests(TestCase):
         }
 
     def test_create_deal_from_lead_and_show_on_related_pages(self):
+        lead_task = ClientReminder.objects.get(lead=self.lead, is_done=False)
+        self.assertContains(self.client.get(reverse("lead_detail", args=[self.lead.pk])), "Перевести в сделку")
+        form_page = self.client.get(f"{reverse('deal_create')}?lead={self.lead.pk}")
+        self.assertEqual(form_page.context["form"].initial["client"], self.client_record)
+        self.assertEqual(form_page.context["form"].initial["property"], self.property)
+        self.assertEqual(form_page.context["form"].initial["responsible"], self.owner)
         response = self.client.post(reverse("deal_create"), self.payload())
 
         deal = Deal.objects.get()
         self.assertRedirects(response, reverse("deal_detail", args=[deal.pk]))
         self.assertEqual((deal.owner, deal.responsible, deal.client, deal.property, deal.lead),
                          (self.owner, self.owner, self.client_record, self.property, self.lead))
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.outcome, "converted")
+        self.assertEqual(self.lead.outcome_deal, deal)
+        self.assertIsNotNone(self.lead.outcome_at)
+        self.assertFalse(ClientReminder.objects.filter(lead=self.lead, is_done=False).exists())
+        deal_task = ClientReminder.objects.get(deal=deal, is_done=False)
+        self.assertEqual((deal_task.text, deal_task.due_at, deal_task.owner), (lead_task.text, lead_task.due_at, self.owner))
         self.assertEqual(str(deal.expected_commission), "120000.00")
         self.assertContains(self.client.get(reverse("client_detail", args=[self.client_record.pk])), reverse("deal_detail", args=[deal.pk]))
         self.assertContains(self.client.get(reverse("property_detail", args=[self.property.pk])), reverse("deal_detail", args=[deal.pk]))
         self.assertContains(self.client.get(reverse("lead_detail", args=[self.lead.pk])), reverse("deal_detail", args=[deal.pk]))
+
+        repeated = self.client.post(reverse("deal_create"), self.payload())
+        self.assertEqual(repeated.status_code, 200)
+        self.assertEqual(Deal.objects.count(), 1)
+        self.assertEqual(ClientReminder.objects.filter(deal=deal, is_done=False).count(), 1)
+
+    def test_unqualified_lead_cannot_be_converted(self):
+        self.lead.qualification = "pending"
+        self.lead.save(update_fields=["qualification"])
+        response = self.client.post(reverse("deal_create"), self.payload())
+        self.assertContains(response, "Сначала зафиксируйте первый контакт")
+        self.assertFalse(Deal.objects.exists())
+        self.assertEqual(self.lead.outcome, "open")
 
     def test_one_client_can_have_independent_deals_for_different_properties(self):
         second_property = Property.objects.create(owner=self.owner, title="Дом у леса")
@@ -1392,7 +1468,7 @@ class DealWorkflowTests(TestCase):
         existing.refresh_from_db()
         self.assertIsNotNone(existing.closed_at)
 
-        response = self.client.post(reverse("deal_create"), self.payload())
+        response = self.client.post(reverse("deal_create"), self.payload(lead=""))
         self.assertEqual(response.status_code, 302)
         self.assertEqual(Deal.objects.count(), 2)
 

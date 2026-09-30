@@ -6,6 +6,8 @@ from .forms import AccountPasswordChangeForm, PhoneAuthenticationForm
 from .account_views import AccountRecoveryView, AccountResetConfirmView, ConfirmEmailView, VerifyEmailView
 from django.views.generic import TemplateView
 from .deal_views import DealBoardView, DealCreateView, DealUpdateView
+from .client_import_views import ClientImportView
+from .telegram_views import TelegramPublishView, telegram_public_webhook
 from .agency_views import (
     AgencyCreateView, AgencyDashboardView, AgencyInviteView, AgencyInviteRevokeView, AgencyJoinView,
     AgencyMemberRemoveView, AgencyMemberRoleView, LeadAssignView,
@@ -35,6 +37,7 @@ from .views import (
     LeadDetailView,
     LeadProcessView,
     LeadActionCompleteView,
+    LeadOutcomeView,
     LeadDeleteView,
     LeadBulkStatusUpdateView,
     ClientListView,
@@ -57,6 +60,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("telegram/public/webhook/", telegram_public_webhook, name="telegram_public_webhook"),
     path("legal/privacy-policy/", privacy_policy, name="privacy_policy"),
     path("legal/personal-data-consent/", personal_data_consent, name="personal_data_consent"),
     path("legal/terms/", service_terms, name="service_terms"),
@@ -106,10 +110,12 @@ urlpatterns = [
     path("leads/<int:pk>/assign/", LeadAssignView.as_view(), name="lead_assign"),
     path("leads/<int:pk>/process/", LeadProcessView.as_view(), name="lead_process"),
     path("leads/<int:pk>/complete-action/", LeadActionCompleteView.as_view(), name="lead_action_complete"),
+    path("leads/<int:pk>/outcome/", LeadOutcomeView.as_view(), name="lead_outcome"),
     path("leads/<int:pk>/", LeadDetailView.as_view(), name="lead_detail"),
     path("leads/<int:pk>/delete/", LeadDeleteView.as_view(), name="lead_delete"),
     path("clients/", ClientListView.as_view(), name="client_list"),
     path("clients/new/", ClientCreateView.as_view(), name="client_create"),
+    path("clients/import/", ClientImportView.as_view(), name="client_import"),
     path("clients/board/", ClientBoardView.as_view(), name="client_board"),
     path("clients/export/", ClientExportView.as_view(), name="client_export"),
     path("clients/bulk/", ClientBulkActionView.as_view(), name="client_bulk_action"),
@@ -136,6 +142,7 @@ urlpatterns = [
     path("<int:pk>/delete/", PropertyDeleteView.as_view(), name="delete_property"),
     path("<int:pk>/restore/", PropertyRestoreView.as_view(), name="restore_property"),
     path("<int:pk>/status/", PropertyStatusUpdateView.as_view(), name="update_property_status"),
+    path("<int:pk>/telegram/", TelegramPublishView.as_view(), name="telegram_publish"),
     path("<int:pk>/ai/", AIAssistantView.as_view(), name="ai_assistant"),
     path("<int:pk>/ai/inline/", AIInlineGenerateView.as_view(), name="ai_inline_generate"),
     path("<int:pk>/ai/bundle/", AIBundleGenerateView.as_view(), name="ai_bundle_generate"),
