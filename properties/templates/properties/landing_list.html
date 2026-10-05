@@ -2,7 +2,7 @@
 {% block title %}Лендинги{% endblock %}
 {% block content %}
 <header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Публикации</p><h1 class="ui-page-header__title">Лендинги</h1><p class="ui-page-header__description">Страницы объектов: настройка, публикация и публичные ссылки.</p></div><div class="ui-page-header__actions"><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></header>
-<nav class="lead-status-filter" aria-label="Фильтр лендингов по статусу">
+<nav class="lead-status-filter landing-status-filter" aria-label="Фильтр лендингов по статусу">
   <span class="lead-status-filter__label">Статус</span>
   <div class="lead-status-filter__options">
     <a href="{% url 'landing_list' %}" class="lead-status-filter__option {% if not selected_status %}is-active{% endif %}" {% if not selected_status %}aria-current="page"{% endif %}>Все <span class="lead-status-filter__count">{{ published_count|add:draft_count }}</span></a>
@@ -30,11 +30,11 @@
         <div class="property-card__footer">
           <div><strong class="property-card__price">Заявок: {{ property.landing_leads_count }}</strong></div>
           <div class="property-card__actions">
-            <a href="{% url 'edit_property' property.pk %}#landing-pane" class="btn btn-icon btn-sm btn-text" title="Редактировать лендинг" aria-label="Редактировать лендинг {{ property.title }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></a>
+            <a href="{% url 'edit_property' property.pk %}#landing-pane" class="btn btn-icon btn-sm btn-text" data-tooltip="Редактировать лендинг" aria-label="Редактировать лендинг {{ property.title }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></a>
             {% if property.landing_published %}
             {% url 'public_landing' property.landing_slug as public_url %}
-            <a href="{{ public_url }}" target="_blank" rel="noopener" class="btn btn-icon btn-sm btn-outline-secondary" title="Открыть публичный лендинг" aria-label="Открыть публичный лендинг {{ property.title }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-external-link"></use></svg></a>
-            <div class="dropdown action-menu"><button class="btn btn-icon btn-sm btn-text" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Дополнительные действия" aria-label="Дополнительные действия с лендингом {{ property.title }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-more"></use></svg></button><ul class="dropdown-menu dropdown-menu-end"><li><form method="post" action="{% url 'landing_unpublish' property.pk %}" data-confirm="Снять лендинг с публикации? Публичная ссылка перестанет открываться." data-confirm-title="Снять лендинг с публикации?" data-confirm-button="Снять с публикации">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="dropdown-item text-danger" type="submit">Снять с публикации</button></form></li></ul></div>
+            <a href="{{ public_url }}" target="_blank" rel="noopener" class="btn btn-icon btn-sm btn-outline-secondary" data-tooltip="Открыть публичный лендинг" aria-label="Открыть публичный лендинг {{ property.title }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-external-link"></use></svg></a>
+            <div class="dropdown action-menu"><button class="btn btn-icon btn-sm btn-text" type="button" data-bs-toggle="dropdown" aria-expanded="false" data-tooltip="Дополнительные действия" aria-label="Дополнительные действия с лендингом {{ property.title }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-more"></use></svg></button><ul class="dropdown-menu dropdown-menu-end"><li><form method="post" action="{% url 'landing_unpublish' property.pk %}" data-confirm="Снять лендинг с публикации? Публичная ссылка перестанет открываться." data-confirm-title="Снять лендинг с публикации?" data-confirm-button="Снять с публикации">{% csrf_token %}<input type="hidden" name="next" value="{{ request.get_full_path }}"><button class="dropdown-item text-danger" type="submit">Снять с публикации</button></form></li></ul></div>
             {% endif %}
           </div>
         </div>

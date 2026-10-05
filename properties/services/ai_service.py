@@ -163,7 +163,8 @@ class AIService:
     @classmethod
     def generate_bundle(cls, property, tone, bundle_type):
         bundles = {
-            "package": ["headline", "short_description", "full_description"],
+            # The landing's «Об объекте» section uses the same description field.
+            "package": ["headline", "short_description", "full_description", "landing_headline", "landing_subtitle", "seo_title", "seo_description", "benefits", "cta"],
             "landing": ["landing_headline", "landing_subtitle", "landing_about", "seo_title", "seo_description", "benefits", "cta"],
         }
         content_types = bundles.get(bundle_type)

@@ -14,7 +14,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from billing.enforcement import TariffDenied, require_resource_action
+from billing.enforcement import TariffDenied, require_resource_action, require_telegram_publication
 from billing.rules import Operation
 from .agency_access import workspace_queryset
 from .models import Property
@@ -25,13 +25,14 @@ class TelegramPublishView(LoginRequiredMixin, View):
     @transaction.atomic
     def post(self, request, pk):
         property = get_object_or_404(workspace_queryset(Property.objects.select_for_update(), request.user), pk=pk)
-        destination = f"{reverse('property_detail', kwargs={'pk': pk})}#publication-pane"
-        try:
-            require_resource_action(request.user, property, Operation.EDIT_CRM)
-        except TariffDenied as error:
-            messages.error(request, error.message)
-            return redirect(destination)
+        destination = f"{reverse('property_detail', kwargs={'pk': pk})}?tab=publication"
         if request.POST.get("action") == "publish":
+            try:
+                require_resource_action(request.user, property, Operation.EDIT_CRM)
+                require_telegram_publication(request.user, property)
+            except TariffDenied as error:
+                messages.error(request, error.message)
+                return redirect(destination)
             if property.status not in VISIBLE_STATUSES or property.is_demo or not property.owner_id:
                 messages.error(request, "Сначала переведите реальный объект в статус «Опубликован», «Свободен» или «На показах».")
             elif not (settings.TELEGRAM_PUBLIC_ENABLED and settings.TELEGRAM_PUBLIC_BOT_TOKEN and settings.TELEGRAM_PUBLIC_BOT_USERNAME and settings.TELEGRAM_PUBLIC_WEBHOOK_SECRET and settings.ACCOUNT_PUBLIC_BASE_URL.startswith("https://")):

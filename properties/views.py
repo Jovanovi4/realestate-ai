@@ -3,6 +3,7 @@ import csv
 import uuid
 from decimal import Decimal, InvalidOperation
 from datetime import timedelta
+from urllib.parse import urlencode
 
 from django.conf import settings
 from django.contrib import messages
@@ -10,7 +11,7 @@ from django.contrib.auth import login
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
-from django.db.models import Count, Max, Q
+from django.db.models import Case, Count, DateTimeField, F, IntegerField, Max, Q, Value, When
 from django.core.paginator import Paginator
 from django.http import HttpResponse, JsonResponse
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -25,27 +26,30 @@ from django.views.decorators.clickjacking import xframe_options_sameorigin
 from django.views.generic import CreateView, DetailView, ListView, UpdateView
 
 from billing.models import BillingAccount
-from billing.enforcement import TariffDenied, enabled as billing_enforcement_enabled, require_allowed, require_new_action, require_resource_action
+from billing.enforcement import TariffDenied, enabled as billing_enforcement_enabled, require_allowed, require_new_action, require_resource_action, telegram_publication_decision
 from billing.reservations import DuplicateResourceRequest, request_identity, reserved_resources
 from billing.rules import Operation, PolicyService
 from billing.services import AccountService
 
 from .forms import (
-    ClientDetailsForm, ClientForm, ClientInteractionForm, ClientReminderForm, LeadActionCompleteForm, LeadDeclineForm, LeadForm, LeadProcessingForm,
+    ClientDetailsForm, ClientForm, ClientInteractionForm, ClientPropertyReactionForm, ClientPropertySuggestionForm, ClientReminderForm, ClientSearchForm, LeadActionCompleteForm, LeadDeclineForm, LeadForm, LeadProcessingForm,
     PropertyForm, RegistrationForm, RealtorProfileForm,
 )
 from .agency_access import agency_for, deletable_queryset, may_manage_agency, workspace_queryset
+from .board_pagination import paged_board_columns
 from .models import AIContent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, PropertyImage, RealtorProfile, TelegramFeed, UserLegalAcceptance
 from .services.avito_service import AvitoExportService
 from .services.cian_service import CianExportService
 from .services.demo_data_service import DemoDataService
 from .services.lead_notification_service import LeadNotificationService
 from .services.lead_outcome_service import convert_lead_to_deal
+from .services.telegram_public_service import feed_for, feed_link, public_bot_ready
 from .services.public_form_security import PublicLeadFormSecurity
 from .services.presentation_service import PresentationError, PresentationService
 from .services.presentation_docx_service import PresentationDocxService
 from .services.image_upload_service import prepare_image_upload
 from .services.csv_security import spreadsheet_safe_cell
+from .services.client_relationship_service import activate_client_relationship
 
 
 class PropertyListView(LoginRequiredMixin, ListView):
@@ -377,10 +381,18 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
         context["property_setup_hint"] = not (self.object.price and self.object.address and has_primary_image)
         context["can_delete"] = not self.object.agency_id or may_manage_agency(self.request.user)
         context["property_deals"] = workspace_queryset(Deal.objects.filter(property=self.object), self.request.user).select_related("client")[:5]
-        context["telegram_bot_ready"] = bool(settings.TELEGRAM_PUBLIC_ENABLED and settings.TELEGRAM_PUBLIC_BOT_TOKEN and settings.TELEGRAM_PUBLIC_BOT_USERNAME and settings.TELEGRAM_PUBLIC_WEBHOOK_SECRET and settings.ACCOUNT_PUBLIC_BASE_URL.startswith("https://"))
+        context["telegram_bot_ready"] = public_bot_ready()
         context["telegram_bot_username"] = settings.TELEGRAM_PUBLIC_BOT_USERNAME
+        context["telegram_publish_denial"] = ""
+        feed = TelegramFeed.objects.filter(agency=self.object.agency).first() if self.object.agency_id else TelegramFeed.objects.filter(owner=self.object.owner).first()
+        if context["telegram_bot_ready"]:
+            feed = feed or feed_for(self.object)
+            context["telegram_feed_url"] = feed_link(feed)
+        if context["telegram_bot_ready"] and not self.object.telegram_published:
+            decision = telegram_publication_decision(self.request.user, self.object)
+            if not decision.allowed:
+                context["telegram_publish_denial"] = decision.message
         if self.object.telegram_published:
-            feed = TelegramFeed.objects.filter(agency=self.object.agency).first() if self.object.agency_id else TelegramFeed.objects.filter(owner=self.object.owner).first()
             context["telegram_subscriber_count"] = feed.subscribers.filter(active=True).count() if feed else 0
         return context
 
@@ -696,7 +708,7 @@ class ClientListView(LoginRequiredMixin, ListView):
             return None
 
     def get_queryset(self):
-        queryset = workspace_queryset(Client.objects, self.request.user).prefetch_related("leads")
+        queryset = workspace_queryset(Client.objects, self.request.user).annotate(lead_count=Count("leads"))
         query = self.request.GET.get("q", "").strip()
         status = self.request.GET.get("status", "")
         source = self.request.GET.get("source", "")
@@ -721,26 +733,17 @@ class ClientListView(LoginRequiredMixin, ListView):
             "name_desc": "-name",
             "leads_desc": "-lead_count",
         }
-        if sort == "leads_desc":
-            queryset = queryset.annotate(lead_count=Count("leads"))
-        return queryset.order_by(ordering.get(sort, ordering["newest"]))
+        return queryset.order_by(ordering.get(sort, ordering["newest"]), "-pk")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        all_clients = workspace_queryset(Client.objects, self.request.user)
         now = timezone.now()
         start_tomorrow = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        pending_reminders = workspace_queryset(ClientReminder.objects, self.request.user).filter(client__isnull=False, is_done=False).select_related("client")
+        pending_reminders = workspace_queryset(ClientReminder.objects, self.request.user).filter(
+            client__isnull=False, owner=self.request.user, is_done=False, cancelled_at__isnull=True,
+        ).select_related("client")
         overdue_reminders = pending_reminders.filter(due_at__lt=now)
         today_reminders = pending_reminders.filter(due_at__gte=now, due_at__lt=start_tomorrow)
-        contacted = [client for client in all_clients.exclude(first_contacted_at__isnull=True) if client.first_contacted_at]
-        response_hours = [
-            (client.first_contacted_at - client.created_at).total_seconds() / 3600
-            for client in contacted
-            if client.first_contacted_at >= client.created_at
-        ]
-        total = all_clients.count()
-        won = all_clients.filter(status="won").count()
         context.update(
             {
                 "status_choices": Client.STATUS_CHOICES,
@@ -754,12 +757,6 @@ class ClientListView(LoginRequiredMixin, ListView):
                     ("name_desc", "Имя: Я–А"),
                     ("leads_desc", "Больше заявок"),
                 ],
-                "metrics": {
-                    "new_week": all_clients.filter(created_at__gte=timezone.now() - timedelta(days=7)).count(),
-                    "active": all_clients.exclude(status__in=["won", "lost"]).count(),
-                    "conversion": round(won / total * 100) if total else 0,
-                    "response_hours": round(sum(response_hours) / len(response_hours), 1) if response_hours else None,
-                },
                 "overdue_reminders": overdue_reminders[:5],
                 "today_reminders": today_reminders[:5],
                 "overdue_reminder_count": overdue_reminders.count(),
@@ -775,7 +772,7 @@ class ClientListView(LoginRequiredMixin, ListView):
         sort_labels = dict(context["sort_choices"])
         filter_items = [
             ("q", f"Поиск: {filters.get('q', '').strip()}" if filters.get("q", "").strip() else None),
-            ("status", f"Этап: {status_labels[filters['status']]}" if filters.get("status") in status_labels else None),
+            ("status", f"Отношения: {status_labels[filters['status']]}" if filters.get("status") in status_labels else None),
             ("source", f"Источник: {source_labels[filters['source']]}" if filters.get("source") in source_labels else None),
             ("date_from", f"С даты: {filters['date_from']}" if self.valid_date(filters.get("date_from")) else None),
             ("date_to", f"По дату: {filters['date_to']}" if self.valid_date(filters.get("date_to")) else None),
@@ -795,7 +792,9 @@ class ClientListView(LoginRequiredMixin, ListView):
             })
         context["active_filters"] = active_filters
         context["extra_filters_open"] = bool(filters.get("source") or filters.get("date_from") or filters.get("date_to"))
-        context["has_any_clients"] = total > 0
+        context["has_any_clients"] = bool(context["page_obj"].paginator.count) or workspace_queryset(
+            Client.objects, self.request.user,
+        ).exists()
         context["can_bulk_delete"] = not agency_for(self.request.user) or may_manage_agency(self.request.user)
         return context
 
@@ -845,22 +844,123 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context["search_form"] = ClientSearchForm(instance=self.object)
+        context["suggestion_form"] = ClientPropertySuggestionForm(owner=self.request.user, client=self.object)
+        suggestions = list(self.object.property_suggestions.select_related("property", "added_by"))
+        active_deals = {
+            deal.property_id: deal for deal in self.object.deals.filter(stage__in=Deal.ACTIVE_STAGES).order_by("-created_at")
+        }
+        for suggestion in suggestions:
+            suggestion.reaction_form = ClientPropertyReactionForm(instance=suggestion, prefix=f"reaction-{suggestion.pk}")
+            suggestion.active_deal = active_deals.get(suggestion.property_id)
+            if suggestion.property.landing_published and suggestion.property.landing_slug:
+                suggestion.share_url = self.request.build_absolute_uri(
+                    reverse("public_landing", args=[suggestion.property.landing_slug]),
+                )
+        context["suggestions"] = suggestions
+        available = workspace_queryset(Property.objects, self.request.user).exclude(
+            status__in=("archived", "reserved", "sold", "rented"),
+        ).exclude(pk__in=[item.property_id for item in suggestions])
+        if self.object.search_deal_type:
+            available = available.filter(deal_type=self.object.search_deal_type)
+        if self.object.search_property_type:
+            available = available.filter(property_type=self.object.search_property_type)
+        if self.object.search_rooms_min:
+            available = available.filter(rooms__gte=self.object.search_rooms_min)
+        if self.object.preferred_area:
+            available = available.filter(address__icontains=self.object.preferred_area.strip())
+        if self.object.budget and self.object.search_currency:
+            available = available.filter(currency=self.object.search_currency, price__lte=self.object.budget)
+        context["matching_properties"] = available.order_by("-updated_at")[:8]
+        context["has_search_criteria"] = any((
+            self.object.search_deal_type, self.object.search_property_type, self.object.search_rooms_min,
+            self.object.preferred_area, self.object.budget,
+        ))
         context["interaction_form"] = ClientInteractionForm()
         context["reminder_form"] = ClientReminderForm(initial={"due_at": (timezone.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")})
         interaction_queryset = self.object.interactions.select_related("lead", "lead__property")
-        reminder_queryset = self.object.reminders.all()
-        pending_reminders = reminder_queryset.filter(is_done=False)
-        lead_queryset = self.object.leads.select_related("property")
-        deal_queryset = self.object.deals.select_related("property", "responsible")
+        reminder_queryset = self.object.reminders.select_related("owner__realtor_profile", "lead", "deal")
+        pending_reminders = reminder_queryset.filter(is_done=False, cancelled_at__isnull=True)
+        lead_queryset = self.object.leads.select_related("property", "assigned_to__realtor_profile").order_by("-created_at", "-pk")
+        context["priority_lead"] = lead_queryset.filter(
+            outcome="open", first_contacted_at__isnull=True,
+        ).exclude(status="archived").order_by("created_at", "pk").first()
+        context["has_uncontacted_leads"] = bool(context["priority_lead"])
+        if context["has_uncontacted_leads"]:
+            interaction_type = context["interaction_form"].fields["interaction_type"]
+            interaction_type.choices = [
+                (value, label) for value, label in interaction_type.choices
+                if value not in {"call", "message"}
+            ]
+        last_discussion = self.object.interactions.exclude(
+            interaction_type="status",
+        ).exclude(text__in=("", "Первый контакт по заявке.")).exclude(
+            interaction_type="note", text__startswith="Действие «",
+        ).order_by("-created_at", "-pk").first()
+        last_outcome = self.object.reminders.filter(
+            is_done=True, cancelled_at__isnull=True, completed_at__isnull=False,
+        ).exclude(outcome_note="").order_by("-completed_at", "-pk").first()
+        if last_outcome and (not last_discussion or last_outcome.completed_at >= last_discussion.created_at):
+            context["latest_client_discussion"] = {
+                "kind": "Итог действия", "text": last_outcome.outcome_note, "at": last_outcome.completed_at,
+            }
+        elif last_discussion:
+            context["latest_client_discussion"] = {
+                "kind": last_discussion.get_interaction_type_display(), "text": last_discussion.text,
+                "at": last_discussion.created_at,
+            }
+        deal_queryset = self.object.deals.select_related("property", "responsible__realtor_profile")
         context["interactions"] = Paginator(interaction_queryset, 10).get_page(self.request.GET.get("history_page", 1))
-        context["reminders"] = Paginator(reminder_queryset, 10).get_page(self.request.GET.get("reminders_page", 1))
-        context["client_leads"] = Paginator(lead_queryset, 10).get_page(self.request.GET.get("leads_page", 1))
+        context["client_leads"] = Paginator(lead_queryset, 10).get_page(kwargs.get("contact_form_page") or self.request.GET.get("leads_page", 1))
         context["client_deals"] = Paginator(deal_queryset, 10).get_page(self.request.GET.get("deals_page", 1))
+        contact_draft = kwargs.get("contact_draft")
+        contact_leads = (
+            lead_queryset.filter(outcome="open", first_contacted_at__isnull=True).exclude(status="archived")
+            if contact_draft else context["client_leads"]
+        )
+        lead_pages = {}
+        if contact_draft:
+            lead_pages = {
+                lead_id: index // 10 + 1
+                for index, lead_id in enumerate(lead_queryset.values_list("pk", flat=True))
+            }
+        contact_forms = []
+        for lead in contact_leads:
+            if lead.outcome != "open" or lead.first_contacted_at or lead.status == "archived":
+                continue
+            form = kwargs.get("contact_form") if kwargs.get("contact_form_lead_id") == lead.pk else LeadProcessingForm(lead=lead)
+            if contact_draft and not form.is_bound:
+                form.initial.update({
+                    "contact_method": contact_draft["method"], "contact_note": contact_draft["note"],
+                })
+            for field_name, field in form.fields.items():
+                field.widget.attrs["id"] = f"id_client_lead_{lead.pk}_{field_name}"
+            contact_forms.append({
+                "lead": lead, "form": form,
+                "page_number": lead_pages.get(lead.pk, context["client_leads"].number),
+            })
+        context["contact_forms"] = contact_forms
+        context["contact_draft"] = contact_draft
+        context["open_client_leads_tab"] = bool(kwargs.get("contact_form") or contact_draft)
         context["interactions_total"] = interaction_queryset.count()
-        context["reminders_total"] = reminder_queryset.count()
-        context["pending_reminders_count"] = pending_reminders.count()
-        context["next_reminder"] = pending_reminders.filter(due_at__isnull=False).order_by("due_at").first()
-        context["next_reminder_overdue"] = bool(context["next_reminder"] and context["next_reminder"].due_at < timezone.now())
+        context["next_reminder"] = (
+            pending_reminders.filter(due_at__isnull=False).order_by("due_at", "pk").first()
+            or pending_reminders.order_by("pk").first()
+        )
+        primary_reminder = (
+            pending_reminders.filter(lead=context["priority_lead"]).first()
+            if context["priority_lead"] else context["next_reminder"]
+        )
+        other_reminders = reminder_queryset.exclude(pk=primary_reminder.pk) if primary_reminder else reminder_queryset
+        context["reminders"] = Paginator(other_reminders, 10).get_page(self.request.GET.get("reminders_page", 1))
+        context["reminders_total"] = other_reminders.count()
+        context["pending_reminders_count"] = (
+            pending_reminders.exclude(pk=primary_reminder.pk).count() if primary_reminder else pending_reminders.count()
+        )
+        context["next_reminder_overdue"] = bool(
+            context["next_reminder"] and context["next_reminder"].due_at
+            and context["next_reminder"].due_at < timezone.now()
+        )
         context["client_leads_total"] = lead_queryset.count()
         context["client_deals_total"] = deal_queryset.count()
         for page_param in ("history_page", "reminders_page", "leads_page", "deals_page"):
@@ -874,8 +974,9 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
 
 
 class ClientStatusUpdateView(LoginRequiredMixin, View):
+    @transaction.atomic
     def post(self, request, pk):
-        client = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
+        client = get_object_or_404(workspace_queryset(Client.objects.select_for_update(), request.user), pk=pk)
         try:
             require_resource_action(request.user, client, Operation.EDIT_CRM)
         except TariffDenied as error:
@@ -884,14 +985,35 @@ class ClientStatusUpdateView(LoginRequiredMixin, View):
             messages.error(request, error.message)
             return redirect("client_detail", pk=client.pk)
         status = request.POST.get("status")
-        if status in dict(Client.STATUS_CHOICES) and status != client.status:
+        if status not in dict(Client.STATUS_CHOICES):
+            error = "Выберите состояние отношений. Показ и итог по объекту меняйте в сделке."
+            if request.headers.get("HX-Request") == "true":
+                return render(request, "properties/includes/client_status_control.html", {"client": client, "status_error": error})
+            messages.error(request, error)
+            return redirect("client_detail", pk=client.pk)
+        active_deal = client.deals.filter(stage__in=Deal.ACTIVE_STAGES).exists()
+        open_lead = client.leads.filter(outcome="open").exclude(status="archived").exists()
+        if status == "new" and client.first_contacted_at:
+            error = "Первый контакт уже записан. Используйте состояние «В работе»."
+        elif status in {"new", "nurture", "inactive"} and active_deal:
+            error = "У клиента есть активная сделка. Завершите её или оставьте отношения «В работе»."
+        elif status in {"nurture", "inactive"} and open_lead:
+            error = "У клиента есть открытая заявка. Завершите её или оставьте отношения «В работе»."
+        else:
+            error = None
+        if error:
+            if request.headers.get("HX-Request") == "true":
+                return render(request, "properties/includes/client_status_control.html", {"client": client, "status_error": error})
+            messages.error(request, error)
+            return redirect("client_detail", pk=client.pk)
+        if status != client.status:
             previous_status = client.get_status_display()
             client.status = status
             client.save(update_fields=["status", "updated_at"])
             ClientInteraction.objects.create(
                 client=client,
                 interaction_type="status",
-                text=f"Статус изменён: {previous_status} → {client.get_status_display()}.",
+                text=f"Отношения с клиентом: {previous_status} → {client.get_status_display()}.",
             )
         if request.headers.get("HX-Request") == "true":
             return render(request, "properties/includes/client_status_control.html", {"client": client})
@@ -906,14 +1028,34 @@ class ClientInteractionCreateView(LoginRequiredMixin, View):
         except TariffDenied as error:
             messages.error(request, error.message)
             return redirect("client_detail", pk=client.pk)
-        form = ClientInteractionForm(request.POST)
+        post_data = request.POST
+        if request.POST.get("intent") == "first_contact":
+            post_data = request.POST.copy()
+            if post_data.get("interaction_type") not in {"call", "message"}:
+                post_data["interaction_type"] = "call"
+        form = ClientInteractionForm(post_data)
         if form.is_valid():
-            interaction = form.save(commit=False)
-            interaction.client = client
-            interaction.save()
-            if interaction.interaction_type in {"call", "message"} and not client.first_contacted_at:
-                client.first_contacted_at = interaction.created_at
-                client.save(update_fields=["first_contacted_at", "updated_at"])
+            if form.cleaned_data["interaction_type"] in {"call", "message"} and client.leads.filter(
+                outcome="open", first_contacted_at__isnull=True,
+            ).exclude(status="archived").exists():
+                detail = ClientDetailView()
+                detail.request = request
+                detail.object = client
+                context = detail.get_context_data(contact_draft={
+                    "method": form.cleaned_data["interaction_type"],
+                    "note": form.cleaned_data["text"],
+                })
+                return render(request, detail.template_name, context)
+            with transaction.atomic():
+                interaction = form.save(commit=False)
+                interaction.client = client
+                interaction.save()
+                if interaction.interaction_type in {"call", "message"} and not client.first_contacted_at:
+                    client.first_contacted_at = interaction.created_at
+                    client.save(update_fields=["first_contacted_at", "updated_at"])
+                    activate_client_relationship(client.pk, reason="Первый контакт зафиксирован.")
+        else:
+            messages.error(request, "Не удалось добавить запись. Проверьте тип и текст взаимодействия.")
         return redirect(f"{reverse('client_detail', kwargs={'pk': client.pk})}#client-history")
 
 
@@ -940,7 +1082,7 @@ class ClientReminderCreateView(LoginRequiredMixin, View):
 class ClientReminderCompleteView(LoginRequiredMixin, View):
     def post(self, request, pk, reminder_pk):
         client = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
-        reminder = get_object_or_404(client.reminders, pk=reminder_pk)
+        reminder = get_object_or_404(client.reminders, pk=reminder_pk, owner=request.user)
         if reminder.lead_id:
             messages.info(request, "Запишите итог и назначьте следующий шаг в карточке заявки.")
             return redirect(f"{reverse('lead_detail', kwargs={'pk': reminder.lead_id})}?complete=1#lead-action")
@@ -984,7 +1126,7 @@ class ClientExportView(LoginRequiredMixin, View):
         response["Content-Disposition"] = 'attachment; filename="clients.csv"'
         response.write("\ufeff")
         writer = csv.writer(response, quoting=csv.QUOTE_ALL)
-        writer.writerow(["Имя", "Телефон", "Статус", "Источник", "Бюджет", "Район", "Удобное время", "Создан"])
+        writer.writerow(["Имя", "Телефон", "Отношения", "Источник", "Бюджет", "Район", "Удобное время", "Создан"])
         for client in workspace_queryset(Client.objects, request.user).order_by("-created_at"):
             writer.writerow([spreadsheet_safe_cell(value) for value in [client.name, client.phone, client.get_status_display(), client.get_source_display(), client.budget or "", client.preferred_area, client.preferred_contact_time, client.created_at.strftime("%d.%m.%Y %H:%M")]])
         return response
@@ -992,8 +1134,18 @@ class ClientExportView(LoginRequiredMixin, View):
 
 class ClientBoardView(LoginRequiredMixin, View):
     def get(self, request):
-        clients = workspace_queryset(Client.objects, request.user).order_by("-updated_at")
-        columns = [(value, label, [client for client in clients if client.status == value]) for value, label in Client.STATUS_CHOICES]
+        clients = workspace_queryset(Client.objects, request.user)
+
+        def hydrate(ids):
+            return clients.filter(pk__in=ids).annotate(
+                active_deals_count=Count("deals", filter=Q(deals__stage__in=Deal.ACTIVE_STAGES), distinct=True),
+                completed_deals_count=Count("deals", filter=Q(deals__stage="won"), distinct=True),
+            )
+
+        columns = paged_board_columns(
+            request, choices=Client.STATUS_CHOICES, queryset=clients, field="status", hydrate=hydrate,
+            anchor_prefix="client-board",
+        )
         return render(request, "properties/client_board.html", {"columns": columns})
 
 
@@ -1008,14 +1160,43 @@ class LeadListView(LoginRequiredMixin, ListView):
             return ["properties/includes/lead_workspace.html"]
         return [self.template_name]
 
+    def search_query(self):
+        return self.request.GET.get("q", "").strip()[:100]
+
+    @staticmethod
+    def search_filter(query):
+        return (
+            Q(name__icontains=query) | Q(phone__icontains=query)
+            | Q(client__name__icontains=query) | Q(client__phone__icontains=query)
+            | Q(property__title__icontains=query) | Q(property__address__icontains=query)
+        )
+
     def get_queryset(self):
-        queryset = workspace_queryset(Lead.objects, self.request.user, prefix="property__").select_related("property", "client", "assigned_to").prefetch_related("client__leads")
+        queryset = workspace_queryset(Lead.objects, self.request.user, prefix="property__").select_related("property", "client", "assigned_to__realtor_profile").prefetch_related("client__leads")
         if self.request.GET.get("assigned") == "mine":
             queryset = queryset.filter(assigned_to=self.request.user)
         status = self.request.GET.get("status")
         if status in dict(Lead.STATUS_CHOICES):
             queryset = queryset.filter(status=status)
-        return queryset
+        query = self.search_query()
+        if query:
+            queryset = queryset.filter(self.search_filter(query))
+        now = timezone.now()
+        active = Q(outcome="open") & ~Q(status="archived")
+        return queryset.annotate(
+            attention_rank=Case(
+                When(active & Q(first_contacted_at__isnull=True, created_at__lt=now - timedelta(minutes=30)), then=Value(0)),
+                When(active & Q(next_action_due_at__lt=now), then=Value(1)),
+                When(active & Q(first_contacted_at__isnull=True), then=Value(2)),
+                When(active, then=Value(3)),
+                default=Value(4), output_field=IntegerField(),
+            ),
+            attention_sort_at=Case(
+                When(active & Q(first_contacted_at__isnull=True), then=F("created_at")),
+                When(active, then=F("next_action_due_at")),
+                default=Value(None), output_field=DateTimeField(),
+            ),
+        ).order_by("attention_rank", "attention_sort_at", "-created_at", "-pk")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1023,10 +1204,13 @@ class LeadListView(LoginRequiredMixin, ListView):
         requested_status = self.request.GET.get("status", "")
         selected_status = requested_status if requested_status in dict(Lead.STATUS_CHOICES) else ""
         selected_assigned = self.request.GET.get("assigned") == "mine"
+        selected_q = self.search_query()
         count_queryset = workspace_queryset(Lead.objects, self.request.user, prefix="property__")
+        has_any_leads = count_queryset.exists()
         if selected_assigned:
             count_queryset = count_queryset.filter(assigned_to=self.request.user)
-        total_leads = count_queryset.count()
+        if selected_q:
+            count_queryset = count_queryset.filter(self.search_filter(selected_q))
         counts = {
             row["status"]: row["total"]
             for row in count_queryset
@@ -1036,17 +1220,39 @@ class LeadListView(LoginRequiredMixin, ListView):
         filtered_total = sum(counts.values())
         context["selected_status"] = selected_status
         context["selected_assigned"] = selected_assigned
+        context["selected_q"] = selected_q
         context["queue_now"] = timezone.now()
+
+        def filter_url(*, status="", assigned=False):
+            params = {}
+            if status:
+                params["status"] = status
+            if assigned:
+                params["assigned"] = "mine"
+            if selected_q:
+                params["q"] = selected_q
+            return reverse("lead_list") + (f"?{urlencode(params)}" if params else "")
         context["status_tabs"] = [
-            {"value": "", "label": "Все", "count": filtered_total},
+            {"value": "", "label": "Все", "count": filtered_total, "url": filter_url(assigned=selected_assigned)},
             *[
-                {"value": value, "label": label, "count": counts.get(value, 0)}
+                {"value": value, "label": label, "count": counts.get(value, 0), "url": filter_url(status=value, assigned=selected_assigned)}
                 for value, label in Lead.STATUS_CHOICES
             ],
         ]
-        context["has_any_leads"] = total_leads > 0
+        context["all_assigned_url"] = filter_url(status=selected_status)
+        context["mine_assigned_url"] = filter_url(status=selected_status, assigned=True)
+        clear_params = {
+            **({"status": selected_status} if selected_status else {}),
+            **({"assigned": "mine"} if selected_assigned else {}),
+        }
+        context["clear_search_url"] = reverse("lead_list") + (f"?{urlencode(clear_params)}" if clear_params else "")
+        context["has_any_leads"] = has_any_leads
         context["can_bulk_delete"] = not agency_for(self.request.user) or may_manage_agency(self.request.user)
-        context["pagination_query"] = "&".join(filter(None, [f"status={selected_status}" if selected_status else "", "assigned=mine" if selected_assigned else ""]))
+        context["pagination_query"] = urlencode({
+            **({"status": selected_status} if selected_status else {}),
+            **({"assigned": "mine"} if selected_assigned else {}),
+            **({"q": selected_q} if selected_q else {}),
+        })
         context["demo_test_completed"] = (
             self.request.GET.get("demo_test") == "1"
             and workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(is_demo=True).exists()
@@ -1060,7 +1266,7 @@ class LeadDetailView(LoginRequiredMixin, DetailView):
     context_object_name = "lead"
 
     def get_queryset(self):
-        return workspace_queryset(Lead.objects, self.request.user, prefix="property__").select_related("property", "client", "assigned_to")
+        return workspace_queryset(Lead.objects, self.request.user, prefix="property__").select_related("property", "client", "assigned_to__realtor_profile")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -1069,6 +1275,21 @@ class LeadDetailView(LoginRequiredMixin, DetailView):
         context["queue_now"] = timezone.now()
         context["current_task"] = self.object.action_tasks.filter(is_done=False).first()
         context["completed_actions"] = self.object.action_tasks.filter(is_done=True).order_by("-completed_at", "-pk")
+        last_contact = self.object.interactions.filter(interaction_type__in=("call", "message")).exclude(
+            text__in=("", "Первый контакт по заявке."),
+        ).order_by("-created_at", "-pk").first()
+        last_action = self.object.action_tasks.filter(
+            is_done=True, cancelled_at__isnull=True, completed_at__isnull=False,
+        ).exclude(outcome_note="").order_by("-completed_at", "-pk").first()
+        if last_action and (not last_contact or last_action.completed_at >= last_contact.created_at):
+            context["contact_summary"] = {
+                "label": "Последний итог", "text": last_action.outcome_note, "at": last_action.completed_at,
+            }
+        elif last_contact:
+            context["contact_summary"] = {
+                "label": "Последний контакт", "text": last_contact.text, "at": last_contact.created_at,
+            }
+        context["contact_open"] = self.request.GET.get("contact") == "1" and not self.object.first_contacted_at
         context["complete_open"] = self.request.GET.get("complete") == "1"
         context["complete_form"] = kwargs.get("complete_form") or LeadActionCompleteForm(initial={
             "task_id": context["current_task"].pk if context["current_task"] else None,
@@ -1096,9 +1317,10 @@ class LeadProcessView(LoginRequiredMixin, View):
             workspace_queryset(Lead.objects, request.user, prefix="property__").select_related("property", "client"),
             pk=pk,
         )
+        from_client = request.POST.get("return_to_client") == "1" and bool(lead.client_id)
         if lead.status == "archived" or lead.outcome != "open":
             messages.error(request, "Заявка уже завершена или находится в архиве.")
-            return redirect("lead_detail", pk=pk)
+            return self.redirect_after(request, lead, from_client)
         form = LeadProcessingForm(request.POST)
         action = request.POST.get("action")
         if action not in ("save", "contacted"):
@@ -1113,17 +1335,17 @@ class LeadProcessView(LoginRequiredMixin, View):
                 require_resource_action(request.user, lead.property, Operation.EDIT_CRM)
             except TariffDenied as error:
                 form.add_error(None, error.message)
-                return self.render_invalid(request, lead, form, status=403)
+                return self.render_invalid(request, lead, form, status=403, from_client=from_client)
             with transaction.atomic():
                 lead = get_object_or_404(
                     workspace_queryset(Lead.objects.select_for_update(), request.user, prefix="property__"), pk=pk,
                 )
                 if lead.status == "archived" or lead.outcome != "open":
                     messages.error(request, "Заявка уже завершена или находится в архиве.")
-                    return redirect("lead_detail", pk=pk)
+                    return self.redirect_after(request, lead, from_client)
                 if action == "contacted" and lead.first_contacted_at:
                     messages.info(request, "Первый контакт по этой заявке уже зафиксирован.")
-                    return redirect("lead_detail", pk=pk)
+                    return self.redirect_after(request, lead, from_client)
                 lead.source = form.cleaned_data["source"]
                 lead.qualification = form.cleaned_data["qualification"]
                 lead.next_action = form.cleaned_data["next_action"]
@@ -1138,6 +1360,7 @@ class LeadProcessView(LoginRequiredMixin, View):
                 lead.save(update_fields=fields)
                 if action == "contacted" and lead.client_id:
                     Client.objects.filter(pk=lead.client_id, first_contacted_at__isnull=True).update(first_contacted_at=lead.first_contacted_at)
+                    activate_client_relationship(lead.client_id, reason="Первый контакт по заявке зафиксирован.", lead=lead)
                     ClientInteraction.objects.create(
                         client_id=lead.client_id,
                         lead=lead,
@@ -1145,11 +1368,27 @@ class LeadProcessView(LoginRequiredMixin, View):
                         text=form.cleaned_data["contact_note"] or "Первый контакт по заявке.",
                     )
             messages.success(request, "Первый контакт и следующий шаг сохранены." if action == "contacted" else "Обработка заявки обновлена.")
-            return redirect("lead_detail", pk=pk)
-        return self.render_invalid(request, lead, form)
+            return self.redirect_after(request, lead, from_client)
+        return self.render_invalid(request, lead, form, from_client=from_client)
 
     @staticmethod
-    def render_invalid(request, lead, form, status=200):
+    def redirect_after(request, lead, from_client):
+        if from_client:
+            page = request.POST.get("leads_page", "")
+            query = f"?leads_page={page}" if page.isdigit() else ""
+            return redirect(f"{reverse('client_detail', kwargs={'pk': lead.client_id})}{query}#client-leads")
+        return redirect("lead_detail", pk=lead.pk)
+
+    @staticmethod
+    def render_invalid(request, lead, form, status=200, from_client=False):
+        if from_client:
+            detail = ClientDetailView()
+            detail.request = request
+            detail.object = lead.client
+            context = detail.get_context_data(
+                contact_form=form, contact_form_lead_id=lead.pk, contact_form_page=request.POST.get("leads_page", ""),
+            )
+            return render(request, detail.template_name, context, status=status)
         detail = LeadDetailView()
         detail.request = request
         detail.object = lead

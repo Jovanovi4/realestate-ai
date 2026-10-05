@@ -9,7 +9,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from properties.models import TelegramConversation, TelegramDelivery, TelegramInboundUpdate, TelegramPublication
-from properties.services.telegram_public_service import is_visible, send_listing
+from properties.services.telegram_public_service import feed_matches_property, is_visible, send_listing
 
 
 class Command(BaseCommand):
@@ -37,13 +37,15 @@ class Command(BaseCommand):
         for delivery_id in list(pending.values_list("id", flat=True)[:options["limit"]]):
             with transaction.atomic():
                 delivery = TelegramDelivery.objects.select_for_update().select_related(
-                    "subscriber", "publication__property",
+                    "subscriber", "publication__property", "publication__feed",
                 ).get(pk=delivery_id)
                 if delivery.sent_at or delivery.attempts >= 5:
                     continue
                 property = delivery.publication.property
                 newest = TelegramPublication.objects.filter(property=property).order_by("-pk").values_list("pk", flat=True).first()
-                if not delivery.subscriber.active or not is_visible(property) or newest != delivery.publication_id:
+                if (not delivery.subscriber.active or not is_visible(property)
+                        or not feed_matches_property(delivery.publication.feed, property)
+                        or newest != delivery.publication_id):
                     delivery.attempts = 5
                     delivery.last_error = "Публикация больше не актуальна"
                     delivery.save(update_fields=["attempts", "last_error"])

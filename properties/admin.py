@@ -4,7 +4,7 @@ from django.db import transaction
 from billing.enforcement import enabled as billing_enforcement_enabled
 from .forms import SafeImageField
 
-from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, RealtorProfile, Showing, TelegramDelivery, TelegramPublication, TelegramSubscriber, UserLegalAcceptance
+from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientInteraction, ClientPropertySuggestion, ClientReminder, Deal, Lead, Property, RealtorProfile, Showing, TelegramDelivery, TelegramPublication, TelegramSubscriber, UserLegalAcceptance
 
 
 class BillingReadOnlyWhenEnforced:
@@ -127,6 +127,7 @@ class LeadAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
 
 @admin.register(Client)
 class ClientAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
+    readonly_fields = ("legacy_status",)
     list_display = ("name", "phone", "owner", "agency", "status", "source", "created_at")
     search_fields = ("name", "phone", "preferred_area")
     list_filter = ("status", "source")
@@ -136,6 +137,13 @@ class ClientAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
 class ClientInteractionAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
     list_display = ("client", "interaction_type", "created_at")
     list_filter = ("interaction_type",)
+
+
+@admin.register(ClientPropertySuggestion)
+class ClientPropertySuggestionAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
+    list_display = ("client", "property", "reaction", "sent_at", "reacted_at")
+    list_filter = ("reaction",)
+    search_fields = ("client__name", "property__title")
 
 
 @admin.register(ClientReminder)

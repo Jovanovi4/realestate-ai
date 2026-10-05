@@ -34,37 +34,60 @@ class NavigationStructureTests(TestCase):
         Property.objects.create(owner=self.user, title="Объект для навигации")
         self.client.force_login(self.user)
 
-    def test_sidebar_has_six_primary_sections_and_secondary_links_are_reachable(self):
+    def test_sidebar_groups_keep_today_and_direct_page_links(self):
         response = self.client.get(reverse("property_list"))
         self.assertEqual(response.status_code, 200)
         html = response.content.decode()
-        primary_nav = html.split("<nav>", 1)[1].split("</nav>", 1)[0]
-        self.assertEqual(primary_nav.count('class="sidebar-link'), 6)
+        primary_nav = html.split('<nav class="sidebar-main-nav"', 1)[1].split("</nav>", 1)[0]
+        self.assertEqual(primary_nav.count('<a class="sidebar-link'), 7)
+        self.assertIn('>Сегодня</span>', primary_nav)
+        self.assertIn('>Недвижимость</span>', primary_nav)
+        self.assertIn('>CRM</span>', primary_nav)
+        self.assertIn('>Интеграции</span>', primary_nav)
         self.assertIn(f'href="{reverse("landing_list")}"', primary_nav)
+        self.assertIn(f'href="{reverse("integration_telegram")}"', primary_nav)
         self.assertNotIn(f'href="{reverse("agency_dashboard")}"', primary_nav)
+        self.assertIn("openGroup: 'realty'", html)
         self.assertIn(f'class="sidebar-link active" href="{reverse("property_list")}"', primary_nav)
         self.assertIn(f'class="sidebar-link " href="{reverse("landing_list")}"', primary_nav)
         self.assertContains(response, f'href="{reverse("agency_dashboard")}"')
-        self.assertNotContains(response, 'aria-label="Разделы объектов"')
+        self.assertContains(response, 'aria-label="Основная навигация"')
 
     def test_landing_screen_marks_landing_sidebar_link_active(self):
         response = self.client.get(reverse("landing_list"))
         self.assertEqual(response.status_code, 200)
         html = response.content.decode()
-        primary_nav = html.split("<nav>", 1)[1].split("</nav>", 1)[0]
+        primary_nav = html.split('<nav class="sidebar-main-nav"', 1)[1].split("</nav>", 1)[0]
         self.assertIn(f'class="sidebar-link active" href="{reverse("landing_list")}"', primary_nav)
         self.assertIn(f'class="sidebar-link " href="{reverse("property_list")}"', primary_nav)
-        self.assertNotContains(response, 'aria-label="Разделы объектов"')
+        self.assertIn("openGroup: 'realty'", html)
         self.assertContains(response, 'aria-label="Фильтр лендингов по статусу"')
         self.assertContains(response, 'href="?status=published"')
         self.assertContains(response, 'href="?status=draft"')
+
+    def test_crm_badge_remains_on_group_when_leads_are_collapsed(self):
+        property = Property.objects.get(owner=self.user)
+        Lead.objects.create(property=property, name="Новый клиент", phone="+79990000001")
+        response = self.client.get(reverse("property_list"))
+        navigation = response.content.decode().split('<nav class="sidebar-main-nav"', 1)[1].split("</nav>", 1)[0]
+        crm_button = navigation.split('aria-controls="sidebar-crm-links"', 1)[1].split("</button>", 1)[0]
+        self.assertIn("openGroup: 'realty'", response.content.decode())
+        self.assertIn('class="sidebar-counter"', crm_button)
+        self.assertIn('>1</span>', crm_button)
+        self.assertContains(self.client.get(reverse("lead_list")), "openGroup: 'crm'")
+
+    def test_integration_link_opens_its_group(self):
+        response = self.client.get(reverse("integration_telegram"))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "openGroup: 'integrations'")
+        self.assertContains(response, f'href="{reverse("integration_telegram")}" aria-current="page">Telegram</a>')
 
     def test_property_header_uses_accessible_archive_and_xml_icons(self):
         Property.objects.create(owner=self.user, title="Архивный объект", status="archived")
         response = self.client.get(reverse("property_list"))
         header = response.content.decode().split('<header class="ui-page-header">', 1)[1].split("</header>", 1)[0]
-        self.assertIn('title="Архив объектов (1)" aria-label="Архив объектов (1)"', header)
-        self.assertIn('title="Выгрузить XML" aria-label="Выгрузить XML"', header)
+        self.assertIn('data-tooltip="Архив объектов (1)" aria-label="Архив объектов (1)"', header)
+        self.assertIn('data-tooltip="Выгрузить XML" aria-label="Выгрузить XML"', header)
         self.assertIn('<use href="#ui-icon-archive"></use>', header)
         self.assertIn('<use href="#ui-icon-download"></use>', header)
         self.assertEqual(header.count('class="btn btn-icon btn-neutral"'), 2)
@@ -76,7 +99,7 @@ class NavigationStructureTests(TestCase):
         self.assertNotIn("badge", header)
 
         archived_response = self.client.get(reverse("property_list"), {"status": "archived"})
-        self.assertContains(archived_response, 'title="К активным объектам" aria-label="К активным объектам"')
+        self.assertContains(archived_response, 'data-tooltip="К активным объектам" aria-label="К активным объектам"')
         self.assertContains(archived_response, '<use href="#ui-icon-chevron-left"></use>')
 
     def test_welcome_screen_still_has_landing_navigation(self):
@@ -85,7 +108,7 @@ class NavigationStructureTests(TestCase):
         response = self.client.get(reverse("property_list"))
         self.assertContains(response, "Начать с демо")
         self.assertContains(response, f'href="{reverse("landing_list")}"')
-        self.assertNotContains(response, 'aria-label="Разделы объектов"')
+        self.assertContains(response, 'aria-label="Основная навигация"')
 
     def test_empty_landings_use_the_same_empty_state_as_objects(self):
         newcomer = User.objects.create_user("empty-landings-user", password="password")
@@ -114,7 +137,18 @@ class NavigationStructureTests(TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.content.decode()
         self.assertIn('href="/agency/"', html.split('class="sidebar-bottom"', 1)[1])
-        self.assertIn("profileOpen: true", html)
+        self.assertIn("openGroup: 'profile'", html)
+
+    def test_sidebar_uses_one_state_for_all_expandable_groups(self):
+        response = self.client.get(reverse("property_list"))
+        html = response.content.decode()
+        for group in ("realty", "crm", "integrations", "profile"):
+            self.assertIn(f"@click=\"openGroup = openGroup === '{group}' ? null : '{group}'\"", html)
+            self.assertIn(f'x-show="openGroup === \'{group}\'"', html)
+        self.assertNotIn("realtyOpen", html)
+        self.assertNotIn("crmOpen", html)
+        self.assertNotIn("integrationsOpen", html)
+        self.assertNotIn("profileOpen", html)
 
 
 class AgencyWorkflowTests(TestCase):
@@ -204,6 +238,17 @@ class AgencyWorkflowTests(TestCase):
         self.assertRedirects(response, reverse("deal_detail", args=[new_deal.pk]))
         self.assertEqual(new_deal.responsible, self.agent)
 
+    def test_deal_responsible_choices_use_profile_name(self):
+        self.create_agency()
+        self.invite_and_join()
+        RealtorProfile.objects.update_or_create(user=self.agent, defaults={"display_name": "Мария Соколова"})
+        self.client.force_login(self.founder)
+
+        response = self.client.get(reverse("deal_detail", args=[self.deal.pk]))
+
+        self.assertContains(response, f'<option value="{self.agent.pk}">Мария Соколова</option>')
+        self.assertNotContains(response, f'<option value="{self.agent.pk}">agency-agent</option>')
+
     def test_team_deal_edit_preserves_or_changes_responsible(self):
         self.create_agency()
         self.invite_and_join()
@@ -225,6 +270,54 @@ class AgencyWorkflowTests(TestCase):
         self.assertRedirects(self.client.post(url, {**data, "responsible": self.founder.pk}), url)
         self.deal.refresh_from_db()
         self.assertEqual(self.deal.responsible, self.founder)
+
+    def test_deal_reassignment_moves_open_work_to_new_owner_everywhere(self):
+        agency = self.create_agency()
+        self.invite_and_join()
+        self.client.force_login(self.founder)
+        self.deal.refresh_from_db()
+        midday = timezone.localtime(timezone.now()).replace(hour=12, minute=0, second=0, microsecond=0)
+        moved_task = ClientReminder.objects.create(
+            owner=self.founder, agency=agency, deal=self.deal,
+            text="Обсудить условия сделки", due_at=midday,
+        )
+        delegated_task = ClientReminder.objects.create(
+            owner=self.agent, agency=agency, deal=self.deal,
+            text="Подготовить документы", due_at=midday,
+        )
+        completed_task = ClientReminder.objects.create(
+            owner=self.founder, agency=agency, deal=self.deal,
+            text="Уже выполнено", due_at=midday, is_done=True, completed_at=timezone.now(),
+        )
+        planned_showing = Showing.objects.create(
+            owner=self.founder, agency=agency, deal=self.deal, starts_at=midday,
+        )
+        completed_showing = Showing.objects.create(
+            owner=self.founder, agency=agency, deal=self.deal, starts_at=midday,
+            status="completed", outcome_note="Показ состоялся",
+        )
+        url = reverse("deal_detail", args=[self.deal.pk])
+        response = self.client.post(url, {
+            "client": self.client_record.pk, "property": self.property.pk, "lead": self.lead.pk,
+            "responsible": self.agent.pk, "stage": "in_progress", "expected_commission": "1000",
+        })
+        self.assertRedirects(response, url)
+        self.deal.refresh_from_db()
+        for item in (moved_task, delegated_task, completed_task, planned_showing, completed_showing):
+            item.refresh_from_db()
+        self.assertEqual(self.deal.responsible, self.agent)
+        self.assertEqual(moved_task.owner, self.agent)
+        self.assertEqual(delegated_task.owner, self.agent)
+        self.assertEqual(completed_task.owner, self.founder)
+        self.assertEqual(planned_showing.owner, self.agent)
+        self.assertEqual(completed_showing.owner, self.founder)
+        self.assertContains(self.client.get(url), "agency-agent")
+        self.assertContains(self.client.get(reverse("client_detail", args=[self.client_record.pk])), "Ответственный: agency-agent")
+        self.assertNotContains(self.client.get(reverse("workday")), "Обсудить условия сделки")
+        self.client.force_login(self.agent)
+        workday = self.client.get(reverse("workday"))
+        self.assertContains(workday, "Обсудить условия сделки")
+        self.assertContains(workday, reverse("showing_detail", args=[planned_showing.pk]))
 
     def test_deal_from_team_lead_inherits_its_responsible(self):
         agency = self.create_agency()
@@ -267,6 +360,8 @@ class AgencyWorkflowTests(TestCase):
     def test_only_management_can_assign_leads_and_change_team(self):
         agency = self.create_agency()
         self.invite_and_join()
+        Lead.objects.filter(pk=self.lead.pk).update(created_at=timezone.now() - timedelta(hours=1))
+        self.lead.refresh_from_db()
         self.assertEqual(self.client.post(reverse("lead_assign", args=[self.lead.pk]), {"assigned_to": self.agent.pk}).status_code, 404)
         self.assertEqual(self.client.post(reverse("agency_invite"), {"role": "manager"}).status_code, 404)
         self.client.force_login(self.founder)
@@ -275,6 +370,11 @@ class AgencyWorkflowTests(TestCase):
         self.lead.refresh_from_db()
         self.assertEqual(self.lead.assigned_to, self.agent)
         self.assertEqual(ClientReminder.objects.get(lead=self.lead, is_done=False).owner, self.agent)
+        self.assertContains(self.client.get(reverse("client_detail", args=[self.client_record.pk])), "agency-agent")
+        self.assertNotIn(self.lead, list(self.client.get(reverse("workday")).context["today_leads"]))
+        self.client.force_login(self.agent)
+        agent_day = self.client.get(reverse("workday"))
+        self.assertIn(self.lead, list(agent_day.context["today_leads"]) + list(agent_day.context["overdue_leads"]))
         self.assertEqual(agency.memberships.count(), 2)
 
     def test_removed_member_loses_access_and_assignments_return_to_founder(self):
@@ -305,7 +405,7 @@ class AgencyWorkflowTests(TestCase):
         self.assertRedirects(response, reverse("client_detail", args=[self.client_record.pk]))
         event = AuditEvent.objects.filter(agency=agency, model_name="Клиент", object_pk=str(self.client_record.pk), action="updated").latest("pk")
         self.assertEqual(event.actor, self.agent)
-        self.assertIn("Этап воронки", event.changed_fields)
+        self.assertIn("Отношения с клиентом", event.changed_fields)
         self.assertNotIn(self.client_record.phone, str(event.changed_fields))
 
     def test_audit_history_is_paginated_after_ten_entries(self):
@@ -605,7 +705,7 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context["page_obj"].paginator.count, 11)
         self.assertEqual(len(response.context["clients"]), 1)
-        self.assertContains(response, "Этап: В работе")
+        self.assertContains(response, "Отношения: В работе")
         self.assertContains(response, "Источник: Лендинг")
         self.assertContains(response, "Сортировка: Имя: А–Я")
         self.assertContains(response, 'class="lead-table-shell desktop-records"')
@@ -617,6 +717,22 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertNotIn("q", query)
         self.assertNotIn("page", query)
         self.assertEqual(query["status"], ["in_progress"])
+
+    def test_client_list_counts_leads_and_sorts_by_count(self):
+        owner = User.objects.create_user("client-count-owner", password="password")
+        property_record = Property.objects.create(owner=owner, title="Квартира")
+        frequent = Client.objects.create(owner=owner, name="Анна", phone="+79990000201")
+        occasional = Client.objects.create(owner=owner, name="Борис", phone="+79990000202")
+        for index in range(2):
+            Lead.objects.create(property=property_record, client=frequent, name="Анна", phone=f"+7999000030{index}")
+        Lead.objects.create(property=property_record, client=occasional, name="Борис", phone="+79990000310")
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("client_list"), {"sort": "leads_desc"})
+
+        self.assertEqual([(client.name, client.lead_count) for client in response.context["clients"]],
+                         [("Анна", 2), ("Борис", 1)])
+        self.assertNotIn("metrics", response.context)
 
     def test_client_reminder_card_shows_full_count_and_only_first_five(self):
         owner = User.objects.create_user("client-owner", password="password")
@@ -636,17 +752,37 @@ class AccountAndPropertyAccessTests(TestCase):
         owner = User.objects.create_user("client-owner", password="password")
         other = User.objects.create_user("other-client-owner", password="password")
         Client.objects.create(owner=owner, name="Анна", phone="+79990000000", status="new")
-        Client.objects.create(owner=owner, name="Борис", phone="+79990000001", status="won")
+        Client.objects.create(owner=owner, name="Борис", phone="+79990000001", status="nurture")
         Client.objects.create(owner=other, name="Чужой клиент", phone="+79990000002", status="new")
         self.client.force_login(owner)
 
         response = self.client.get(reverse("client_board"))
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual([(status, len(clients)) for status, _, clients in response.context["columns"]],
-                         [("new", 1), ("in_progress", 0), ("viewing", 0), ("negotiation", 0), ("won", 1), ("lost", 0)])
+        self.assertEqual([(column["key"], column["count"]) for column in response.context["columns"]],
+                         [("new", 1), ("in_progress", 0), ("nurture", 1), ("inactive", 0)])
         self.assertContains(response, 'class="client-board__column is-new"')
         self.assertNotContains(response, "Чужой клиент")
+
+    def test_client_board_pages_one_column_without_hiding_other_columns(self):
+        owner = User.objects.create_user("board-page-owner", password="password")
+        for index in range(13):
+            Client.objects.create(owner=owner, name=f"Клиент {index:02d}", phone=f"+7999001{index:04d}")
+        Client.objects.create(owner=owner, name="Клиент в сопровождении", phone="+79990019999", status="nurture")
+        self.client.force_login(owner)
+
+        first = self.client.get(reverse("client_board"))
+        first_new = next(column for column in first.context["columns"] if column["key"] == "new")
+        self.assertEqual((first_new["count"], len(first_new["page"])), (13, 12))
+        self.assertContains(first, "Клиент 12")
+        self.assertNotContains(first, "Клиент 00")
+        self.assertContains(first, "Клиент в сопровождении")
+
+        second = self.client.get(first_new["next_url"])
+        second_new = next(column for column in second.context["columns"] if column["key"] == "new")
+        self.assertEqual((second_new["count"], len(second_new["page"])), (13, 1))
+        self.assertContains(second, "Клиент 00")
+        self.assertContains(second, "Клиент в сопровождении")
 
     def test_client_bulk_delete_keeps_safe_filter_url(self):
         owner = User.objects.create_user("client-owner", password="password")
@@ -1147,9 +1283,14 @@ class AccountAndPropertyAccessTests(TestCase):
 
         response = self.client.get(reverse("client_detail", args=[client.pk]))
 
-        self.assertContains(response, 'class="detail-summary-bar"')
+        self.assertContains(response, 'class="detail-summary-bar client-detail-summary"')
+        self.assertContains(response, 'aria-label="Показать следующие вкладки"')
         self.assertContains(response, "Позвонить завтра")
+        self.assertEqual(response.content.decode().count("Позвонить завтра"), 1)
+        self.assertEqual(len(response.context["reminders"]), 0)
         self.assertContains(response, f'id="client-status-{client.pk}"')
+        self.assertContains(response, 'class="detail-status-control__editor" x-data="{ changed: false }"')
+        self.assertContains(response, 'x-show="changed" x-cloak>Сохранить</button>')
         self.assertContains(response, 'id="client-history"')
 
         interaction_response = self.client.post(reverse("client_interaction_create", args=[client.pk]), {
@@ -1157,6 +1298,19 @@ class AccountAndPropertyAccessTests(TestCase):
         })
         self.assertRedirects(interaction_response, f"{reverse('client_detail', args=[client.pk])}#client-history", fetch_redirect_response=False)
         self.assertContains(self.client.get(reverse("client_detail", args=[client.pk])), "Обсудили условия")
+
+    def test_client_detail_shows_unscheduled_task_as_main_step(self):
+        owner = User.objects.create_user("unscheduled-owner", password="password")
+        client = Client.objects.create(owner=owner, name="Анна", phone="+79990000000")
+        task = ClientReminder.objects.create(owner=owner, client=client, text="Уточнить интерес")
+        self.client.force_login(owner)
+
+        response = self.client.get(reverse("client_detail", args=[client.pk]))
+
+        self.assertContains(response, "Уточнить интерес")
+        self.assertContains(response, "Без срока")
+        self.assertEqual([item.pk for item in response.context["reminders"]], [])
+        self.assertEqual(response.context["next_reminder"].pk, task.pk)
 
     def test_client_status_quick_action_keeps_htmx_control(self):
         owner = User.objects.create_user("detail-owner", password="password")
@@ -1169,6 +1323,8 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, f'id="client-status-{client.pk}"')
         self.assertContains(response, 'class="detail-status-control"')
+        self.assertContains(response, 'aria-label="Изменить отношения с клиентом: В работе"')
+        self.assertContains(response, 'x-show="changed" x-cloak>Сохранить</button>')
         client.refresh_from_db()
         self.assertEqual(client.status, "in_progress")
 
@@ -1259,6 +1415,35 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertEqual(len(response.json()["contents"]), 3)
         property.refresh_from_db()
         self.assertEqual(property.short_description, "Ручной текст")
+
+    @patch("properties.services.ai_service.AIService._run_prompt")
+    def test_full_bundle_generates_distinct_ad_and_landing_fields_in_one_request(self, run_prompt):
+        owner = User.objects.create_user("bundle-owner", password="password")
+        property = Property.objects.create(title="Квартира", owner=owner, description="Ручной текст")
+        types = (
+            "headline", "short_description", "full_description", "landing_headline", "landing_subtitle",
+            "seo_title", "seo_description", "benefits", "cta",
+        )
+        run_prompt.return_value = {
+            "content": "\n".join(f"[[{kind}]] Текст {kind}" for kind in types),
+            "prompt": "test", "provider": "ollama", "model": "test", "duration_ms": 1,
+        }
+        self.client.force_login(owner)
+
+        response = self.client.post(reverse("ai_bundle_generate", args=[property.pk]), {"tone": "business"})
+
+        self.assertEqual(response.status_code, 200)
+        targets = [item["target"] for item in response.json()["contents"]]
+        self.assertEqual(len(targets), 9)
+        self.assertEqual(len(set(targets)), 9)
+        self.assertIn("description", targets)
+        self.assertIn("landing_title", targets)
+        self.assertIn("landing_trust_about", targets)
+        self.assertIn("seo_description", targets)
+        self.assertEqual(run_prompt.call_count, 1)
+        self.assertEqual(AIContent.objects.filter(property=property).count(), 9)
+        property.refresh_from_db()
+        self.assertEqual(property.description, "Ручной текст")
 
     @patch("properties.ai_views.AIService.generate_bundle")
     def test_ai_landing_bundle_uses_landing_scenario(self, generate_bundle):
@@ -1456,6 +1641,31 @@ class DealWorkflowTests(TestCase):
         self.assertEqual(response.context["active_count"], 2)
         self.assertEqual(self.client_record.status, "new")
 
+    def test_deal_board_pages_cards_and_keeps_next_work_visible(self):
+        now = timezone.now()
+        for index in range(13):
+            property_record = Property.objects.create(owner=self.owner, title=f"Объект {index:02d}")
+            deal = Deal.objects.create(
+                owner=self.owner, responsible=self.owner, client=self.client_record, property=property_record,
+            )
+            if index == 12:
+                Showing.objects.create(owner=self.owner, deal=deal, starts_at=now - timedelta(days=1))
+                future = Showing.objects.create(owner=self.owner, deal=deal, starts_at=now + timedelta(days=1))
+                ClientReminder.objects.create(owner=self.owner, deal=deal, text="Согласовать показ", due_at=now + timedelta(hours=2))
+
+        first = self.client.get(reverse("deal_board"))
+        first_new = next(column for column in first.context["columns"] if column["key"] == "new")
+        self.assertEqual((first_new["count"], len(first_new["page"]), first.context["active_count"]), (13, 12, 13))
+        self.assertEqual(first_new["page"][0].next_showing_at, future.starts_at)
+        self.assertEqual(first_new["page"][0].next_task_text, "Согласовать показ")
+        self.assertContains(first, "Согласовать показ")
+        self.assertNotContains(first, "Объект 00")
+
+        second = self.client.get(first_new["next_url"])
+        second_new = next(column for column in second.context["columns"] if column["key"] == "new")
+        self.assertEqual((second_new["count"], len(second_new["page"])), (13, 1))
+        self.assertContains(second, "Объект 00")
+
     def test_active_duplicate_is_rejected_but_new_deal_after_closing_is_allowed(self):
         existing = Deal.objects.create(owner=self.owner, responsible=self.owner, client=self.client_record, property=self.property)
         response = self.client.post(reverse("deal_create"), self.payload())
@@ -1495,6 +1705,27 @@ class DealWorkflowTests(TestCase):
         self.assertEqual(deal.property, self.property)
         self.assertEqual(deal.stage, "viewing")
 
+    def test_edit_shows_pair_once_and_work_before_financial_fields(self):
+        deal = Deal.objects.create(
+            owner=self.owner, responsible=self.owner,
+            client=self.client_record, property=self.property, lead=self.lead,
+        )
+        url = reverse("deal_detail", args=[deal.pk])
+        response = self.client.get(url)
+        page = response.content.decode()
+
+        self.assertContains(response, reverse("client_detail", args=[self.client_record.pk]))
+        self.assertContains(response, reverse("property_detail", args=[self.property.pk]))
+        self.assertNotIn('name="client"', page)
+        self.assertNotIn('name="property"', page)
+        self.assertLess(page.index('id="deal-tasks-title"'), page.index('id="id_expected_commission"'))
+        self.assertLess(page.index('id="deal-showings-title"'), page.index('id="id_expected_commission"'))
+
+        save = self.client.post(url, {"stage": "viewing", "expected_commission": "120000.00"})
+        self.assertRedirects(save, url)
+        deal.refresh_from_db()
+        self.assertEqual((deal.client, deal.property, deal.stage), (self.client_record, self.property, "viewing"))
+
     def test_client_summary_uses_deal_task_when_no_other_reminder_exists(self):
         deal = Deal.objects.create(owner=self.owner, responsible=self.owner, client=self.client_record, property=self.property)
         ClientReminder.objects.create(
@@ -1522,6 +1753,148 @@ class DealWorkflowTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Укажите причину отказа")
         self.assertFalse(Deal.objects.exists())
+
+
+class WorkItemsTests(TestCase):
+    def setUp(self):
+        self.owner = User.objects.create_user("items-owner", password="password")
+        self.other = User.objects.create_user("items-other", password="password")
+        self.client_record = Client.objects.create(owner=self.owner, name="Анна", phone="+79990000031")
+        self.property = Property.objects.create(owner=self.owner, title="Квартира у парка")
+        self.deal = Deal.objects.create(owner=self.owner, responsible=self.owner, client=self.client_record, property=self.property)
+        self.client.force_login(self.owner)
+
+    def test_all_items_shows_open_work_in_deadline_order_without_duplicate_lead_task(self):
+        now = timezone.localtime(timezone.now()).replace(hour=12, minute=0, second=0, microsecond=0)
+        ClientReminder.objects.create(owner=self.owner, text="Просроченный звонок", due_at=now - timedelta(hours=2))
+        ClientReminder.objects.create(owner=self.owner, text="Звонок сегодня", due_at=now + timedelta(minutes=5))
+        ClientReminder.objects.create(owner=self.owner, text="Задача на завтра", due_at=now + timedelta(days=2))
+        ClientReminder.objects.create(owner=self.owner, text="Без даты")
+        ClientReminder.objects.create(owner=self.owner, text="Выполнено", is_done=True)
+        ClientReminder.objects.create(owner=self.owner, text="Отменено", cancelled_at=now)
+        ClientReminder.objects.create(owner=self.other, text="Чужая задача")
+        lead = Lead.objects.create(
+            property=self.property, name="Клиент по заявке", phone="+79990000032",
+            first_contacted_at=now, next_action="Уточнить условия", next_action_due_at=now + timedelta(days=1),
+        )
+        showing = Showing.objects.create(owner=self.owner, deal=self.deal, starts_at=now + timedelta(days=3))
+        Showing.objects.create(owner=self.owner, deal=self.deal, starts_at=now + timedelta(days=4), status="completed", outcome_note="Проведён")
+        other_client = Client.objects.create(owner=self.other, name="Чужой клиент", phone="+79990000035")
+        other_property = Property.objects.create(owner=self.other, title="Чужой объект")
+        other_deal = Deal.objects.create(owner=self.other, client=other_client, property=other_property)
+        Lead.objects.create(property=other_property, name="Чужая заявка", phone="+79990000036")
+        Showing.objects.create(owner=self.other, deal=other_deal, starts_at=now + timedelta(days=2))
+
+        with patch("properties.workday_views.timezone.now", return_value=now):
+            response = self.client.get(reverse("work_items"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([group["title"] for group in response.context["groups"]], ["Просрочено", "Сегодня", "Позже", "Без срока"])
+        items = [item for group in response.context["groups"] for item in group["items"]]
+        self.assertEqual(len(items), 6)
+        self.assertEqual([(item["kind"], item["pk"]) for item in items if item["kind"] == "lead"], [("lead", lead.pk)])
+        self.assertEqual([(item["kind"], item["pk"]) for item in items if item["kind"] == "showing"], [("showing", showing.pk)])
+        self.assertEqual(items[0]["title"], "Просроченный звонок")
+        self.assertEqual(items[-1]["title"], "Без даты")
+        self.assertNotContains(response, "Чужая задача")
+        self.assertNotContains(response, "Чужая заявка")
+        self.assertNotContains(response, "Чужой объект")
+        self.assertNotContains(response, "Выполнено")
+        self.assertNotContains(response, "Отменено")
+        self.assertContains(response, f'href="{reverse("lead_detail", args=[lead.pk])}"')
+        self.assertContains(response, 'data-tooltip="Открыть заявку"')
+        self.assertContains(response, 'data-tooltip="Открыть показ"')
+        self.assertContains(response, 'aria-label="Период дел"')
+        self.assertContains(response, 'aria-label="Тип дела"')
+        self.assertContains(response, f'href="{reverse("work_items")}" aria-current="page"')
+
+    def test_first_response_deadline_is_used_and_closed_leads_are_hidden(self):
+        now = timezone.now()
+        lead = Lead.objects.create(
+            property=self.property, name="Новая заявка", phone="+79990000033",
+            next_action="Позвонить позже", next_action_due_at=now + timedelta(days=2),
+        )
+        closed = Lead.objects.create(property=self.property, name="Закрытая заявка", phone="+79990000034")
+        closed.status = "archived"
+        closed.save(update_fields=["status"])
+
+        response = self.client.get(reverse("work_items"), {"kind": "lead"})
+
+        items = [item for group in response.context["groups"] for item in group["items"]]
+        self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["pk"], lead.pk)
+        self.assertEqual(items[0]["title"], "Ответить клиенту")
+        self.assertEqual(items[0]["due_at"], lead.first_response_due_at)
+
+    def test_type_filter_and_pagination_keep_future_tasks_visible(self):
+        now = timezone.now()
+        for index in range(26):
+            ClientReminder.objects.create(owner=self.owner, text=f"Дело {index:02d}", due_at=now + timedelta(days=2, minutes=index))
+        Showing.objects.create(owner=self.owner, deal=self.deal, starts_at=now + timedelta(days=3))
+
+        first = self.client.get(reverse("work_items"), {"kind": "task"})
+        second = self.client.get(reverse("work_items"), {"kind": "task", "page": "2"})
+        showings = self.client.get(reverse("work_items"), {"kind": "showing"})
+
+        self.assertEqual(first.context["page_obj"].paginator.count, 26)
+        self.assertContains(first, "Дело 00")
+        self.assertNotContains(first, "Дело 25")
+        self.assertContains(first, f"?next={reverse('work_items')}%3Fkind%3Dtask%26page%3D1")
+        self.assertContains(second, "Дело 25")
+        self.assertContains(second, "?kind=task&amp;page=1")
+        self.assertEqual(showings.context["page_obj"].paginator.count, 1)
+        self.assertEqual(showings.context["groups"][0]["items"][0]["kind"], "showing")
+
+    def test_mixed_work_is_paged_after_merging_deadlines(self):
+        now = timezone.now()
+        for index in range(24):
+            ClientReminder.objects.create(
+                owner=self.owner, text=f"Звонок {index:02d}", due_at=now + timedelta(minutes=index + 1),
+            )
+        lead = Lead.objects.create(
+            property=self.property, name="Новый клиент", phone="+79990000991",
+            first_contacted_at=now, next_action="Отправить подборку",
+            next_action_due_at=now + timedelta(minutes=25),
+        )
+        showing = Showing.objects.create(owner=self.owner, deal=self.deal, starts_at=now + timedelta(minutes=26))
+
+        first = self.client.get(reverse("work_items"))
+        second = self.client.get(reverse("work_items"), {"page": 2})
+        first_items = [item for group in first.context["groups"] for item in group["items"]]
+        second_items = [item for group in second.context["groups"] for item in group["items"]]
+
+        self.assertEqual(first.context["page_obj"].paginator.count, 26)
+        self.assertEqual((len(first_items), first_items[-1]["kind"], first_items[-1]["pk"]), (25, "lead", lead.pk))
+        self.assertEqual([(item["kind"], item["pk"]) for item in second_items], [("showing", showing.pk)])
+
+    def test_task_form_and_completion_return_to_all_items(self):
+        task = ClientReminder.objects.create(owner=self.owner, text="Позвонить", due_at=timezone.now() + timedelta(days=1))
+        target = f"{reverse('work_items')}?kind=task&page=1"
+        form = self.client.get(reverse("task_detail", args=[task.pk]), {"next": target})
+        self.assertContains(form, f'name="next" value="{reverse("work_items")}?kind=task&amp;page=1"')
+
+        response = self.client.post(reverse("task_detail", args=[task.pk]), {
+            "text": "Позвонить позже",
+            "due_at": timezone.localtime(timezone.now() + timedelta(days=2)).strftime("%Y-%m-%dT%H:%M"),
+            "client": "", "deal": "", "next": target,
+        })
+        self.assertRedirects(response, target)
+        response = self.client.post(reverse("task_complete", args=[task.pk]), {"next": target})
+        self.assertRedirects(response, target)
+        self.assertFalse(any(item["kind"] == "task" for group in self.client.get(target).context["groups"] for item in group["items"]))
+
+    def test_showing_form_returns_to_all_items(self):
+        start = timezone.localtime(timezone.now() + timedelta(days=2))
+        showing = Showing.objects.create(owner=self.owner, deal=self.deal, starts_at=start)
+        target = reverse("work_items")
+        form = self.client.get(reverse("showing_detail", args=[showing.pk]), {"next": target})
+        self.assertContains(form, f'name="next" value="{target}"')
+
+        response = self.client.post(reverse("showing_detail", args=[showing.pk]), {
+            "deal": self.deal.pk, "starts_at": start.strftime("%Y-%m-%dT%H:%M"),
+            "ends_at": "", "location": "", "status": "planned", "outcome_note": "", "next": target,
+        })
+        self.assertRedirects(response, target)
 
 
 class WorkdayTests(TestCase):
@@ -1609,11 +1982,15 @@ class WorkdayTests(TestCase):
         response = self.client.post(reverse("showing_detail", args=[showing.pk]), payload)
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Запишите результат показа")
-        response = self.client.post(reverse("showing_detail", args=[showing.pk]), {**payload, "outcome_note": "Клиенту понравилось"})
+        response = self.client.post(reverse("showing_detail", args=[showing.pk]), {
+            **payload, "outcome_note": "Клиенту понравилось",
+            "next_action": "Уточнить решение", "next_action_due_at": (start + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M"),
+        })
         self.assertRedirects(response, reverse("workday"))
         showing.refresh_from_db()
         self.assertEqual(showing.status, "completed")
         self.assertEqual(showing.outcome_note, "Клиенту понравилось")
+        self.assertEqual(showing.follow_up_task.text, "Уточнить решение")
         self.assertTrue(self.client_record.interactions.filter(text__contains="Клиенту понравилось").exists())
         Showing.objects.create(deal=self.deal, starts_at=start + timedelta(days=1))
         self.assertEqual(self.deal.showings.count(), 2)

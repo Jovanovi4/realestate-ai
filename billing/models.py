@@ -82,6 +82,7 @@ class PlanVersion(ValidatedModel):
     demo_ai_credits_limit = models.PositiveIntegerField(default=0)
     xml_export_enabled = models.BooleanField(default=False)
     team_enabled = models.BooleanField(default=False)
+    telegram_publications_enabled = models.BooleanField(default=True)
     grace_days = models.PositiveSmallIntegerField(default=7)
     ai_costs = models.JSONField(default=default_ai_costs, validators=[validate_ai_costs])
     monthly_price_minor = models.PositiveBigIntegerField(null=True, blank=True, verbose_name="Цена в минимальных денежных единицах")
@@ -92,7 +93,7 @@ class PlanVersion(ValidatedModel):
     TERMS = (
         "plan_id", "version", "policy_version", "active_properties_limit", "total_properties_limit",
         "landings_limit", "seats_limit", "storage_bytes_limit", "ai_credits_limit", "demo_ai_credits_limit",
-        "xml_export_enabled", "team_enabled", "grace_days", "ai_costs", "monthly_price_minor", "currency",
+        "xml_export_enabled", "team_enabled", "telegram_publications_enabled", "grace_days", "ai_costs", "monthly_price_minor", "currency",
     )
 
     class Meta:
@@ -110,12 +111,16 @@ class PlanVersion(ValidatedModel):
         return self.plan.code != Plan.Code.DEMO and self.monthly_price_minor is not None and self.monthly_price_minor > 0 and bool(re.fullmatch(r"[A-Z]{3}", self.currency)) and self.available
 
     def snapshot(self):
+        legacy = self.policy_version == "BP-0.1"
+        features = {"xml_export": self.xml_export_enabled, "team": self.team_enabled}
+        if not legacy:
+            features["telegram_publications"] = self.telegram_publications_enabled
         return {
-            "schema": 1, "policy_version": self.policy_version, "plan_code": self.plan.code, "version": self.version,
+            "schema": 1 if legacy else 2, "policy_version": self.policy_version, "plan_code": self.plan.code, "version": self.version,
             "limits": {key: getattr(self, f"{key}_limit") for key in (
                 "active_properties", "total_properties", "landings", "seats", "storage_bytes", "ai_credits", "demo_ai_credits",
             )},
-            "features": {"xml_export": self.xml_export_enabled, "team": self.team_enabled},
+            "features": features,
             "ai_costs": deepcopy(self.ai_costs), "grace_days": self.grace_days,
         }
 
@@ -132,6 +137,8 @@ class PlanVersion(ValidatedModel):
             raise ValidationError({"currency": "Укажите трёхбуквенный код валюты верхним регистром."})
         if self.plan_id and self.plan.code == Plan.Code.DEMO and self.monthly_price_minor not in (0, None):
             raise ValidationError("Демо — бесплатный тариф.")
+        if self.policy_version == "BP-0.1" and not self.telegram_publications_enabled:
+            raise ValidationError("Право Telegram требует новой версии политики.")
         validate_snapshot(self.snapshot())
 
     def __str__(self):

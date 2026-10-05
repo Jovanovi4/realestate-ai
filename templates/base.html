@@ -90,7 +90,7 @@
     </style>
     <link rel="stylesheet" href="{% static 'css/rieltor-ui.css' %}" />
   </head>
-  <body x-data="{ sidebarOpen: false }">
+  <body x-data="{ sidebarOpen: false, openGroup: {% if nav_active_section == 'realty' %}'realty'{% elif nav_active_section == 'crm' %}'crm'{% elif nav_active_section == 'integrations' %}'integrations'{% elif request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' or 'agency' in request.resolver_match.url_name %}'profile'{% else %}null{% endif %} }">
     {% include "includes/ui_icon_sprite.html" %}
     {% if user.is_authenticated %}
       <header class="mobile-header">
@@ -102,21 +102,31 @@
         <div class="d-flex justify-content-between align-items-center d-lg-none mb-3"><span class="text-white-50 small">Меню</span><button class="btn btn-icon btn-sm btn-outline-light" type="button" @click="sidebarOpen = false" aria-label="Закрыть меню"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></button></div>
         <a class="app-brand" href="{% url 'property_list' %}"><span class="app-brand-mark">RE</span>RealtorAI</a>
         <p class="sidebar-label">Рабочее пространство</p>
-        <nav>
-          <a class="sidebar-link {% if request.resolver_match.url_name == 'workday' or request.resolver_match.url_name == 'task_create' or request.resolver_match.url_name == 'task_detail' or request.resolver_match.url_name == 'showing_create' or request.resolver_match.url_name == 'showing_detail' %}active{% endif %}" href="{% url 'workday' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-calendar"></use></svg></span><span>Сегодня</span>{% if nav_overdue_count %}<span class="sidebar-counter" title="{{ nav_overdue_count }} просроченных дел" aria-label="{{ nav_overdue_count }} просроченных дел">{{ nav_overdue_label }}</span>{% endif %}</a>
-          <a class="sidebar-link {% if 'property' in request.resolver_match.url_name or request.resolver_match.url_name == 'upload_images' or request.resolver_match.url_name == 'reorder_images' or request.resolver_match.url_name == 'set_primary_image' or request.resolver_match.url_name == 'avito_export' or request.resolver_match.url_name == 'cian_export' or request.resolver_match.url_name == 'ai_assistant' %}active{% endif %}" href="{% url 'property_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-home"></use></svg></span>Объекты</a>
-          <a class="sidebar-link {% if request.resolver_match.url_name == 'landing_list' or request.resolver_match.url_name == 'landing_unpublish' %}active{% endif %}" href="{% url 'landing_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-layout"></use></svg></span>Лендинги</a>
-          <a class="sidebar-link {% if request.resolver_match.url_name == 'lead_list' or request.resolver_match.url_name == 'lead_detail' or request.resolver_match.url_name == 'lead_process' %}active{% endif %}" href="{% url 'lead_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-phone"></use></svg></span><span>Заявки</span>{% if nav_new_leads_count %}<span class="sidebar-counter" title="{{ nav_new_leads_count }} заявок требуют ответа" aria-label="{{ nav_new_leads_count }} заявок требуют ответа">{{ nav_new_leads_label }}</span>{% endif %}</a>
-          <a class="sidebar-link {% if 'client' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'client_list' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-users"></use></svg></span>Клиенты</a>
-          <a class="sidebar-link {% if 'deal' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'deal_board' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-briefcase"></use></svg></span>Сделки</a>
+        <nav class="sidebar-main-nav" aria-label="Основная навигация">
+          <a class="sidebar-link {% if nav_active_item == 'today' %}active{% endif %}" href="{% url 'workday' %}"{% if nav_active_item == 'today' %} aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-calendar"></use></svg></span><span>Сегодня</span>{% if nav_overdue_count %}<span class="sidebar-counter" title="{{ nav_overdue_count }} просроченных дел" aria-label="{{ nav_overdue_count }} просроченных дел">{{ nav_overdue_label }}</span>{% endif %}</a>
+          <button class="sidebar-link sidebar-group-toggle w-100 border-0 text-start {% if nav_active_section == 'realty' %}active{% endif %}" type="button" @click="openGroup = openGroup === 'realty' ? null : 'realty'" :aria-expanded="(openGroup === 'realty').toString()" aria-controls="sidebar-realty-links"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-home"></use></svg></span><span>Недвижимость</span><svg class="ui-icon sidebar-group-chevron" :class="{ 'is-open': openGroup === 'realty' }" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></button>
+          <div class="sidebar-group-links" id="sidebar-realty-links" x-cloak x-show="openGroup === 'realty'">
+            <a class="sidebar-link {% if nav_active_item == 'properties' %}active{% endif %}" href="{% url 'property_list' %}"{% if nav_active_item == 'properties' %} aria-current="page"{% endif %}>Объекты</a>
+            <a class="sidebar-link {% if nav_active_item == 'landings' %}active{% endif %}" href="{% url 'landing_list' %}"{% if nav_active_item == 'landings' %} aria-current="page"{% endif %}>Лендинги</a>
+          </div>
+          <button class="sidebar-link sidebar-group-toggle w-100 border-0 text-start {% if nav_active_section == 'crm' %}active{% endif %}" type="button" @click="openGroup = openGroup === 'crm' ? null : 'crm'" :aria-expanded="(openGroup === 'crm').toString()" aria-controls="sidebar-crm-links"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-briefcase"></use></svg></span><span>CRM</span>{% if nav_new_leads_count %}<span class="sidebar-counter" title="{{ nav_new_leads_count }} заявок требуют ответа" aria-label="{{ nav_new_leads_count }} заявок требуют ответа">{{ nav_new_leads_label }}</span>{% endif %}<svg class="ui-icon sidebar-group-chevron" :class="{ 'is-open': openGroup === 'crm' }" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></button>
+          <div class="sidebar-group-links" id="sidebar-crm-links" x-cloak x-show="openGroup === 'crm'">
+            <a class="sidebar-link {% if nav_active_item == 'leads' %}active{% endif %}" href="{% url 'lead_list' %}"{% if nav_active_item == 'leads' %} aria-current="page"{% endif %}>Заявки</a>
+            <a class="sidebar-link {% if nav_active_item == 'clients' %}active{% endif %}" href="{% url 'client_list' %}"{% if nav_active_item == 'clients' %} aria-current="page"{% endif %}>Клиенты</a>
+            <a class="sidebar-link {% if nav_active_item == 'deals' %}active{% endif %}" href="{% url 'deal_board' %}"{% if nav_active_item == 'deals' %} aria-current="page"{% endif %}>Сделки</a>
+          </div>
+          <button class="sidebar-link sidebar-group-toggle w-100 border-0 text-start {% if nav_active_section == 'integrations' %}active{% endif %}" type="button" @click="openGroup = openGroup === 'integrations' ? null : 'integrations'" :aria-expanded="(openGroup === 'integrations').toString()" aria-controls="sidebar-integrations-links"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-plug"></use></svg></span><span>Интеграции</span><svg class="ui-icon sidebar-group-chevron" :class="{ 'is-open': openGroup === 'integrations' }" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></button>
+          <div class="sidebar-group-links" id="sidebar-integrations-links" x-cloak x-show="openGroup === 'integrations'">
+            <a class="sidebar-link {% if nav_active_item == 'telegram' %}active{% endif %}" href="{% url 'integration_telegram' %}"{% if nav_active_item == 'telegram' %} aria-current="page"{% endif %}>Telegram</a>
+          </div>
         </nav>
-        <div class="sidebar-bottom" x-data="{ profileOpen: {% if request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' or 'agency' in request.resolver_match.url_name %}true{% else %}false{% endif %} }">
-          <button class="profile-link w-100 border-0 bg-transparent text-start {% if request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' or 'agency' in request.resolver_match.url_name %}active{% endif %}" type="button" @click="profileOpen = !profileOpen" :aria-expanded="profileOpen.toString()">
+        <div class="sidebar-bottom">
+          <button class="profile-link w-100 border-0 bg-transparent text-start {% if request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' or 'agency' in request.resolver_match.url_name %}active{% endif %}" type="button" @click="openGroup = openGroup === 'profile' ? null : 'profile'" :aria-expanded="(openGroup === 'profile').toString()">
             <span class="profile-avatar">{% if nav_profile and nav_profile.photo %}<img src="{{ nav_profile.photo.url }}" alt="">{% else %}{{ user.username|slice:":1"|upper }}{% endif %}</span>
             <span class="profile-link__identity flex-grow-1"><strong class="d-block text-truncate" title="{% if nav_profile and nav_profile.display_name %}{{ nav_profile.display_name }}{% else %}{{ user.username }}{% endif %}">{% if nav_profile and nav_profile.display_name %}{{ nav_profile.display_name }}{% else %}{{ user.username }}{% endif %}</strong><small class="text-white-50">Профиль</small></span>
-            <span class="text-white-50" x-text="profileOpen ? '⌃' : '⌄'"></span>
+            <span class="text-white-50" x-text="openGroup === 'profile' ? '⌃' : '⌄'"></span>
           </button>
-          <div x-cloak x-show="profileOpen" x-transition class="pt-2">
+          <div x-cloak x-show="openGroup === 'profile'" x-transition class="pt-2">
             <a class="sidebar-link {% if request.resolver_match.url_name == 'edit_profile' or request.resolver_match.url_name == 'password_change' %}active{% endif %}" href="{% url 'edit_profile' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-settings"></use></svg></span>Личный кабинет</a>
             <a class="sidebar-link {% if 'agency' in request.resolver_match.url_name %}active{% endif %}" href="{% url 'agency_dashboard' %}"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-users"></use></svg></span>{% if nav_agency_membership %}Команда{% else %}Создать команду{% endif %}</a>
             <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="sidebar-link w-100 border-0 bg-transparent" type="submit"><span class="nav-icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-log-out"></use></svg></span>Выйти</button></form>
@@ -145,6 +155,7 @@
       </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{% static 'js/ui-tooltips.js' %}"></script>
     <script>
       const showAppToast = (message) => {
         if (!message) return;

@@ -88,7 +88,7 @@ class DemoDataService:
             preferred_area="Алваладе",
             budget=300000,
             notes="Это демо-клиент. На нём можно безопасно посмотреть карточку и историю.",
-            status="viewing",
+            status="in_progress",
             is_demo=True,
         )
         first_lead = Lead.objects.create(

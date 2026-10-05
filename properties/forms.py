@@ -7,8 +7,9 @@ from django.contrib.auth.forms import AuthenticationForm, PasswordChangeForm
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.utils import timezone
 from .agency_access import agency_for, may_manage_agency, workspace_queryset
-from .models import AIContent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, RealtorProfile, Showing, same_workspace
+from .models import AIContent, Client, ClientInteraction, ClientPropertySuggestion, ClientReminder, Deal, Lead, Property, RealtorProfile, Showing, same_workspace
 from .services.image_upload_service import prepare_image_upload
 
 
@@ -410,6 +411,62 @@ class ClientDetailsForm(ClientForm):
         )
 
 
+class ClientSearchForm(forms.ModelForm):
+    class Meta:
+        model = Client
+        fields = ("search_deal_type", "search_property_type", "search_rooms_min", "preferred_area", "budget", "search_currency", "search_notes")
+        widgets = {
+            "budget": forms.NumberInput(attrs={"step": "1000", "min": "0"}),
+            "search_notes": forms.Textarea(attrs={"rows": 2}),
+        }
+        labels = {"budget": "Бюджет до"}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+        mark_invalid_fields(self)
+
+    def clean(self):
+        data = super().clean()
+        if data.get("budget") and not data.get("search_currency"):
+            self.add_error("search_currency", "Укажите валюту бюджета для подбора по цене.")
+        return data
+
+    def clean_budget(self):
+        value = self.cleaned_data.get("budget")
+        if value is not None and value < 0:
+            raise forms.ValidationError("Бюджет не может быть отрицательным.")
+        return value
+
+
+class ClientPropertySuggestionForm(forms.ModelForm):
+    class Meta:
+        model = ClientPropertySuggestion
+        fields = ("property",)
+
+    def __init__(self, *args, owner, client, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["property"].queryset = workspace_queryset(Property.objects, owner).exclude(
+            status__in=("archived", "reserved", "sold", "rented"),
+        ).exclude(pk__in=client.property_suggestions.values_list("property_id", flat=True)).order_by("title")
+        self.fields["property"].widget.attrs["class"] = "form-select"
+        mark_invalid_fields(self)
+
+
+class ClientPropertyReactionForm(forms.ModelForm):
+    class Meta:
+        model = ClientPropertySuggestion
+        fields = ("reaction", "reaction_note")
+        widgets = {"reaction_note": forms.TextInput(attrs={"placeholder": "Что сказал клиент?"})}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+        mark_invalid_fields(self)
+
+
 class ClientCsvImportForm(forms.Form):
     file = forms.FileField(label="Файл CSV", widget=forms.FileInput(attrs={"accept": ".csv,text/csv", "class": "form-control"}))
 
@@ -418,6 +475,11 @@ class ClientCsvImportForm(forms.Form):
         if upload.size > 1_000_000:
             raise forms.ValidationError("Файл слишком большой. Максимум — 1 МБ.")
         return upload
+
+
+def deal_responsible_label(user):
+    profile = getattr(user, "realtor_profile", None)
+    return (getattr(profile, "display_name", "") or user.get_full_name() or user.username)
 
 
 class DealForm(forms.ModelForm):
@@ -440,7 +502,10 @@ class DealForm(forms.ModelForm):
         self.fields["lead"].queryset = workspace_queryset(Lead.objects.filter(client__isnull=False), owner, prefix="property__")
         agency = agency_for(owner)
         if agency and may_manage_agency(owner):
-            self.fields["responsible"].queryset = User.objects.filter(agency_membership__agency=agency).order_by("username")
+            self.fields["responsible"].queryset = User.objects.filter(
+                agency_membership__agency=agency,
+            ).select_related("realtor_profile").order_by("username")
+            self.fields["responsible"].label_from_instance = deal_responsible_label
             if not self.instance.pk:
                 self.fields["responsible"].initial = owner
         else:
@@ -499,6 +564,9 @@ class ClientInteractionForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.fields["interaction_type"].choices = [
+            (value, label) for value, label in self.fields["interaction_type"].choices if value != "viewing"
+        ]
         self.fields["interaction_type"].widget.attrs["class"] = "form-select"
         self.fields["text"].widget.attrs["class"] = "form-control"
 
@@ -545,6 +613,12 @@ class TaskForm(forms.ModelForm):
 
 
 class ShowingForm(forms.ModelForm):
+    next_action = forms.CharField(max_length=255, required=False, label="Следующее действие")
+    next_action_due_at = forms.DateTimeField(
+        required=False, label="Срок следующего действия",
+        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+    )
+
     class Meta:
         model = Showing
         fields = ("deal", "starts_at", "ends_at", "location", "status", "outcome_note")
@@ -561,9 +635,35 @@ class ShowingForm(forms.ModelForm):
             self.fields["deal"].queryset = workspace_queryset(Deal.objects, owner).select_related("client", "property")
         if self.instance.pk:
             self.fields["deal"].disabled = True
+            task = self.instance.follow_up_task
+            if task and not task.is_done and not task.cancelled_at:
+                self.initial.update({
+                    "next_action": task.text,
+                    "next_action_due_at": timezone.localtime(task.due_at).strftime("%Y-%m-%dT%H:%M") if task.due_at else "",
+                })
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
         mark_invalid_fields(self)
+
+    def clean(self):
+        data = super().clean()
+        if data.get("status") == "completed":
+            previous_status = Showing.objects.filter(pk=self.instance.pk).values_list("status", flat=True).first() if self.instance.pk else None
+            needs_action = (
+                previous_status != "completed" or not self.instance.follow_up_task_id
+                or bool(self.instance.follow_up_task_id and self.instance.follow_up_task.cancelled_at)
+            )
+            if needs_action or data.get("next_action") or data.get("next_action_due_at"):
+                if not (data.get("next_action") or "").strip():
+                    self.add_error("next_action", "Укажите, что сделать после показа.")
+                if not data.get("next_action_due_at"):
+                    self.add_error("next_action_due_at", "Укажите срок следующего действия.")
+                elif data["next_action_due_at"] <= timezone.now() and (
+                    not self.instance.follow_up_task_id
+                    or data["next_action_due_at"] != self.instance.follow_up_task.due_at
+                ):
+                    self.add_error("next_action_due_at", "Срок должен быть в будущем.")
+        return data
 
 
 class AIRequestForm(forms.Form):

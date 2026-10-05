@@ -32,6 +32,22 @@ def require_resource_action(actor, resource, operation):
     return require_allowed(PolicyService.evaluate(account, actor, operation, resource=resource))
 
 
+def telegram_publication_decision(actor, property):
+    """The Telegram feature is checked even while general quota enforcement is off."""
+    from .rules import Operation, PolicyService
+    from .services import AccountService
+
+    account = AccountService.ensure_for_resource(property)
+    return PolicyService.evaluate(account, actor, Operation.PUBLISH_TELEGRAM, resource=property)
+
+
+def require_telegram_publication(actor, property):
+    decision = telegram_publication_decision(actor, property)
+    if not decision.allowed:
+        raise TariffDenied(decision)
+    return decision
+
+
 def require_new_action(actor, operation, *, agency=None):
     """Check an unsaved CRM record in the workspace it will be created in."""
     if not enabled():

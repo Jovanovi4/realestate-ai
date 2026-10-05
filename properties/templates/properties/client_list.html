@@ -4,7 +4,7 @@
 <header class="ui-page-header">
   <div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Клиенты</h1><p class="ui-page-header__description">Единая база обращений, задач и сделок.</p></div>
   <div class="ui-page-header__actions client-page-actions">
-    <a class="btn btn-icon btn-neutral" href="{% url 'client_board' %}" aria-label="Статусы клиентов" data-tooltip="Статусы клиентов"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-kanban"></use></svg></a>
+    <a class="btn btn-icon btn-neutral" href="{% url 'client_board' %}" aria-label="Отношения с клиентами" data-tooltip="Отношения с клиентами"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-kanban"></use></svg></a>
     <a class="btn btn-icon btn-neutral" href="{% url 'client_export' %}" aria-label="Экспорт CSV" data-tooltip="Экспорт CSV"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-download"></use></svg></a>
     <a class="btn btn-icon btn-neutral" href="{% url 'client_import' %}" aria-label="Импорт CSV" data-tooltip="Импорт CSV"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-upload"></use></svg></a>
     <a class="btn btn-primary" href="{% url 'client_create' %}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Добавить клиента</a>
@@ -52,7 +52,7 @@
   <form method="get" action="{% url 'client_list' %}">
     <div class="client-toolbar__main">
       <div class="client-toolbar__search"><label class="form-label" for="client-q">Поиск клиента</label><input class="form-control" id="client-q" name="q" type="search" value="{{ filters.q }}" placeholder="Имя, телефон или район"></div>
-      <div><label class="form-label" for="client-status">Этап</label><select class="form-select" id="client-status" name="status"><option value="">Все этапы</option>{% for value, label in status_choices %}<option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <div><label class="form-label" for="client-status">Отношения</label><select class="form-select" id="client-status" name="status"><option value="">Все состояния</option>{% for value, label in status_choices %}<option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
       <div><label class="form-label" for="client-sort">Сортировка</label><select class="form-select" id="client-sort" name="sort">{% for value, label in sort_choices %}<option value="{{ value }}" {% if filters.sort == value or not filters.sort and value == 'newest' %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
       <button class="btn btn-neutral client-toolbar__toggle" type="button" data-bs-toggle="collapse" data-bs-target="#client-filter-panel" aria-expanded="{% if extra_filters_open %}true{% else %}false{% endif %}" aria-controls="client-filter-panel"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-filter"></use></svg>Ещё фильтры</button>
       <button class="btn btn-primary client-toolbar__submit" type="submit">Показать</button>
@@ -95,7 +95,7 @@
         <table class="table lead-table client-table align-middle mb-0">
           <thead><tr>
             {% if can_bulk_delete %}<th scope="col" class="lead-table__selection"><input class="form-check-input" type="checkbox" aria-label="Выбрать всех клиентов на странице" @change="selected = $event.target.checked ? [{% for client in clients %}'{{ client.pk }}'{% if not forloop.last %}, {% endif %}{% endfor %}] : []" :checked="selected.length === {{ clients|length }}"></th>{% endif %}
-            <th scope="col">Клиент</th><th scope="col">Интерес</th><th scope="col">Этап</th><th scope="col">Заявки</th><th scope="col"><span class="visually-hidden">Действия</span></th>
+            <th scope="col">Клиент</th><th scope="col">Интерес</th><th scope="col">Отношения</th><th scope="col">Заявки</th><th scope="col"><span class="visually-hidden">Действия</span></th>
           </tr></thead>
           <tbody>
             {% for client in clients %}
@@ -104,8 +104,8 @@
                 <td><a class="lead-table__name" href="{% url 'client_detail' client.pk %}">{{ client.name }}</a><a class="lead-table__phone" href="tel:{{ client.phone }}">{{ client.phone }}</a><details class="record-details"><summary aria-label="Подробнее о клиенте {{ client.name }}">Подробнее<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary><dl><div><dt>Источник</dt><dd>{{ client.get_source_display }}</dd></div><div><dt>Добавлен</dt><dd><time datetime="{{ client.created_at|date:'c' }}">{{ client.created_at|date:"d.m.Y" }}</time></dd></div>{% if client.budget %}<div><dt>Бюджет</dt><dd>{{ client.budget }}</dd></div>{% endif %}</dl></details></td>
                 <td><span class="lead-table__property">{{ client.preferred_area|default:"Не указан" }}</span></td>
                 <td>{% include "properties/includes/client_status_badge.html" %}</td>
-                <td><span class="client-table__leads">{{ client.leads.count }}</span></td>
-                <td class="lead-table__actions"><a class="btn btn-icon btn-sm btn-text lead-table__open" href="{% url 'client_detail' client.pk %}" title="Открыть карточку клиента" aria-label="Открыть карточку клиента {{ client.name }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a></td>
+                <td><span class="client-table__leads">{{ client.lead_count }}</span></td>
+                <td class="lead-table__actions"><a class="btn btn-icon btn-sm btn-text lead-table__open" href="{% url 'client_detail' client.pk %}" data-tooltip="Открыть карточку клиента" aria-label="Открыть карточку клиента {{ client.name }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a></td>
               </tr>
             {% endfor %}
           </tbody>
@@ -120,7 +120,7 @@
             <div class="lead-mobile-card__person"><a class="lead-mobile-card__name" href="{% url 'client_detail' client.pk %}">{{ client.name }}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a><a class="lead-mobile-card__phone" href="tel:{{ client.phone }}">{{ client.phone }}</a></div>
             {% include "properties/includes/client_status_badge.html" %}
           </div>
-          <div class="lead-mobile-card__body"><p class="lead-mobile-card__object"><span>Интерес</span><strong>{{ client.preferred_area|default:"Не указан" }}</strong></p><p class="client-mobile-card__meta">Заявок: {{ client.leads.count }}</p><details class="record-details"><summary aria-label="Подробнее о клиенте {{ client.name }}">Подробнее<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary><dl><div><dt>Источник</dt><dd>{{ client.get_source_display }}</dd></div><div><dt>Добавлен</dt><dd><time datetime="{{ client.created_at|date:'c' }}">{{ client.created_at|date:"d.m.Y" }}</time></dd></div>{% if client.budget %}<div><dt>Бюджет</dt><dd>{{ client.budget }}</dd></div>{% endif %}</dl></details></div>
+          <div class="lead-mobile-card__body"><p class="lead-mobile-card__object"><span>Интерес</span><strong>{{ client.preferred_area|default:"Не указан" }}</strong></p><p class="client-mobile-card__meta">Заявок: {{ client.lead_count }}</p><details class="record-details"><summary aria-label="Подробнее о клиенте {{ client.name }}">Подробнее<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary><dl><div><dt>Источник</dt><dd>{{ client.get_source_display }}</dd></div><div><dt>Добавлен</dt><dd><time datetime="{{ client.created_at|date:'c' }}">{{ client.created_at|date:"d.m.Y" }}</time></dd></div>{% if client.budget %}<div><dt>Бюджет</dt><dd>{{ client.budget }}</dd></div>{% endif %}</dl></details></div>
         </article>
       {% endfor %}
     </div>

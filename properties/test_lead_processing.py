@@ -66,6 +66,214 @@ class LeadProcessingTests(TestCase):
         self.assertEqual(original_task.text, "Позвонить после просмотра")
         self.assertEqual(ClientReminder.objects.filter(lead=self.lead, is_done=False).count(), 1)
 
+    def test_first_contact_from_client_card_updates_lead_client_and_today(self):
+        another_property = Property.objects.create(owner=self.owner, title="Вторая квартира")
+        another_lead = Lead.objects.create(
+            property=another_property, client=self.crm_client, name="Анна", phone=self.crm_client.phone,
+        )
+        # Keep this lead due in the current workday even when the test runs near midnight.
+        Lead.objects.filter(pk=another_lead.pk).update(next_action_due_at=timezone.now() - timedelta(minutes=1))
+        client_url = reverse("client_detail", args=[self.crm_client.pk])
+        page = self.client.get(client_url)
+        self.assertContains(page, reverse("lead_process", args=[self.lead.pk]))
+        self.assertContains(page, "Первый контакт · Квартира у парка")
+
+        response = self.client.post(reverse("lead_process", args=[self.lead.pk]), {
+            **self.processing_data(), "return_to_client": "1",
+        })
+        self.assertRedirects(response, f"{client_url}#client-leads", fetch_redirect_response=False)
+        self.lead.refresh_from_db()
+        self.crm_client.refresh_from_db()
+        another_lead.refresh_from_db()
+        self.assertIsNotNone(self.lead.first_contacted_at)
+        self.assertEqual(self.crm_client.first_contacted_at, self.lead.first_contacted_at)
+        self.assertEqual(self.crm_client.status, "in_progress")
+        self.assertIsNone(another_lead.first_contacted_at)
+        self.assertEqual(ClientInteraction.objects.filter(lead=self.lead, interaction_type="call").count(), 1)
+        self.assertEqual(ClientReminder.objects.get(lead=self.lead, is_done=False).text, "Позвонить после просмотра")
+        self.assertContains(self.client.get(reverse("work_items")), "Позвонить после просмотра")
+        today = self.client.get(reverse("workday"))
+        self.assertIn(another_lead, list(today.context["today_leads"]) + list(today.context["overdue_leads"]))
+
+        self.client.post(reverse("lead_process", args=[self.lead.pk]), {
+            **self.processing_data(), "return_to_client": "1",
+        })
+        self.assertEqual(ClientInteraction.objects.filter(lead=self.lead, interaction_type="call").count(), 1)
+
+    def test_client_card_shows_first_contact_as_main_step_and_other_tasks_once(self):
+        other_task = ClientReminder.objects.create(
+            owner=self.owner, client=self.crm_client, text="Отправить подборку",
+            due_at=timezone.now() + timedelta(days=1),
+        )
+        response = self.client.get(reverse("client_detail", args=[self.crm_client.pk]))
+
+        self.assertContains(response, 'class="btn btn-neutral">Новая сделка</a>')
+        self.assertContains(response, f"{reverse('lead_detail', args=[self.lead.pk])}?contact=1#lead-edit")
+        self.assertContains(response, "Остальные задачи")
+        self.assertNotContains(response, 'class="client-priority-lead')
+        self.assertEqual([task.pk for task in response.context["reminders"]], [other_task.pk])
+        self.assertEqual(response.context["pending_reminders_count"], 1)
+
+        self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data())
+        response = self.client.get(reverse("client_detail", args=[self.crm_client.pk]))
+        self.assertIsNone(response.context["priority_lead"])
+        self.assertContains(response, 'class="btn btn-primary">Новая сделка</a>')
+        self.assertEqual([task.pk for task in response.context["reminders"]], [other_task.pk])
+
+    def test_invalid_client_card_contact_keeps_form_and_does_not_mark_lead(self):
+        response = self.client.post(reverse("lead_process", args=[self.lead.pk]), {
+            **self.processing_data(next_action_due_at="2020-01-01T10:00"), "return_to_client": "1",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Укажите время в будущем")
+        self.assertContains(response, 'id="client-leads"')
+        self.assertTrue(response.context["open_client_leads_tab"])
+        self.lead.refresh_from_db()
+        self.assertIsNone(self.lead.first_contacted_at)
+        self.assertEqual(ClientInteraction.objects.filter(lead=self.lead).count(), 0)
+
+    def test_client_history_cannot_bypass_first_contact_on_open_lead(self):
+        client_url = reverse("client_detail", args=[self.crm_client.pk])
+        page = self.client.get(client_url)
+        choices = [value for value, _ in page.context["interaction_form"].fields["interaction_type"].choices]
+        self.assertNotIn("call", choices)
+        self.assertNotIn("message", choices)
+        self.assertContains(page, "Звонок или сообщение по новой заявке?")
+        self.assertContains(page, 'form="client-history-form" name="intent" value="first_contact"')
+
+        via_guide = self.client.post(reverse("client_interaction_create", args=[self.crm_client.pk]), {
+            "interaction_type": "note", "text": "Предварительно обсудили условия", "intent": "first_contact",
+        })
+        self.assertEqual(via_guide.status_code, 200)
+        self.assertEqual(via_guide.context["contact_forms"][0]["form"].initial["contact_method"], "call")
+        self.assertEqual(via_guide.context["contact_forms"][0]["form"].initial["contact_note"], "Предварительно обсудили условия")
+
+        response = self.client.post(reverse("client_interaction_create", args=[self.crm_client.pk]), {
+            "interaction_type": "call", "text": "Поговорили",
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["open_client_leads_tab"])
+        self.assertContains(response, "Текст и способ связи перенесены")
+        draft = response.context["contact_forms"][0]
+        self.assertEqual(draft["lead"].pk, self.lead.pk)
+        self.assertEqual(draft["form"].initial["contact_method"], "call")
+        self.assertEqual(draft["form"].initial["contact_note"], "Поговорили")
+        self.lead.refresh_from_db()
+        self.crm_client.refresh_from_db()
+        self.assertIsNone(self.lead.first_contacted_at)
+        self.assertIsNone(self.crm_client.first_contacted_at)
+        self.assertEqual(ClientInteraction.objects.filter(client=self.crm_client).count(), 0)
+
+    def test_history_draft_keeps_note_until_user_chooses_one_of_two_leads(self):
+        another_property = Property.objects.create(owner=self.owner, title="Вторая квартира")
+        another_lead = Lead.objects.create(
+            property=another_property, client=self.crm_client, name="Анна", phone=self.crm_client.phone,
+        )
+        response = self.client.post(reverse("client_interaction_create", args=[self.crm_client.pk]), {
+            "interaction_type": "message", "text": "Обсудили оба объекта, ждём решение",
+        })
+        self.assertEqual(response.status_code, 200)
+        drafts = {item["lead"].pk: item for item in response.context["contact_forms"]}
+        self.assertEqual(set(drafts), {self.lead.pk, another_lead.pk})
+        for item in drafts.values():
+            self.assertEqual(item["form"].initial["contact_method"], "message")
+            self.assertEqual(item["form"].initial["contact_note"], "Обсудили оба объекта, ждём решение")
+        self.assertFalse(Lead.objects.filter(pk__in=drafts, first_contacted_at__isnull=False).exists())
+        self.assertFalse(ClientInteraction.objects.filter(client=self.crm_client).exists())
+
+        self.client.post(reverse("lead_process", args=[another_lead.pk]), {
+            **self.processing_data(
+                contact_method=drafts[another_lead.pk]["form"].initial["contact_method"],
+                contact_note=drafts[another_lead.pk]["form"].initial["contact_note"],
+            ),
+            "return_to_client": "1",
+            "leads_page": drafts[another_lead.pk]["page_number"],
+        })
+        self.lead.refresh_from_db()
+        another_lead.refresh_from_db()
+        self.assertIsNone(self.lead.first_contacted_at)
+        self.assertIsNotNone(another_lead.first_contacted_at)
+        self.assertTrue(ClientInteraction.objects.filter(
+            lead=another_lead, interaction_type="message", text="Обсудили оба объекта, ждём решение",
+        ).exists())
+
+    def test_lead_list_prioritizes_missed_first_response_then_overdue_work(self):
+        now = timezone.now()
+        Lead.objects.filter(pk=self.lead.pk).update(
+            created_at=now - timedelta(hours=2), next_action_due_at=now + timedelta(days=1),
+        )
+        overdue_action = Lead.objects.create(
+            property=self.property, client=self.crm_client, name="Просрочен шаг", phone=self.crm_client.phone,
+        )
+        Lead.objects.filter(pk=overdue_action.pk).update(
+            first_contacted_at=now - timedelta(minutes=10), next_action_due_at=now - timedelta(minutes=1),
+        )
+        awaiting = Lead.objects.create(
+            property=self.property, client=self.crm_client, name="Ждёт ответа", phone=self.crm_client.phone,
+        )
+        Lead.objects.filter(pk=awaiting.pk).update(next_action_due_at=now + timedelta(days=1))
+        planned = Lead.objects.create(
+            property=self.property, client=self.crm_client, name="Плановый шаг", phone=self.crm_client.phone,
+        )
+        Lead.objects.filter(pk=planned.pk).update(
+            first_contacted_at=now - timedelta(minutes=5), next_action_due_at=now + timedelta(hours=1),
+        )
+        archived = Lead.objects.create(
+            property=self.property, client=self.crm_client, name="Архив", phone=self.crm_client.phone,
+        )
+        Lead.objects.filter(pk=archived.pk).update(status="archived")
+
+        response = self.client.get(reverse("lead_list"))
+        self.assertEqual(
+            [lead.pk for lead in response.context["leads"]],
+            [self.lead.pk, overdue_action.pk, awaiting.pk, planned.pk, archived.pk],
+        )
+        self.assertContains(response, 'class="lead-table__row is-urgent"', count=2)
+
+    def test_lead_search_matches_client_object_and_address_and_preserves_filters(self):
+        second_property = Property.objects.create(owner=self.owner, title="Студия", address="Лесная улица")
+        matched = Lead.objects.create(
+            property=second_property, client=self.crm_client, name="Борис", phone="+79990000222",
+        )
+        other_owner = User.objects.create_user("another-lead-owner", password="password")
+        hidden_property = Property.objects.create(owner=other_owner, title="Лесная улица")
+        Lead.objects.create(property=hidden_property, name="Скрытый", phone="+79990000333")
+
+        url = reverse("lead_list")
+        response = self.client.get(url, {"q": "Лесная", "status": "new"})
+        self.assertEqual([lead.pk for lead in response.context["leads"]], [matched.pk])
+        self.assertEqual(response.context["status_tabs"][0]["url"], f"{url}?q=%D0%9B%D0%B5%D1%81%D0%BD%D0%B0%D1%8F")
+        self.assertIn("q=", response.context["pagination_query"])
+        self.assertContains(response, 'name="q" value="Лесная"')
+        self.assertContains(response, "Сбросить поиск")
+        htmx = self.client.get(url, {"q": "Анна"}, HTTP_HX_REQUEST="true")
+        self.assertContains(htmx, 'id="lead-workspace"')
+        self.assertContains(htmx, self.lead.name)
+
+    def test_lead_and_client_show_latest_meaningful_contact_context(self):
+        client_url = reverse("client_detail", args=[self.crm_client.pk])
+        before = self.client.get(client_url)
+        self.assertContains(before, "Перед звонком")
+        self.assertContains(before, "Записать первый контакт")
+        self.assertContains(before, "Изменить данные клиента")
+        self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data())
+        lead_page = self.client.get(reverse("lead_detail", args=[self.lead.pk]))
+        self.assertContains(lead_page, "Последний контакт")
+        self.assertContains(lead_page, "Договорились о показе")
+        client_page = self.client.get(client_url)
+        self.assertContains(client_page, "Последнее обсуждение")
+        self.assertContains(client_page, "Договорились о показе")
+        self.assertNotContains(client_page, "Записать первый контакт")
+
+        task = ClientReminder.objects.get(lead=self.lead, is_done=False)
+        self.client.post(reverse("lead_action_complete", args=[self.lead.pk]), self.completion_data(task))
+        lead_page = self.client.get(reverse("lead_detail", args=[self.lead.pk]))
+        self.assertContains(lead_page, "Последний итог")
+        self.assertContains(lead_page, "Клиент подтвердил интерес")
+        client_page = self.client.get(client_url)
+        self.assertEqual(client_page.context["latest_client_discussion"]["kind"], "Итог действия")
+        self.assertContains(client_page, "Клиент подтвердил интерес")
+
     def test_completing_action_keeps_outcome_and_creates_one_new_task(self):
         old_task = ClientReminder.objects.get(lead=self.lead, is_done=False)
         url = reverse("lead_action_complete", args=[self.lead.pk])
@@ -205,15 +413,31 @@ class LeadProcessingTests(TestCase):
         task.refresh_from_db()
         self.assertFalse(task.is_done)
 
-    def test_workday_completion_link_opens_lead_form_without_duplicate_task(self):
+    def test_workday_opens_first_contact_then_action_outcome_without_duplicate_task(self):
         received_at = timezone.localtime(timezone.now()).replace(hour=12, minute=0, second=0, microsecond=0)
         Lead.objects.filter(pk=self.lead.pk).update(
             created_at=received_at, next_action_due_at=received_at + timedelta(minutes=30),
         )
         with patch("properties.workday_views.timezone.now", return_value=received_at + timedelta(minutes=5)):
             response = self.client.get(reverse("workday"))
-        self.assertContains(response, f"{reverse('lead_detail', args=[self.lead.pk])}?complete=1#lead-action")
+        self.assertContains(response, f"{reverse('lead_detail', args=[self.lead.pk])}?contact=1#lead-edit")
+        self.assertContains(response, ">Записать контакт</a>")
         self.assertNotContains(response, reverse("task_detail", args=[ClientReminder.objects.get(lead=self.lead).pk]))
+        detail = self.client.get(reverse("lead_detail", args=[self.lead.pk]), {"contact": "1"})
+        self.assertContains(detail, 'class="lead-editor" name="lead-action-editor" id="lead-edit" open')
+        self.assertNotContains(detail, 'id="lead-action" open')
+
+        Lead.objects.filter(pk=self.lead.pk).update(next_action_due_at=received_at - timedelta(minutes=5))
+        with patch("properties.workday_views.timezone.now", return_value=received_at + timedelta(minutes=5)):
+            response = self.client.get(reverse("workday"))
+        self.assertContains(response, f"{reverse('lead_detail', args=[self.lead.pk])}?contact=1#lead-edit")
+        self.assertContains(response, ">Записать контакт</a>")
+
+        Lead.objects.filter(pk=self.lead.pk).update(first_contacted_at=received_at + timedelta(minutes=2))
+        with patch("properties.workday_views.timezone.now", return_value=received_at + timedelta(minutes=5)):
+            response = self.client.get(reverse("workday"))
+        self.assertContains(response, f"{reverse('lead_detail', args=[self.lead.pk])}?complete=1#lead-action")
+        self.assertContains(response, ">Записать итог</a>")
         detail = self.client.get(reverse("lead_detail", args=[self.lead.pk]), {"complete": "1"})
         self.assertContains(detail, 'class="lead-action-complete" name="lead-action-editor" id="lead-action" open')
 
@@ -227,7 +451,11 @@ class LeadProcessingTests(TestCase):
         self.assertContains(response, 'aria-label="Записать первый контакт" data-tooltip="Записать первый контакт"')
         self.assertContains(response, 'aria-label="Записать итог действия" data-tooltip="Записать итог действия"')
         self.assertContains(response, 'class="btn btn-icon btn-sm btn-neutral" aria-label="Записать итог действия"')
+        self.assertContains(response, f'href="tel:{self.lead.phone}" aria-label="Позвонить {self.lead.phone}"')
         self.assertContains(response, '<use href="#ui-icon-phone"></use>')
+        self.assertContains(response, '<span class="lead-next__mobile-label">Записать контакт</span>')
+        self.assertContains(response, '<use href="#ui-icon-edit"></use>')
+        self.assertContains(response, 'class="lead-contact__call-label">Позвонить</span>')
         self.assertContains(response, '<use href="#ui-icon-check"></use>')
         self.assertContains(response, 'class="detail-main-stack lead-detail-main"')
         self.assertContains(response, 'class="lead-overview__outcome-action"')
@@ -272,8 +500,35 @@ class LeadProcessingTests(TestCase):
             created_at=now - timedelta(hours=1), next_action_due_at=now + timedelta(hours=2),
         )
         response = self.client.get(reverse("lead_list"))
-        self.assertContains(response, "Ответ просрочен")
+        self.assertContains(response, "Первый ответ просрочен")
+        self.assertContains(response, "Задача до")
         self.assertEqual(response.content.decode().count("lead-deadline--overdue"), 2)
+
+    def test_list_shows_one_deadline_when_first_response_and_task_coincide(self):
+        self.lead.refresh_from_db()
+        Lead.objects.filter(pk=self.lead.pk).update(next_action_due_at=self.lead.first_response_due_at)
+        response = self.client.get(reverse("lead_list"))
+        html = response.content.decode()
+        self.assertEqual(html.count("Первый ответ до"), 2)
+        self.assertNotIn('class="lead-action-summary__secondary', html)
+        mobile_card = html.split('<div class="mobile-records lead-mobile-list">', 1)[1].split("</article>", 1)[0]
+        self.assertNotIn("Подробнее", mobile_card)
+        self.assertIn('class="lead-mobile-card__meta"', mobile_card)
+
+        Lead.objects.filter(pk=self.lead.pk).update(next_action="Отправить презентацию")
+        response = self.client.get(reverse("lead_list"))
+        self.assertContains(response, "Отправить презентацию")
+        self.assertNotContains(response, 'class="lead-action-summary__secondary')
+
+    def test_list_puts_earlier_task_before_first_response(self):
+        now = timezone.now()
+        Lead.objects.filter(pk=self.lead.pk).update(
+            created_at=now - timedelta(minutes=10), next_action_due_at=now + timedelta(minutes=5),
+        )
+        response = self.client.get(reverse("lead_list"))
+        self.assertContains(response, "Задача до")
+        self.assertContains(response, "Первый ответ до")
+        self.assertEqual(response.content.decode().count('class="lead-action-summary__secondary'), 2)
 
     def test_first_contact_is_recorded_once_and_next_action_is_required(self):
         url = reverse("lead_process", args=[self.lead.pk])
@@ -313,7 +568,7 @@ class LeadProcessingTests(TestCase):
         Lead.objects.filter(pk=self.lead.pk).update(next_action_due_at=timezone.now() - timedelta(minutes=1))
         lead_list = self.client.get(reverse("lead_list"))
         self.assertEqual(list(lead_list.context["leads"]), [self.lead])
-        self.assertContains(lead_list, "Просрочено")
+        self.assertContains(lead_list, "Задача просрочена")
         today = self.client.get(reverse("workday"))
         self.assertContains(today, "Квартира у парка")
         self.assertEqual(today.context["nav_overdue_count"], 1)
@@ -325,7 +580,7 @@ class LeadProcessingTests(TestCase):
         )
         lead_list = self.client.get(reverse("lead_list"))
         self.assertEqual([lead.pk for lead in lead_list.context["leads"]], [self.lead.pk])
-        self.assertContains(lead_list, "Ответ просрочен")
+        self.assertContains(lead_list, "Первый ответ просрочен")
         detail = self.client.get(reverse("lead_detail", args=[self.lead.pk]))
         self.assertContains(detail, "Первый ответ просрочен")
         self.assertEqual(self.client.get(reverse("workday")).context["nav_overdue_count"], 1)

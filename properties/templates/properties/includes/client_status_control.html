@@ -1,12 +1,20 @@
 <div id="client-status-{{ client.pk }}" class="detail-status-control">
-  {% include "properties/includes/client_status_badge.html" %}
-  {% if billing_error %}<span class="small text-danger" role="alert">{{ billing_error }} <a href="{% url 'billing:overview' %}">Тариф и расход</a></span>{% endif %}
-  <form method="post" action="{% url 'client_status_update' client.pk %}" hx-post="{% url 'client_status_update' client.pk %}" hx-target="#client-status-{{ client.pk }}" hx-swap="outerHTML" class="detail-status-control__form">
-    {% csrf_token %}
-    <label class="visually-hidden" for="client-status-select-{{ client.pk }}">Этап клиента</label>
-    <select id="client-status-select-{{ client.pk }}" name="status" class="form-select form-select-sm">
-      {% for value, label in client.STATUS_CHOICES %}<option value="{{ value }}" {% if client.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-    </select>
-    <button class="btn btn-sm btn-neutral" type="submit">Сохранить этап</button>
-  </form>
+  <details class="detail-status-control__editor" x-data="{ changed: false }" {% if billing_error or status_error %}open{% endif %}>
+    <summary aria-label="Изменить отношения с клиентом: {{ client.get_status_display }}">
+      <span class="detail-status-control__current">{% include "properties/includes/client_status_badge.html" %}</span>
+      <span class="detail-status-control__edit-label">Изменить статус</span>
+      <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg>
+    </summary>
+    {% if billing_error %}<p class="small text-danger" role="alert">{{ billing_error }} <a href="{% url 'billing:overview' %}">Тариф и расход</a></p>{% endif %}
+    {% if status_error %}<p class="small text-danger" role="alert">{{ status_error }}</p>{% endif %}
+    <form method="post" action="{% url 'client_status_update' client.pk %}" hx-post="{% url 'client_status_update' client.pk %}" hx-target="#client-status-{{ client.pk }}" hx-swap="outerHTML" class="detail-status-control__form">
+      {% csrf_token %}
+      <label class="visually-hidden" for="client-status-select-{{ client.pk }}">Отношения с клиентом</label>
+      <select id="client-status-select-{{ client.pk }}" name="status" class="form-select form-select-sm" @change="changed = $event.target.value !== '{{ client.status }}'">
+        {% for value, label in client.STATUS_CHOICES %}<option value="{{ value }}" {% if client.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+      </select>
+      <button class="btn btn-sm btn-neutral" type="submit" x-show="changed" x-cloak>Сохранить</button>
+      <noscript><button class="btn btn-sm btn-neutral" type="submit">Сохранить</button></noscript>
+    </form>
+  </details>
 </div>

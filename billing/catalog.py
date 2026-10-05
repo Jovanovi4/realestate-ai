@@ -5,7 +5,7 @@ from copy import deepcopy
 from django.core.exceptions import ValidationError
 
 
-POLICY_VERSION = "BP-0.1"
+POLICY_VERSION = "BP-0.2"
 AI_COSTS = {
     "short_text": 1, "improve": 1, "lead_reply": 1,
     "full_description": 2, "package": 3, "landing": 5, "audit": 0,
@@ -17,13 +17,13 @@ LIMIT_KEYS = {
 DEFAULT_PLANS = {
     "demo": {"name": "Демо", "active_properties": 2, "total_properties": 50,
              "landings": 1, "seats": 1, "storage_bytes": 200 * 1024**2,
-             "ai_credits": 0, "demo_ai_credits": 5, "xml_export": False, "team": False},
+             "ai_credits": 0, "demo_ai_credits": 5, "xml_export": False, "team": False, "telegram_publications": True},
     "standard": {"name": "Стандарт", "active_properties": 20, "total_properties": 1000,
                  "landings": 10, "seats": 1, "storage_bytes": 2 * 1024**3,
-                 "ai_credits": 100, "demo_ai_credits": 0, "xml_export": True, "team": False},
+                 "ai_credits": 100, "demo_ai_credits": 0, "xml_export": True, "team": False, "telegram_publications": True},
     "business": {"name": "Бизнес", "active_properties": 100, "total_properties": 5000,
                  "landings": 50, "seats": 5, "storage_bytes": 10 * 1024**3,
-                 "ai_credits": 500, "demo_ai_credits": 0, "xml_export": True, "team": True},
+                 "ai_credits": 500, "demo_ai_credits": 0, "xml_export": True, "team": True, "telegram_publications": True},
 }
 
 
@@ -42,9 +42,11 @@ def validate_ai_costs(value):
 
 def validate_snapshot(value):
     try:
-        if not isinstance(value, dict) or type(value["schema"]) is not int or value["schema"] != 1:
+        if not isinstance(value, dict) or type(value["schema"]) is not int or value["schema"] not in (1, 2):
             raise ValueError
         if value["plan_code"] not in DEFAULT_PLANS or not isinstance(value["policy_version"], str) or not value["policy_version"].strip():
+            raise ValueError
+        if (value["schema"] == 1) != (value["policy_version"] == "BP-0.1"):
             raise ValueError
         if type(value["version"]) is not int or value["version"] < 1:
             raise ValueError
@@ -55,7 +57,8 @@ def validate_snapshot(value):
             raise ValueError
         if type(value["grace_days"]) is not int or value["grace_days"] < 0:
             raise ValueError
-        if not isinstance(value["features"], dict) or set(value["features"]) != {"xml_export", "team"} or any(type(v) is not bool for v in value["features"].values()):
+        feature_keys = {"xml_export", "team"} if value["schema"] == 1 else {"xml_export", "team", "telegram_publications"}
+        if not isinstance(value["features"], dict) or set(value["features"]) != feature_keys or any(type(v) is not bool for v in value["features"].values()):
             raise ValueError
         validate_ai_costs(value["ai_costs"])
     except (KeyError, TypeError, ValueError):

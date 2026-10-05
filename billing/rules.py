@@ -36,6 +36,7 @@ class Operation(StrEnum):
     PUBLISH_LANDING = "publish_landing"
     UNPUBLISH_LANDING = "unpublish_landing"
     PUBLIC_LANDING = "public_landing"
+    PUBLISH_TELEGRAM = "publish_telegram"
     UPLOAD_FILES = "upload_files"
     REMOVE_FILES = "remove_files"
     AI_GENERATE = "ai_generate"
@@ -203,7 +204,7 @@ class PolicyService:
 
         if operation in {Operation.REMOVE_MEMBER, Operation.CHANGE_MEMBER_ROLE} and (not account.agency_id or not isinstance(resource, AgencyMembership)):
             return PolicyDecision(False, "invalid_resource", "Укажите сотрудника этой команды.")
-        if operation in {Operation.ARCHIVE_PROPERTY, Operation.RESTORE_PROPERTY, Operation.PUBLISH_LANDING, Operation.UNPUBLISH_LANDING} and not isinstance(resource, Property):
+        if operation in {Operation.ARCHIVE_PROPERTY, Operation.RESTORE_PROPERTY, Operation.PUBLISH_LANDING, Operation.UNPUBLISH_LANDING, Operation.PUBLISH_TELEGRAM} and not isinstance(resource, Property):
             return PolicyDecision(False, "invalid_resource", "Укажите объект этого пространства.")
 
         if operation in {Operation.VIEW, Operation.CSV_EXPORT}:
@@ -241,6 +242,12 @@ class PolicyService:
             return decision(True)
         if context.state == AccessState.GRACE and operation != Operation.PUBLIC_LANDING:
             return decision(False, "grace_no_new_resources", "Оплаченный срок закончился. Продлите тариф для новых ресурсов.")
+        if operation == Operation.PUBLISH_TELEGRAM:
+            if context.state == AccessState.RESTRICTED:
+                return decision(False, "subscription_expired", "Оплаченный срок закончился. Продлите тариф для публикации в Telegram.")
+            allowed = terms["features"].get("telegram_publications", True) if terms["schema"] == 1 else terms["features"]["telegram_publications"]
+            return decision(allowed, "allowed" if allowed else "feature_not_available",
+                "Публикация в Telegram доступна." if allowed else "Публикация в Telegram недоступна на вашем тарифе.")
         if operation == Operation.XML_EXPORT:
             return decision(terms["features"]["xml_export"], "allowed" if terms["features"]["xml_export"] else "feature_not_available", "XML-экспорт доступен в Стандарте и Бизнесе.")
         if operation == Operation.CREATE_AGENCY:

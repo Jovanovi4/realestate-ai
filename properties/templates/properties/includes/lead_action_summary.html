@@ -1,0 +1,13 @@
+{% with response_due=lead.first_response_due_at %}
+<div class="lead-action-summary">
+  {% if not lead.first_contacted_at and response_due <= lead.next_action_due_at %}
+    <strong class="lead-action-summary__title">{% if response_due == lead.next_action_due_at and lead.next_action != 'Связаться с клиентом' %}{{ lead.next_action }}{% else %}Ответить клиенту{% endif %}</strong>
+    <span class="lead-action-summary__deadline {% if response_due < queue_now %}lead-deadline--overdue{% endif %}">Первый ответ {% if response_due < queue_now %}просрочен{% else %}до{% endif %} <time datetime="{{ response_due|date:'c' }}">{{ response_due|date:"d.m.Y · H:i" }}</time></span>
+    {% if response_due != lead.next_action_due_at %}<span class="lead-action-summary__secondary {% if lead.next_action_due_at < queue_now %}lead-deadline--overdue{% endif %}">Задача {% if lead.next_action_due_at < queue_now %}просрочена{% else %}до{% endif %} <time datetime="{{ lead.next_action_due_at|date:'c' }}">{{ lead.next_action_due_at|date:"d.m.Y · H:i" }}</time></span>{% endif %}
+  {% else %}
+    <strong class="lead-action-summary__title">{{ lead.next_action }}</strong>
+    <span class="lead-action-summary__deadline {% if lead.next_action_due_at < queue_now %}lead-deadline--overdue{% endif %}">Задача {% if lead.next_action_due_at < queue_now %}просрочена{% else %}до{% endif %} <time datetime="{{ lead.next_action_due_at|date:'c' }}">{{ lead.next_action_due_at|date:"d.m.Y · H:i" }}</time></span>
+    {% if not lead.first_contacted_at and response_due != lead.next_action_due_at %}<span class="lead-action-summary__secondary {% if response_due < queue_now %}lead-deadline--overdue{% endif %}">Первый ответ {% if response_due < queue_now %}просрочен{% else %}до{% endif %} <time datetime="{{ response_due|date:'c' }}">{{ response_due|date:"d.m.Y · H:i" }}</time></span>{% endif %}
+  {% endif %}
+</div>
+{% endwith %}

@@ -12,7 +12,7 @@ from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, connection, transaction
 from django.db.models.deletion import ProtectedError
-from django.test import RequestFactory, SimpleTestCase, TestCase
+from django.test import RequestFactory, SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 
 from properties.models import (
@@ -20,7 +20,7 @@ from properties.models import (
     Property, PropertyImage, RealtorProfile,
 )
 
-from .catalog import DEFAULT_PLANS, default_ai_costs, validate_ai_costs, validate_snapshot
+from .catalog import DEFAULT_PLANS, POLICY_VERSION, default_ai_costs, validate_ai_costs, validate_snapshot
 from .models import BillingAccount, BillingPeriod, DemoCreditGrant, Plan, PlanVersion, ResourceReservation, Subscription
 from .rules import AccessState, Operation, PolicyService, UsageSnapshot, collect_usage
 from .services import AccountService, SubscriptionService, current_plan_version, month_boundary, next_month_boundary, resource_scope, utc_datetime
@@ -40,6 +40,7 @@ def seed_test_catalog():
                 "active_properties", "total_properties", "landings", "seats", "storage_bytes", "ai_credits", "demo_ai_credits",
             )},
             "xml_export_enabled": values["xml_export"], "team_enabled": values["team"],
+            "telegram_publications_enabled": values["telegram_publications"],
             "monthly_price_minor": 0 if code == "demo" else None,
         })
 
@@ -221,11 +222,39 @@ class CatalogAndModelTests(BillingFixture):
     def test_snapshot_is_complete_and_independent_of_mutable_dicts(self):
         snapshot = self.standard.snapshot()
         validate_snapshot(snapshot)
+        self.assertEqual(snapshot["schema"], 1)
         snapshot["ai_costs"]["package"] = 99
         self.assertEqual(self.standard.ai_costs["package"], 3)
         for bad in ({}, {**snapshot, "schema": True}, {**snapshot, "limits": {}}, {**snapshot, "features": {"team": 1, "xml_export": True}}):
             with self.subTest(snapshot=bad), self.assertRaises(ValidationError):
                 validate_snapshot(bad)
+
+    def test_telegram_entitlement_uses_versioned_terms_and_keeps_legacy_snapshots(self):
+        property = self.property(status="available")
+        legacy = self.demo.snapshot()
+        validate_snapshot(legacy)
+        self.assertNotIn("telegram_publications", legacy["features"])
+        with override_settings(BILLING_ENFORCEMENT_ENABLED=False):
+            self.assertTrue(PolicyService.evaluate(self.personal, self.owner, Operation.PUBLISH_TELEGRAM, resource=property, now=NOW).allowed)
+            restricted_demo = version_copy(self.demo, policy_version=POLICY_VERSION, telegram_publications_enabled=False)
+            restricted_demo.save()
+            self.assertEqual(restricted_demo.snapshot()["schema"], 2)
+            self.assertFalse(restricted_demo.snapshot()["features"]["telegram_publications"])
+            denied = PolicyService.evaluate(self.personal, self.owner, Operation.PUBLISH_TELEGRAM, resource=property, now=NOW)
+            self.assertEqual(denied.code, "feature_not_available")
+            self.grant(start=START)
+            self.assertTrue(PolicyService.evaluate(self.personal, self.owner, Operation.PUBLISH_TELEGRAM, resource=property, now=NOW).allowed)
+            self.assertEqual(PolicyService.evaluate(self.personal, self.outsider, Operation.PUBLISH_TELEGRAM, resource=property, now=NOW).code, "forbidden")
+            team_property = self.property(team=True, status="available")
+            self.assertEqual(PolicyService.evaluate(self.personal, self.owner, Operation.PUBLISH_TELEGRAM, resource=team_property, now=NOW).code, "wrong_workspace")
+            self.grant(account=self.team, version=self.business, start=START)
+            self.assertTrue(PolicyService.evaluate(self.team, self.agent, Operation.PUBLISH_TELEGRAM, resource=team_property, now=NOW).allowed)
+            expired = PolicyService.evaluate(self.personal, self.owner, Operation.PUBLISH_TELEGRAM, resource=property, now=START + timedelta(days=40))
+            self.assertEqual(expired.code, "subscription_expired")
+        malformed = restricted_demo.snapshot()
+        del malformed["features"]["telegram_publications"]
+        with self.assertRaises(ValidationError):
+            validate_snapshot(malformed)
 
     def test_subscription_account_is_immutable_and_suspension_needs_reason(self):
         subscription = self.grant().subscription

@@ -2,8 +2,9 @@ from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.core.paginator import Paginator
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Case, CharField, DateTimeField, ExpressionWrapper, F, IntegerField, Q, Value, When
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -18,6 +19,39 @@ from .agency_access import workspace_queryset
 from .models import ClientInteraction, ClientReminder, Deal, Lead, Showing
 
 
+def sync_showing_follow_up(showing, form):
+    """Keep a completed showing and its next CRM task in the same transaction."""
+    task = showing.follow_up_task
+    if showing.status != "completed":
+        if task and not task.is_done and not task.cancelled_at:
+            task.cancelled_at = timezone.now()
+            task.save(update_fields=["cancelled_at"])
+        if task:
+            showing.follow_up_task = None
+            showing.save(update_fields=["follow_up_task"])
+        return
+
+    action = (form.cleaned_data.get("next_action") or "").strip()
+    due_at = form.cleaned_data.get("next_action_due_at")
+    if not action or not due_at:
+        return
+    if task and not task.is_done and not task.cancelled_at:
+        task.text = action
+        task.due_at = due_at
+        task.save(update_fields=["text", "due_at"])
+    else:
+        task = ClientReminder.objects.create(
+            owner=showing.deal.responsible or showing.owner,
+            agency=showing.agency,
+            client=showing.deal.client,
+            deal=showing.deal,
+            text=action,
+            due_at=due_at,
+        )
+        showing.follow_up_task = task
+        showing.save(update_fields=["follow_up_task"])
+
+
 class WorkdayView(LoginRequiredMixin, TemplateView):
     template_name = "properties/workday.html"
 
@@ -27,7 +61,7 @@ class WorkdayView(LoginRequiredMixin, TemplateView):
         today = timezone.localdate(now)
         today_start = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0)
         tomorrow = today_start + timedelta(days=1)
-        tasks = ClientReminder.objects.filter(owner=self.request.user, is_done=False, lead__isnull=True).select_related("client", "deal", "deal__property")
+        tasks = ClientReminder.objects.filter(owner=self.request.user, is_done=False, cancelled_at__isnull=True, lead__isnull=True).select_related("client", "deal", "deal__property")
         showings = Showing.objects.filter(owner=self.request.user).select_related("deal", "deal__client", "deal__property")
         leads = workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(assigned_to=self.request.user, outcome="open").exclude(status="archived").select_related("property")
         context.update({
@@ -46,12 +80,132 @@ class WorkdayView(LoginRequiredMixin, TemplateView):
         return context
 
 
+class WorkItemsView(LoginRequiredMixin, TemplateView):
+    template_name = "properties/work_items.html"
+    page_size = 25
+    kinds = ("all", "task", "lead", "showing")
+
+    @staticmethod
+    def item_rows(queryset, *, kind, due_at, now, tomorrow):
+        return queryset.order_by().annotate(
+            item_kind=Value(kind, output_field=CharField()),
+            item_due_at=due_at,
+        ).annotate(sort_group=Case(
+            When(item_due_at__isnull=True, then=Value(3)),
+            When(item_due_at__lt=now, then=Value(0)),
+            When(item_due_at__lt=tomorrow, then=Value(1)),
+            default=Value(2), output_field=IntegerField(),
+        )).values("item_kind", "pk", "item_due_at", "sort_group")
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        now = timezone.now()
+        tomorrow = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+        selected_kind = self.request.GET.get("kind", "all")
+        if selected_kind not in self.kinds:
+            selected_kind = "all"
+
+        sources = []
+        if selected_kind in {"all", "task"}:
+            tasks = ClientReminder.objects.filter(
+                owner=self.request.user, is_done=False, cancelled_at__isnull=True, lead__isnull=True,
+            )
+            sources.append(self.item_rows(tasks, kind="task", due_at=F("due_at"), now=now, tomorrow=tomorrow))
+
+        if selected_kind in {"all", "lead"}:
+            leads = workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(
+                assigned_to=self.request.user, outcome="open",
+            ).exclude(status="archived")
+            first_response_due = ExpressionWrapper(F("created_at") + timedelta(minutes=30), output_field=DateTimeField())
+            lead_due = Case(
+                When(first_contacted_at__isnull=True, next_action_due_at__gte=first_response_due, then=first_response_due),
+                default=F("next_action_due_at"), output_field=DateTimeField(),
+            )
+            sources.append(self.item_rows(leads, kind="lead", due_at=lead_due, now=now, tomorrow=tomorrow))
+
+        if selected_kind in {"all", "showing"}:
+            showings = Showing.objects.filter(owner=self.request.user, status="planned")
+            sources.append(self.item_rows(showings, kind="showing", due_at=F("starts_at"), now=now, tomorrow=tomorrow))
+
+        rows = sources[0].union(*sources[1:], all=True).order_by("sort_group", "item_due_at", "item_kind", "pk")
+        page = Paginator(rows, self.page_size).get_page(self.request.GET.get("page"))
+        visible = list(page.object_list)
+        page.object_list = visible
+        ids = {kind: [row["pk"] for row in visible if row["item_kind"] == kind] for kind in self.kinds[1:]}
+        task_map = {
+            task.pk: task for task in ClientReminder.objects.filter(pk__in=ids["task"], owner=self.request.user).select_related(
+                "client", "deal__property",
+            )
+        }
+        lead_map = {
+            lead.pk: lead for lead in workspace_queryset(
+                Lead.objects.filter(pk__in=ids["lead"], assigned_to=self.request.user, outcome="open"),
+                self.request.user, prefix="property__",
+            ).select_related("property")
+        }
+        showing_map = {
+            showing.pk: showing for showing in Showing.objects.filter(
+                pk__in=ids["showing"], owner=self.request.user, status="planned",
+            ).select_related("deal__client", "deal__property")
+        }
+
+        group_titles = ("Просрочено", "Сегодня", "Позже", "Без срока")
+        groups = []
+        for row in visible:
+            kind, pk, due_at = row["item_kind"], row["pk"], row["item_due_at"]
+            if kind == "task":
+                task = task_map.get(pk)
+                if not task:
+                    continue
+                details = task.client.name if task.client_id else "Общая задача"
+                if task.deal_id:
+                    details = f"{task.deal.property.title} · {details}"
+                item = {"kind": kind, "kind_label": "Задача", "pk": pk, "title": task.text,
+                        "details": details, "due_at": due_at, "url": reverse("task_detail", args=[pk])}
+            elif kind == "lead":
+                lead = lead_map.get(pk)
+                if not lead:
+                    continue
+                needs_first_response = not lead.first_contacted_at and lead.first_response_due_at <= lead.next_action_due_at
+                item = {"kind": kind, "kind_label": "Заявка", "pk": pk,
+                        "title": "Ответить клиенту" if needs_first_response else lead.next_action,
+                        "details": f"{lead.name} · {lead.property.title}", "due_at": due_at,
+                        "url": reverse("lead_detail", args=[pk])}
+            else:
+                showing = showing_map.get(pk)
+                if not showing:
+                    continue
+                item = {"kind": kind, "kind_label": "Показ", "pk": pk,
+                        "title": showing.deal.property.title, "details": showing.deal.client.name,
+                        "due_at": due_at, "url": reverse("showing_detail", args=[pk])}
+            index = row["sort_group"]
+            if not groups or groups[-1]["index"] != index:
+                groups.append({"index": index, "title": group_titles[index], "items": []})
+            groups[-1]["items"].append(item)
+
+        context.update({
+            "selected_kind": selected_kind,
+            "page_obj": page,
+            "groups": groups,
+        })
+        return context
+
+
 class WorkdayFormMixin(LoginRequiredMixin):
     def get_form_kwargs(self):
         return {**super().get_form_kwargs(), "owner": self.request.user}
 
-    def get_success_url(self):
+    def get_return_url(self):
+        next_url = self.request.POST.get("next", "") or self.request.GET.get("next", "")
+        if next_url and url_has_allowed_host_and_scheme(next_url, {self.request.get_host()}):
+            return next_url
         return reverse("workday")
+
+    def get_context_data(self, **kwargs):
+        return {**super().get_context_data(**kwargs), "return_url": self.get_return_url()}
+
+    def get_success_url(self):
+        return self.get_return_url()
 
 
 class TaskCreateView(WorkdayFormMixin, CreateView):
@@ -151,6 +305,7 @@ class ShowingCreateView(WorkdayFormMixin, CreateView):
         form.instance.owner = self.request.user
         with transaction.atomic():
             response = super().form_valid(form)
+            sync_showing_follow_up(self.object, form)
             ClientInteraction.objects.create(
                 client=self.object.deal.client,
                 lead=self.object.deal.lead,
@@ -181,7 +336,10 @@ class ShowingUpdateView(WorkdayFormMixin, UpdateView):
             return self.render_to_response(self.get_context_data(form=form), status=403)
         previous = Showing.objects.values("status", "starts_at").get(pk=self.object.pk)
         with transaction.atomic():
+            locked = Showing.objects.select_for_update().get(pk=self.object.pk)
+            form.instance.follow_up_task = locked.follow_up_task
             response = super().form_valid(form)
+            sync_showing_follow_up(self.object, form)
             if previous["status"] != self.object.status or previous["starts_at"] != self.object.starts_at:
                 detail = f" Итог: {self.object.outcome_note.strip()}" if self.object.status == "completed" else ""
                 ClientInteraction.objects.create(

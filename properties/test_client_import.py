@@ -42,7 +42,7 @@ class ClientImportTests(TestCase):
     def test_exported_csv_can_be_imported_to_another_workspace(self):
         Client.objects.create(
             owner=self.owner, name="Клиент экспорта", phone="+79260000006",
-            source="avito", status="viewing", preferred_area="Центр, рядом с парком",
+            source="avito", status="in_progress", preferred_area="Центр, рядом с парком",
         )
         exported = self.client.get(reverse("client_export")).content
         target = User.objects.create_user("csv-target", password="password")
@@ -57,7 +57,7 @@ class ClientImportTests(TestCase):
         self.assertEqual(imported.name, "Клиент экспорта")
         self.assertEqual(imported.phone, "+79260000006")
         self.assertEqual(imported.source, "avito")
-        self.assertEqual(imported.status, "viewing")
+        self.assertEqual(imported.status, "in_progress")
         self.assertEqual(imported.preferred_area, "Центр, рядом с парком")
 
     def test_import_is_isolated_by_workspace_and_repeat_is_safe(self):
@@ -68,6 +68,14 @@ class ClientImportTests(TestCase):
         self.assertRedirects(self.upload(text), reverse("client_list"))
         self.assertEqual(Client.objects.filter(owner=self.owner).count(), 1)
         self.assertEqual(Client.objects.count(), 2)
+
+    def test_legacy_status_csv_is_mapped_without_losing_old_label(self):
+        response = self.upload("Имя,Телефон,Статус\nАнна,+79260000007,Показ\nБорис,+79260000008,Отказ\n")
+        self.assertRedirects(response, reverse("client_list"))
+        self.assertEqual(Client.objects.get(name="Анна").status, "in_progress")
+        self.assertEqual(Client.objects.get(name="Анна").legacy_status, "viewing")
+        self.assertEqual(Client.objects.get(name="Борис").status, "inactive")
+        self.assertEqual(Client.objects.get(name="Борис").legacy_status, "lost")
 
     def test_team_member_imports_to_shared_base_and_skips_team_duplicate(self):
         member = User.objects.create_user("csv-member", password="password")
@@ -98,7 +106,7 @@ class ClientImportTests(TestCase):
     def test_client_header_uses_labeled_icons_for_secondary_actions(self):
         response = self.client.get(reverse("client_list"))
         for name, label, icon in (
-            ("client_board", "Статусы клиентов", "kanban"),
+            ("client_board", "Отношения с клиентами", "kanban"),
             ("client_export", "Экспорт CSV", "download"),
             ("client_import", "Импорт CSV", "upload"),
         ):

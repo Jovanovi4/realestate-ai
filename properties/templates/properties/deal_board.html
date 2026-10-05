@@ -8,19 +8,21 @@
 
 {% if active_count %}<p class="detail-muted mb-3">Активных сделок: {{ active_count }}</p>{% endif %}
 <div class="client-board deal-board" aria-label="Воронка сделок">
-  {% for stage, label, deals in columns %}
-    <section class="client-board__column is-{{ stage }}" aria-labelledby="deal-board-{{ stage }}">
-      <header class="client-board__heading"><h2 id="deal-board-{{ stage }}">{{ label }}</h2><span class="client-board__count" aria-label="Сделок на этапе: {{ deals|length }}">{{ deals|length }}</span></header>
+  {% for column in columns %}
+    <section class="client-board__column is-{{ column.key }}" aria-labelledby="deal-board-{{ column.key }}">
+      <header class="client-board__heading"><h2 id="deal-board-{{ column.key }}">{{ column.label }}</h2><span class="client-board__count" aria-label="Сделок на этапе: {{ column.count }}">{{ column.count }}</span></header>
       <div class="client-board__items">
-        {% for deal in deals %}
+        {% for deal in column.page %}
           <a class="client-board__card" href="{% url 'deal_detail' deal.pk %}">
             <strong>{{ deal.client.name }}{% if deal.is_demo %} · демо{% endif %}</strong>
             <span class="client-board__area">{{ deal.property.title }}</span>
-            {% if deal.next_showing %}<span class="client-board__phone">Показ: {{ deal.next_showing.starts_at|date:"d.m.Y · H:i" }}</span>{% endif %}
-            {% if deal.next_task %}<span class="client-board__source">{{ deal.next_task.text }}{% if deal.next_task.due_at %} · {{ deal.next_task.due_at|date:"d.m.Y" }}{% endif %}</span>{% endif %}
+            <span class="client-board__source">Ответственный: {% if deal.responsible %}{{ deal.responsible.realtor_profile.display_name|default:deal.responsible.get_full_name|default:deal.responsible.username }}{% else %}Не назначен{% endif %}</span>
+            {% if deal.next_showing_at %}<span class="client-board__phone">Показ: {{ deal.next_showing_at|date:"d.m.Y · H:i" }}</span>{% endif %}
+            {% if deal.next_task_text %}<span class="client-board__source">{{ deal.next_task_text }}{% if deal.next_task_due_at %} · {{ deal.next_task_due_at|date:"d.m.Y" }}{% endif %}</span>{% endif %}
           </a>
         {% empty %}<p class="client-board__empty">Пока нет сделок</p>{% endfor %}
       </div>
+      {% if column.page.has_other_pages %}<nav class="client-board__pager" aria-label="Страницы: {{ column.label }}"><a class="btn btn-neutral btn-sm{% if not column.previous_url %} disabled{% endif %}"{% if column.previous_url %} href="{{ column.previous_url }}"{% else %} aria-disabled="true"{% endif %} aria-label="Предыдущие сделки: {{ column.label }}">Назад</a><span>{{ column.page.number }} / {{ column.page.paginator.num_pages }}</span><a class="btn btn-neutral btn-sm{% if not column.next_url %} disabled{% endif %}"{% if column.next_url %} href="{{ column.next_url }}"{% else %} aria-disabled="true"{% endif %} aria-label="Следующие сделки: {{ column.label }}">Далее</a></nav>{% endif %}
     </section>
   {% endfor %}
 </div>

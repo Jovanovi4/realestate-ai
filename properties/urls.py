@@ -7,13 +7,18 @@ from .account_views import AccountRecoveryView, AccountResetConfirmView, Confirm
 from django.views.generic import TemplateView
 from .deal_views import DealBoardView, DealCreateView, DealUpdateView
 from .client_import_views import ClientImportView
+from .client_matching_views import (
+    ClientPropertySuggestionCreateView, ClientPropertySuggestionReactionView,
+    ClientPropertySuggestionSendView, ClientSearchUpdateView,
+)
 from .telegram_views import TelegramPublishView, telegram_public_webhook
+from .integration_views import TelegramIntegrationView
 from .agency_views import (
     AgencyCreateView, AgencyDashboardView, AgencyInviteView, AgencyInviteRevokeView, AgencyJoinView,
     AgencyMemberRemoveView, AgencyMemberRoleView, LeadAssignView,
 )
 from .workday_views import (
-    ShowingCreateView, ShowingUpdateView, TaskCompleteView, TaskCreateView, TaskUpdateView, WorkdayView,
+    ShowingCreateView, ShowingUpdateView, TaskCompleteView, TaskCreateView, TaskUpdateView, WorkdayView, WorkItemsView,
 )
 from .views import (
     AvitoExportView, CianExportView, PropertyPresentationPDFView, PropertyPresentationDOCXView,
@@ -61,6 +66,7 @@ from .views import (
 
 urlpatterns = [
     path("telegram/public/webhook/", telegram_public_webhook, name="telegram_public_webhook"),
+    path("integrations/telegram/", TelegramIntegrationView.as_view(), name="integration_telegram"),
     path("legal/privacy-policy/", privacy_policy, name="privacy_policy"),
     path("legal/personal-data-consent/", personal_data_consent, name="personal_data_consent"),
     path("legal/terms/", service_terms, name="service_terms"),
@@ -120,6 +126,10 @@ urlpatterns = [
     path("clients/export/", ClientExportView.as_view(), name="client_export"),
     path("clients/bulk/", ClientBulkActionView.as_view(), name="client_bulk_action"),
     path("clients/<int:pk>/", ClientDetailView.as_view(), name="client_detail"),
+    path("clients/<int:pk>/search/", ClientSearchUpdateView.as_view(), name="client_search_update"),
+    path("clients/<int:pk>/suggestions/", ClientPropertySuggestionCreateView.as_view(), name="client_suggestion_create"),
+    path("clients/<int:pk>/suggestions/<int:suggestion_pk>/sent/", ClientPropertySuggestionSendView.as_view(), name="client_suggestion_sent"),
+    path("clients/<int:pk>/suggestions/<int:suggestion_pk>/reaction/", ClientPropertySuggestionReactionView.as_view(), name="client_suggestion_reaction"),
     path("clients/<int:pk>/status/", ClientStatusUpdateView.as_view(), name="client_status_update"),
     path("clients/<int:pk>/interactions/", ClientInteractionCreateView.as_view(), name="client_interaction_create"),
     path("clients/<int:pk>/reminders/", ClientReminderCreateView.as_view(), name="client_reminder_create"),
@@ -128,6 +138,7 @@ urlpatterns = [
     path("deals/new/", DealCreateView.as_view(), name="deal_create"),
     path("deals/<int:pk>/", DealUpdateView.as_view(), name="deal_detail"),
     path("today/", WorkdayView.as_view(), name="workday"),
+    path("tasks/", WorkItemsView.as_view(), name="work_items"),
     path("tasks/new/", TaskCreateView.as_view(), name="task_create"),
     path("tasks/<int:pk>/", TaskUpdateView.as_view(), name="task_detail"),
     path("tasks/<int:pk>/complete/", TaskCompleteView.as_view(), name="task_complete"),

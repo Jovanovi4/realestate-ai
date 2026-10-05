@@ -18,7 +18,7 @@ MAX_IMPORT_ROWS = 1_000
 HEADERS = {
     "имя": "name", "name": "name",
     "телефон": "phone", "phone": "phone",
-    "статус": "status", "status": "status",
+    "статус": "status", "status": "status", "отношения": "status",
     "источник": "source", "source": "source",
     "бюджет": "budget", "budget": "budget",
     "район": "preferred_area", "preferred_area": "preferred_area",
@@ -56,6 +56,22 @@ def _choice(value, choices, default):
     if result is None:
         raise ValueError("неизвестное значение статуса или источника")
     return result
+
+
+def _client_relationship(value):
+    if not value:
+        return "new", ""
+    normalized = value.casefold()
+    current = {str(key).casefold(): key for key, _ in Client.STATUS_CHOICES}
+    current.update({label.casefold(): key for key, label in Client.STATUS_CHOICES})
+    if normalized in current:
+        return current[normalized], ""
+    legacy = {str(key).casefold(): key for key, _ in Client.LEGACY_STATUS_CHOICES}
+    legacy.update({label.casefold(): key for key, label in Client.LEGACY_STATUS_CHOICES})
+    previous = legacy.get(normalized)
+    if previous:
+        return {"viewing": "in_progress", "negotiation": "in_progress", "won": "nurture", "lost": "inactive"}[previous], previous
+    raise ValueError("неизвестное значение статуса или отношений")
 
 
 def _decode(upload):
@@ -107,7 +123,7 @@ def _rows(upload):
                 if not row["name"]:
                     raise ValueError("не указано имя")
                 row["phone"] = canonical_phone(row["phone"])
-                row["status"] = _choice(row.get("status", ""), Client.STATUS_CHOICES, "new")
+                row["status"], row["legacy_status"] = _client_relationship(row.get("status", ""))
                 row["source"] = _choice(row.get("source", ""), Client.SOURCE_CHOICES, "other")
                 raw_budget = row.get("budget", "").replace(" ", "").replace("\u00a0", "").replace(",", ".")
                 row["budget"] = Decimal(raw_budget) if raw_budget else None
@@ -145,7 +161,7 @@ def import_clients(upload, actor):
         existing.add(row["phone"])
         client = Client(
             owner=actor, agency=agency, name=row["name"], phone=row["phone"],
-            status=row["status"], source=row["source"], budget=row["budget"],
+            status=row["status"], legacy_status=row["legacy_status"], source=row["source"], budget=row["budget"],
             preferred_area=row.get("preferred_area", ""),
             preferred_contact_time=row.get("preferred_contact_time", ""),
             notes=row.get("notes", ""),

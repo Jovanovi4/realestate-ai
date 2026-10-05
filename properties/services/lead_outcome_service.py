@@ -1,6 +1,7 @@
 from django.core.exceptions import ValidationError
 
 from ..models import ClientInteraction, ClientReminder, Deal
+from .client_relationship_service import activate_client_relationship
 
 
 def convert_lead_to_deal(lead, deal):
@@ -14,6 +15,9 @@ def convert_lead_to_deal(lead, deal):
         raise ValidationError("Сначала зафиксируйте первый контакт и квалифицируйте заявку.")
     if lead.client_id != deal.client_id or lead.property_id != deal.property_id:
         raise ValidationError("Сделка должна относиться к клиенту и объекту заявки.")
+
+    if deal.stage in Deal.ACTIVE_STAGES:
+        activate_client_relationship(deal.client_id, reason=f"Заявка по объекту «{deal.property.title}» переведена в сделку.", lead=lead)
 
     source_task = lead.action_tasks.select_for_update().filter(is_done=False).first()
     lead.outcome = "converted"

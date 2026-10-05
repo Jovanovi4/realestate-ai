@@ -1,7 +1,8 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.db import transaction
-from django.db.models import F, Prefetch
+from django.db.models import F, OuterRef, Subquery
+from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
@@ -11,8 +12,10 @@ from billing.rules import Operation
 
 from .forms import DealForm
 from .agency_access import workspace_queryset
+from .board_pagination import paged_board_columns
 from .models import ClientInteraction, ClientReminder, Deal, Lead, Showing
 from .services.lead_outcome_service import convert_lead_to_deal
+from .services.client_relationship_service import activate_client_relationship
 
 
 class DealBoardView(LoginRequiredMixin, TemplateView):
@@ -20,27 +23,31 @@ class DealBoardView(LoginRequiredMixin, TemplateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        deals = list(
-            workspace_queryset(Deal.objects, self.request.user)
-            .select_related("client", "property", "responsible")
-            .prefetch_related(
-                Prefetch("showings", queryset=Showing.objects.filter(status="planned").order_by("starts_at"), to_attr="planned_showings"),
-                Prefetch("tasks", queryset=ClientReminder.objects.filter(is_done=False).order_by(F("due_at").asc(nulls_last=True)), to_attr="open_tasks"),
-            )
-            .order_by("-updated_at")
-        )
+        deals = workspace_queryset(Deal.objects, self.request.user)
         now = timezone.now()
-        for deal in deals:
-            deal.next_showing = next(
-                (showing for showing in deal.planned_showings if showing.starts_at >= now),
-                deal.planned_showings[0] if deal.planned_showings else None,
+        planned = Showing.objects.filter(deal_id=OuterRef("pk"), status="planned")
+        open_tasks = ClientReminder.objects.filter(deal_id=OuterRef("pk"), is_done=False).order_by(
+            F("due_at").asc(nulls_last=True), "pk",
+        )
+
+        def hydrate(ids):
+            return deals.filter(pk__in=ids).select_related(
+                "client", "property", "responsible__realtor_profile",
+            ).annotate(
+                next_showing_at=Coalesce(
+                    Subquery(planned.filter(starts_at__gte=now).order_by("starts_at", "pk").values("starts_at")[:1]),
+                    Subquery(planned.order_by("starts_at", "pk").values("starts_at")[:1]),
+                ),
+                next_task_text=Subquery(open_tasks.values("text")[:1]),
+                next_task_due_at=Subquery(open_tasks.values("due_at")[:1]),
             )
-            deal.next_task = deal.open_tasks[0] if deal.open_tasks else None
-        context["columns"] = [
-            (stage, label, [deal for deal in deals if deal.stage == stage])
-            for stage, label in Deal.STAGE_CHOICES
-        ]
-        context["active_count"] = sum(deal.stage in Deal.ACTIVE_STAGES for deal in deals)
+
+        columns = paged_board_columns(
+            self.request, choices=Deal.STAGE_CHOICES, queryset=deals, field="stage", hydrate=hydrate,
+            anchor_prefix="deal-board",
+        )
+        context["columns"] = columns
+        context["active_count"] = sum(column["count"] for column in columns if column["key"] in Deal.ACTIVE_STAGES)
         return context
 
 
@@ -99,6 +106,10 @@ class DealCreateView(DealFormMixin, CreateView):
             if lead:
                 convert_lead_to_deal(lead, self.object)
             else:
+                if self.object.stage in Deal.ACTIVE_STAGES:
+                    activate_client_relationship(
+                        self.object.client_id, reason=f"Создана сделка по объекту «{self.object.property.title}».",
+                    )
                 ClientInteraction.objects.create(
                     client=self.object.client,
                     interaction_type="status",
@@ -116,8 +127,8 @@ class DealUpdateView(DealFormMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["deal_tasks"] = self.object.tasks.filter(is_done=False).order_by(F("due_at").asc(nulls_last=True))[:5]
-        context["deal_showings"] = self.object.showings.order_by("-starts_at")[:5]
+        context["deal_tasks"] = self.object.tasks.filter(is_done=False, cancelled_at__isnull=True).select_related("owner__realtor_profile").order_by(F("due_at").asc(nulls_last=True))[:5]
+        context["deal_showings"] = self.object.showings.select_related("owner__realtor_profile").order_by("-starts_at")[:5]
         return context
 
     def form_valid(self, form):
@@ -126,17 +137,35 @@ class DealUpdateView(DealFormMixin, UpdateView):
         except TariffDenied as error:
             form.add_error(None, error.message)
             return self.render_to_response(self.get_context_data(form=form), status=403)
-        previous_stage = Deal.objects.values_list("stage", flat=True).get(pk=self.object.pk)
         with transaction.atomic():
+            previous = Deal.objects.select_for_update().only("stage", "responsible_id").get(pk=self.object.pk)
             response = super().form_valid(form)
-            if previous_stage != self.object.stage:
+            if previous.responsible_id != self.object.responsible_id and self.object.responsible_id:
+                self.object.tasks.filter(
+                    owner_id=previous.responsible_id, is_done=False, cancelled_at__isnull=True,
+                    lead__isnull=True,
+                ).update(owner_id=self.object.responsible_id)
+                self.object.showings.filter(
+                    owner_id=previous.responsible_id, status="planned",
+                ).update(owner_id=self.object.responsible_id)
+                ClientInteraction.objects.create(
+                    client=self.object.client,
+                    lead=self.object.lead,
+                    interaction_type="status",
+                    text=f"Ответственный за сделку: {previous.responsible or 'Не назначен'} → {self.object.responsible}.",
+                )
+            if previous.stage != self.object.stage:
+                if previous.stage in Deal.CLOSED_STAGES and self.object.stage in Deal.ACTIVE_STAGES:
+                    activate_client_relationship(
+                        self.object.client_id, reason=f"Возобновлена сделка по объекту «{self.object.property.title}».",
+                    )
                 ClientInteraction.objects.create(
                     client=self.object.client,
                     lead=self.object.lead,
                     interaction_type="status",
                     text=(
                         f"Сделка по объекту «{self.object.property.title}»: "
-                        f"{dict(Deal.STAGE_CHOICES)[previous_stage]} → {self.object.get_stage_display()}."
+                        f"{dict(Deal.STAGE_CHOICES)[previous.stage]} → {self.object.get_stage_display()}."
                     ),
                 )
         messages.success(self.request, "Изменения в сделке сохранены.")

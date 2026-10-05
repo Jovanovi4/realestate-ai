@@ -1,0 +1,35 @@
+<section class="detail-section mb-4" id="telegram-feed" aria-labelledby="telegram-feed-title">
+  <div class="detail-section__heading">
+    <div><span class="detail-kicker">{% if telegram_workspace == 'team' %}Команда{% else %}Личное пространство{% endif %}</span><h2 id="telegram-feed-title">Лента объявлений</h2></div>
+    <div class="telegram-feed-summary" aria-label="Состояние ленты">
+      <span class="detail-count">Объектов: {{ telegram_overview.page.paginator.count }}</span>
+      <span class="detail-count">Подписчиков: {{ telegram_overview.subscriber_count }}</span>
+    </div>
+  </div>
+  {% if telegram_overview.url %}
+    <div class="detail-link"><span>Ссылка для клиентов</span><a href="{{ telegram_overview.url }}" target="_blank" rel="noopener noreferrer">{{ telegram_overview.url }}</a></div>
+  {% else %}
+    <p class="detail-muted">Публичный бот пока не подключён. Ссылка появится после настройки.</p>
+  {% endif %}
+  <div class="telegram-feed-list-heading"><div class="billing-heading-with-help"><h3>Опубликованные объекты</h3>{% include "billing/includes/help.html" with label="Состояния отправки" text="В очереди — сообщения ждут запуска отправки. Отправлено — бот принял сообщения, но прочтение неизвестно. Есть ошибки — попытки отправки исчерпаны. Без рассылки — объект ещё не отправлялся подписчикам этой ленты." only %}</div><span class="detail-muted">Управление — в карточке объекта</span></div>
+  {% if telegram_overview.rows %}
+    <div class="detail-linked-list">
+      {% for row in telegram_overview.rows %}
+        <a class="detail-linked-list__item telegram-feed-row" href="{% url 'property_detail' row.property.pk %}?tab=publication">
+          <span><strong>{{ row.property.title }}</strong><span class="detail-linked-list__description">{{ row.detail }}</span></span>
+          <span class="telegram-feed-status telegram-feed-status--{{ row.tone }}">{{ row.label }}</span>
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg>
+        </a>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="detail-muted telegram-feed-empty">Пока нет опубликованных объектов.</p>
+  {% endif %}
+  {% if telegram_overview.page.has_other_pages %}
+    <nav class="telegram-feed-pagination" aria-label="Страницы объектов в Telegram">
+      {% if telegram_overview.page.has_previous %}<a href="?workspace={{ telegram_workspace }}&amp;telegram_page={{ telegram_overview.page.previous_page_number }}#telegram-feed" aria-label="Предыдущая страница объектов">‹</a>{% endif %}
+      <span>{{ telegram_overview.page.number }} / {{ telegram_overview.page.paginator.num_pages }}</span>
+      {% if telegram_overview.page.has_next %}<a href="?workspace={{ telegram_workspace }}&amp;telegram_page={{ telegram_overview.page.next_page_number }}#telegram-feed" aria-label="Следующая страница объектов">›</a>{% endif %}
+    </nav>
+  {% endif %}
+</section>

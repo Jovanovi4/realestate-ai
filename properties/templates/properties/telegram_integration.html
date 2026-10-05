@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Telegram · Интеграции{% endblock %}
+{% block content %}
+<header class="ui-page-header">
+  <div><p class="ui-page-header__eyebrow">Интеграции</p><h1 class="ui-page-header__title">Telegram</h1><p class="ui-page-header__description">Ленты объявлений для покупателей и состояние отправки.</p></div>
+</header>
+
+{% if telegram_has_team %}
+<nav class="nav nav-pills workspace-tabs detail-tabs billing-workspace-tabs" aria-label="Пространство Telegram">
+  <a class="nav-link{% if telegram_workspace == 'personal' %} active{% endif %}" href="{% url 'integration_telegram' %}"{% if telegram_workspace == 'personal' %} aria-current="page"{% endif %}>Личное пространство</a>
+  <a class="nav-link{% if telegram_workspace == 'team' %} active{% endif %}" href="{% url 'integration_telegram' %}?workspace=team"{% if telegram_workspace == 'team' %} aria-current="page"{% endif %}>Команда</a>
+</nav>
+{% endif %}
+
+{% include "properties/includes/telegram_feed_overview.html" %}
+{% endblock %}

@@ -1,27 +1,29 @@
 {% extends "base.html" %}
-{% block title %}Статусы клиентов{% endblock %}
+{% block title %}Отношения с клиентами{% endblock %}
 {% block content %}
 <header class="ui-page-header">
-  <div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Статусы клиентов</h1><p class="ui-page-header__description">Общий статус контакта. Отдельные переговоры по объектам находятся в сделках.</p></div>
+  <div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Отношения с клиентами</h1><p class="ui-page-header__description">Кто только обратился, с кем работаем и с кем остаёмся на связи. Этапы по объектам — в сделках.</p></div>
   <div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Список клиентов</a><a href="{% url 'deal_board' %}" class="btn btn-primary">Воронка сделок</a></div>
 </header>
 
-<div class="client-board" aria-label="Этапы работы с клиентами">
-  {% for status, label, clients in columns %}
-    <section class="client-board__column is-{{ status }}" aria-labelledby="client-board-{{ status }}">
-      <header class="client-board__heading"><h2 id="client-board-{{ status }}">{{ label }}</h2><span class="client-board__count" aria-label="Клиентов на этапе: {{ clients|length }}">{{ clients|length }}</span></header>
+<div class="client-board" aria-label="Состояния отношений с клиентами">
+  {% for column in columns %}
+    <section class="client-board__column is-{{ column.key }}" aria-labelledby="client-board-{{ column.key }}">
+      <header class="client-board__heading"><h2 id="client-board-{{ column.key }}">{{ column.label }}</h2><span class="client-board__count" aria-label="Клиентов на этапе: {{ column.count }}">{{ column.count }}</span></header>
       <div class="client-board__items">
-        {% for client in clients %}
+        {% for client in column.page %}
           <a href="{% url 'client_detail' client.pk %}" class="client-board__card">
             <strong>{{ client.name }}</strong>
             <span class="client-board__phone">{{ client.phone }}</span>
             {% if client.preferred_area %}<span class="client-board__area">{{ client.preferred_area }}</span>{% endif %}
+            {% if client.active_deals_count or client.completed_deals_count %}<span class="client-board__deals">{% if client.active_deals_count %}Сделок в работе: {{ client.active_deals_count }}{% endif %}{% if client.completed_deals_count %}{% if client.active_deals_count %} · {% endif %}Успешных: {{ client.completed_deals_count }}{% endif %}</span>{% endif %}
             <span class="client-board__source">{{ client.get_source_display }}</span>
           </a>
         {% empty %}
           <p class="client-board__empty">Пока нет клиентов</p>
         {% endfor %}
       </div>
+      {% if column.page.has_other_pages %}<nav class="client-board__pager" aria-label="Страницы: {{ column.label }}"><a class="btn btn-neutral btn-sm{% if not column.previous_url %} disabled{% endif %}"{% if column.previous_url %} href="{{ column.previous_url }}"{% else %} aria-disabled="true"{% endif %} aria-label="Предыдущие клиенты: {{ column.label }}">Назад</a><span>{{ column.page.number }} / {{ column.page.paginator.num_pages }}</span><a class="btn btn-neutral btn-sm{% if not column.next_url %} disabled{% endif %}"{% if column.next_url %} href="{{ column.next_url }}"{% else %} aria-disabled="true"{% endif %} aria-label="Следующие клиенты: {{ column.label }}">Далее</a></nav>{% endif %}
     </section>
   {% endfor %}
 </div>

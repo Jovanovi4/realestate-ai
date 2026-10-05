@@ -597,6 +597,12 @@ class Client(models.Model):
     STATUS_CHOICES = [
         ("new", "Новый"),
         ("in_progress", "В работе"),
+        ("nurture", "На связи"),
+        ("inactive", "Неактуален"),
+    ]
+    LEGACY_STATUS_CHOICES = [
+        ("new", "Новый"),
+        ("in_progress", "В работе"),
         ("viewing", "Показ"),
         ("negotiation", "Переговоры"),
         ("won", "Сделка"),
@@ -618,10 +624,16 @@ class Client(models.Model):
     preferred_contact_time = models.CharField(max_length=120, blank=True, verbose_name="Удобное время связи")
     budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Бюджет")
     preferred_area = models.CharField(max_length=255, blank=True, verbose_name="Интересующий район")
+    search_deal_type = models.CharField(max_length=10, choices=Property.DEAL_TYPE_CHOICES, blank=True, verbose_name="Цель поиска")
+    search_property_type = models.CharField(max_length=20, choices=Property.PROPERTY_TYPES, blank=True, verbose_name="Тип недвижимости")
+    search_rooms_min = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Комнат от")
+    search_currency = models.CharField(max_length=3, choices=Property.CURRENCY_CHOICES, blank=True, verbose_name="Валюта бюджета")
+    search_notes = models.TextField(blank=True, verbose_name="Пожелания к объекту")
     source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default="landing", verbose_name="Источник")
     notes = models.TextField(blank=True, verbose_name="Комментарий риелтора")
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Этап воронки")
-    outcome_reason = models.CharField(max_length=255, blank=True, verbose_name="Причина результата")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Отношения с клиентом")
+    legacy_status = models.CharField(max_length=20, choices=LEGACY_STATUS_CHOICES, blank=True, editable=False, verbose_name="Прежний общий этап")
+    outcome_reason = models.CharField(max_length=255, blank=True, verbose_name="Контекст отношений")
     first_contacted_at = models.DateTimeField(null=True, blank=True, verbose_name="Первый контакт")
     is_demo = models.BooleanField(default=False, verbose_name="Демонстрационный клиент")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -664,6 +676,41 @@ class ClientInteraction(models.Model):
         ordering = ["-created_at"]
         verbose_name = "Взаимодействие с клиентом"
         verbose_name_plural = "История взаимодействий"
+
+
+class ClientPropertySuggestion(models.Model):
+    REACTION_CHOICES = [
+        ("pending", "Ожидаем ответ"),
+        ("interested", "Интересно"),
+        ("viewing", "Хочет посмотреть"),
+        ("declined", "Не подходит"),
+    ]
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="property_suggestions", verbose_name="Клиент")
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="client_suggestions", verbose_name="Объект")
+    added_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, related_name="added_property_suggestions")
+    sent_at = models.DateTimeField(null=True, blank=True, verbose_name="Передан клиенту")
+    reaction = models.CharField(max_length=20, choices=REACTION_CHOICES, default="pending", verbose_name="Реакция")
+    reaction_note = models.CharField(max_length=255, blank=True, verbose_name="Комментарий клиента")
+    reacted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at", "-pk"]
+        constraints = [models.UniqueConstraint(fields=["client", "property"], name="unique_client_property_suggestion")]
+        verbose_name = "Предложенный объект"
+        verbose_name_plural = "Предложенные объекты"
+
+    def clean(self):
+        if self.client_id and self.property_id and not same_workspace(self.client, self.property):
+            raise ValidationError({"property": "Объект находится в другом рабочем пространстве."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.client.name} · {self.property.title}"
 
 
 class ClientReminder(models.Model):
@@ -1000,6 +1047,7 @@ class Showing(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="planned", verbose_name="Статус")
     location = models.CharField(max_length=255, blank=True, verbose_name="Место встречи")
     outcome_note = models.TextField(blank=True, verbose_name="Итог показа")
+    follow_up_task = models.ForeignKey(ClientReminder, on_delete=models.SET_NULL, null=True, blank=True, related_name="follow_up_showings", verbose_name="Следующее действие")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -1019,6 +1067,8 @@ class Showing(models.Model):
             errors["ends_at"] = "Окончание должно быть позже начала."
         if self.status == "completed" and not self.outcome_note.strip():
             errors["outcome_note"] = "Запишите результат показа."
+        if self.follow_up_task_id and self.deal_id and self.follow_up_task.deal_id != self.deal_id:
+            errors["follow_up_task"] = "Следующее действие должно относиться к этой сделке."
         if errors:
             raise ValidationError(errors)
 

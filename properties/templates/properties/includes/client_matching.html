@@ -1,0 +1,56 @@
+<div class="client-matching">
+  <section class="detail-section" aria-labelledby="client-search-title">
+    <div class="detail-section__heading"><div><span class="detail-kicker">Пожелания клиента</span><h2 id="client-search-title">Запрос на недвижимость</h2></div></div>
+    {% if has_search_criteria %}<dl class="client-context__facts">
+      {% if client.search_deal_type %}<div><dt>Цель</dt><dd>{{ client.get_search_deal_type_display }}</dd></div>{% endif %}
+      {% if client.search_property_type %}<div><dt>Тип</dt><dd>{{ client.get_search_property_type_display }}</dd></div>{% endif %}
+      {% if client.search_rooms_min %}<div><dt>Комнат</dt><dd>от {{ client.search_rooms_min }}</dd></div>{% endif %}
+      {% if client.preferred_area %}<div><dt>Район</dt><dd>{{ client.preferred_area }}</dd></div>{% endif %}
+      {% if client.budget %}<div><dt>Бюджет до</dt><dd>{{ client.budget|floatformat:0 }}{% if client.search_currency %} {{ client.search_currency }}{% endif %}</dd></div>{% endif %}
+    </dl>{% if client.search_notes %}<p class="client-matching__note">{{ client.search_notes|linebreaksbr }}</p>{% endif %}
+    {% if client.budget and not client.search_currency %}<p class="detail-muted">Укажите валюту бюджета, чтобы учитывать цену при подборе.</p>{% endif %}
+    {% else %}<p class="detail-muted">Запишите пожелания, чтобы быстрее найти подходящие объекты.</p>{% endif %}
+    <details class="client-context__editor"><summary>{% if has_search_criteria %}Изменить запрос{% else %}Записать запрос{% endif %}</summary>
+      <form method="post" action="{% url 'client_search_update' client.pk %}" class="app-form">{% csrf_token %}<div class="detail-form-grid">
+        {% for field in search_form %}<div class="app-field {% if field.name == 'search_notes' %}is-wide{% endif %}">{% include "includes/form_field.html" with field=field %}</div>{% endfor %}
+      </div><div class="detail-form-actions"><button class="btn btn-primary" type="submit">Сохранить запрос</button></div></form>
+    </details>
+  </section>
+
+  <section class="detail-section" aria-labelledby="matching-options-title">
+    <div class="detail-section__heading"><div><span class="detail-kicker">Из ваших объектов</span><h2 id="matching-options-title">{% if has_search_criteria %}Подходят по запросу{% else %}Объекты для подбора{% endif %}</h2><p>Подбор по району ищет совпадение в адресе. Объекты можно добавить и вручную.</p></div></div>
+    {% if matching_properties %}<div class="client-matching__options">
+      {% for property in matching_properties %}<div class="client-matching__option"><div><a href="{% url 'property_detail' property.pk %}"><strong>{{ property.title }}</strong></a><span>{{ property.get_property_type_display }}{% if property.address %} · {{ property.address }}{% endif %}{% if property.price %} · {{ property.price|floatformat:0 }} {{ property.currency }}{% endif %}</span></div><form method="post" action="{% url 'client_suggestion_create' client.pk %}">{% csrf_token %}<input type="hidden" name="property" value="{{ property.pk }}"><button class="btn btn-neutral btn-sm" type="submit">В подборку</button></form></div>{% endfor %}
+    </div>{% else %}<p class="detail-muted">Совпадений пока нет. Можно добавить любой доступный объект вручную.</p>{% endif %}
+    <form method="post" action="{% url 'client_suggestion_create' client.pk %}" class="client-matching__add">{% csrf_token %}<label for="{{ suggestion_form.property.id_for_label }}">Добавить другой объект</label>{{ suggestion_form.property }}<button class="btn btn-neutral btn-sm" type="submit">Добавить</button></form>
+  </section>
+
+  <section class="detail-section" aria-labelledby="suggestions-title">
+    <div class="detail-section__heading"><div><span class="detail-kicker">Обсуждение вариантов</span><h2 id="suggestions-title">Предложенные объекты{% if suggestions %} · {{ suggestions|length }}{% endif %}</h2></div></div>
+    {% if suggestions %}<div class="client-matching__suggestions">
+      {% for item in suggestions %}<article class="client-matching__suggestion">
+        <div class="client-matching__suggestion-head"><div><a href="{% url 'property_detail' item.property.pk %}"><strong>{{ item.property.title }}</strong></a><span>{{ item.property.get_property_type_display }}{% if item.property.price %} · {{ item.property.price|floatformat:0 }} {{ item.property.currency }}{% endif %}</span></div><div class="client-matching__states"><span class="client-matching__sent-state {% if item.sent_at %}is-sent{% endif %}">{% if item.sent_at %}Передано · <time datetime="{{ item.sent_at|date:'c' }}">{{ item.sent_at|date:"d.m · H:i" }}</time>{% else %}Не передано{% endif %}</span><span class="badge text-bg-light border text-secondary">{{ item.get_reaction_display }}</span></div></div>
+        <div class="client-matching__actions">
+        <details class="client-matching__share-menu" name="suggestion-{{ item.pk }}"><summary class="btn btn-neutral btn-sm">{% if item.sent_at %}Поделиться{% else %}Передать{% endif %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary><div class="client-matching__share">
+          {% if item.share_url %}<a href="{{ item.share_url }}" target="_blank" rel="noopener noreferrer">Открыть лендинг</a><button class="btn btn-text btn-sm client-matching__copy" type="button" data-copy-url="{{ item.share_url }}">Скопировать ссылку</button><a href="sms:{{ client.phone }}?body={{ item.share_url|urlencode }}">SMS</a><a href="https://t.me/share/url?url={{ item.share_url|urlencode }}" target="_blank" rel="noopener noreferrer">Telegram</a>{% else %}<span class="detail-muted">Лендинг не опубликован. Объект можно передать вручную.</span>{% endif %}
+          {% if not item.sent_at %}<form method="post" action="{% url 'client_suggestion_sent' client.pk item.pk %}">{% csrf_token %}<button class="btn btn-neutral btn-sm" type="submit">Отметить передачу</button></form>{% endif %}
+        </div></details>
+        <details class="client-matching__reaction-editor" name="suggestion-{{ item.pk }}"><summary class="btn btn-text btn-sm">Изменить реакцию<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary><form method="post" action="{% url 'client_suggestion_reaction' client.pk item.pk %}" class="client-matching__reaction">{% csrf_token %}<div class="app-field"><label for="{{ item.reaction_form.reaction.id_for_label }}">Реакция клиента</label>{{ item.reaction_form.reaction }}</div><div class="app-field"><label for="{{ item.reaction_form.reaction_note.id_for_label }}">Комментарий</label>{{ item.reaction_form.reaction_note }}</div><button class="btn btn-neutral btn-sm" type="submit">Сохранить</button></form></details>
+        {% if item.active_deal %}<a class="btn btn-text btn-sm" href="{% url 'showing_create' %}?deal={{ item.active_deal.pk }}">Назначить показ</a>{% elif item.reaction == 'interested' or item.reaction == 'viewing' %}<a class="btn btn-text btn-sm" href="{% url 'deal_create' %}?client={{ client.pk }}&amp;property={{ item.property.pk }}">Создать сделку и назначить показ</a>{% endif %}
+        </div>
+      </article>{% endfor %}
+    </div>{% else %}<p class="detail-muted">Добавьте первый объект и запишите, что ответил клиент.</p>{% endif %}
+  </section>
+</div>
+<script>
+  document.querySelectorAll('.client-matching__copy').forEach((button) => {
+    button.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(button.dataset.copyUrl);
+        button.textContent = 'Скопировано';
+      } catch (_) {
+        window.prompt('Скопируйте ссылку для клиента', button.dataset.copyUrl);
+      }
+    });
+  });
+</script>

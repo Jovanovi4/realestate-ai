@@ -1,10 +1,19 @@
+<form class="lead-search" method="get" action="{% url 'lead_list' %}" hx-get="{% url 'lead_list' %}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true" role="search">
+  {% if selected_status %}<input type="hidden" name="status" value="{{ selected_status }}">{% endif %}
+  {% if selected_assigned %}<input type="hidden" name="assigned" value="mine">{% endif %}
+  <label class="visually-hidden" for="lead-search-query">Поиск заявки</label>
+  <input class="form-control" id="lead-search-query" type="search" name="q" value="{{ selected_q }}" placeholder="Имя, телефон, объект или адрес">
+  <button class="btn btn-neutral" type="submit">Найти</button>
+  {% if selected_q %}<a class="btn btn-text lead-search__reset" href="{{ clear_search_url }}" hx-get="{{ clear_search_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true" aria-label="Сбросить поиск"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg><span>Сбросить поиск</span></a>{% endif %}
+</form>
+<div class="lead-filter-rail">
 <nav class="lead-status-filter" aria-label="Фильтр заявок по статусу">
   <span class="lead-status-filter__label">Статус</span>
   <div class="lead-status-filter__options">
     {% for tab in status_tabs %}
       <a class="lead-status-filter__option {% if tab.value == selected_status %}is-active{% endif %}"
-         href="{% url 'lead_list' %}?{% if tab.value %}status={{ tab.value }}&amp;{% endif %}{% if selected_assigned %}assigned=mine{% endif %}"
-         hx-get="{% url 'lead_list' %}?{% if tab.value %}status={{ tab.value }}&amp;{% endif %}{% if selected_assigned %}assigned=mine{% endif %}"
+         href="{{ tab.url }}"
+         hx-get="{{ tab.url }}"
          hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"
          {% if tab.value == selected_status %}aria-current="page"{% endif %}>
         {{ tab.label }} <span class="lead-status-filter__count">{{ tab.count }}</span>
@@ -13,4 +22,5 @@
   </div>
   <span class="htmx-indicator lead-status-filter__loading" role="status">Обновляем…</span>
 </nav>
-{% if nav_agency_membership %}<div class="d-flex gap-2 mb-3"><a class="btn btn-sm {% if not selected_assigned %}btn-neutral{% else %}btn-text{% endif %}" href="{% url 'lead_list' %}?{% if selected_status %}status={{ selected_status }}{% endif %}" hx-get="{% url 'lead_list' %}?{% if selected_status %}status={{ selected_status }}{% endif %}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true">Все заявки</a><a class="btn btn-sm {% if selected_assigned %}btn-neutral{% else %}btn-text{% endif %}" href="{% url 'lead_list' %}?assigned=mine{% if selected_status %}&amp;status={{ selected_status }}{% endif %}" hx-get="{% url 'lead_list' %}?assigned=mine{% if selected_status %}&amp;status={{ selected_status }}{% endif %}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true">Мои заявки</a></div>{% endif %}
+{% if nav_agency_membership %}<div class="lead-assignee-filter" role="group" aria-label="Ответственный"><a class="btn btn-sm {% if not selected_assigned %}btn-neutral{% else %}btn-text{% endif %}" href="{{ all_assigned_url }}" hx-get="{{ all_assigned_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true">Все заявки</a><a class="btn btn-sm {% if selected_assigned %}btn-neutral{% else %}btn-text{% endif %}" href="{{ mine_assigned_url }}" hx-get="{{ mine_assigned_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true">Мои заявки</a></div>{% endif %}
+</div>

@@ -1,4 +1,2 @@
-<details class="billing-help" name="billing-help">
-  <summary aria-label="Пояснение: {{ label }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-info"></use></svg></summary>
-  <div class="billing-help__content">{{ text }}{% if extra %} {{ extra }}{% endif %}</div>
-</details>
+<button class="billing-help" type="button" data-ui-help aria-label="Пояснение: {{ label }}" aria-expanded="false"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-info"></use></svg></button>
+<div class="billing-help__content" hidden>{{ text }}{% if extra %} {{ extra }}{% endif %}</div>
