@@ -16,11 +16,14 @@ class AIService:
     """Provider-neutral generation service for marketing copy based on card data."""
 
     SYSTEM_PROMPT = """Ты ИИ-помощник риелтора. Пиши только на русском языке.
-Используй исключительно факты из блока «Данные объекта». Никогда не добавляй,
+Для описания недвижимости используй исключительно факты из блока «Данные объекта».
+Для текста о работе с клиентом используй только блок «Возможности сервиса».
+Никогда не добавляй,
 не предполагай и не приукрашивай характеристики, инфраструктуру, район, вид,
 транспортную доступность, юридический статус, ремонт или любые другие сведения.
 Если факта нет в данных, не упоминай его. Не используй Markdown, звёздочки,
 решётки, списки или служебные комментарии. Верни только готовый текст.
+Не повторяй факты и не растягивай текст ради объёма.
 Если в запросе явно требуются маркеры вида [[name]] для комплекта текстов,
 сохрани только эти маркеры и размести после каждого готовый текст."""
 
@@ -31,29 +34,34 @@ class AIService:
         "emotional": "Тон: тёплый и эмоциональный, но без выдумывания фактов.",
     }
 
+    SERVICE_FACTS = """Возможности сервиса:
+- Клиент может задать вопросы об объекте.
+- Клиент может оставить заявку и согласовать просмотр.
+- Риелтор может уточнить условия продажи или аренды."""
+
     CONTENT_INSTRUCTIONS = {
         "headline": "Создай один заголовок объявления длиной до 90 символов. Не добавляй кавычки.",
-        "short_description": "Создай короткое описание: один абзац, 250–450 символов.",
-        "full_description": "Создай полное продающее описание: 2–3 коротких абзаца, до 1 500 символов.",
+        "short_description": "Создай короткое описание: один абзац, до 450 символов. Если фактов мало, пиши короче.",
+        "full_description": "Создай полное описание: 1–3 коротких абзаца, до 1 500 символов. Используй все значимые факты без повторов.",
         "landing_headline": "Создай заголовок первого экрана лендинга до 90 символов.",
         "landing_subtitle": "Создай подзаголовок лендинга: один короткий абзац до 280 символов.",
         "landing_about": "Создай текст для блока «Об объекте»: 1–2 абзаца до 900 символов.",
         "seo_title": "Создай SEO-заголовок страницы до 60 символов.",
         "seo_description": "Создай SEO-описание до 155 символов.",
-        "benefits": "Создай три коротких преимущества объекта одной строкой через точку с запятой. Используй только известные факты.",
+        "benefits": "Для блока «Почему выбирают нас» создай 1–2 коротких предложения о работе с клиентом. Используй только «Возможности сервиса». Не перечисляй характеристики объекта и не утверждай ничего об опыте риелтора.",
         "cta": "Создай один короткий призыв оставить заявку или записаться на просмотр.",
         "lead_reply": "Создай короткий профессиональный ответ клиенту до 500 символов.",
     }
 
     INLINE_FIELD_INSTRUCTIONS = {
         "marketing_headline": ("headline", "Создай один заголовок объявления длиной до 90 символов. Не добавляй кавычки."),
-        "short_description": ("short_description", "Создай короткое описание: один абзац, 250–450 символов."),
-        "description": ("full_description", "Создай полное продающее описание: 2–3 коротких абзаца, до 1 500 символов."),
+        "short_description": ("short_description", "Создай короткое описание: один абзац, до 450 символов. Если фактов мало, пиши короче."),
+        "description": ("full_description", "Создай полное описание: 1–3 коротких абзаца, до 1 500 символов. Используй все значимые факты без повторов."),
         "landing_title": ("landing_headline", "Создай заголовок первого экрана лендинга до 90 символов."),
         "landing_subtitle": ("landing_subtitle", "Создай подзаголовок лендинга: один короткий абзац до 280 символов."),
         "landing_about_title": ("landing_about", "Создай короткий заголовок для блока «Об объекте» до 70 символов."),
         "landing_contact_title": ("cta", "Создай один короткий призыв оставить заявку или записаться на просмотр."),
-        "landing_trust_about": ("benefits", "Создай короткий текст для блока преимуществ риелтора: 1–2 предложения, без неподтверждённых обещаний."),
+        "landing_trust_about": ("benefits", "Для блока «Почему выбирают нас» создай 1–2 коротких предложения о работе с клиентом. Используй только «Возможности сервиса». Не перечисляй характеристики объекта и не утверждай ничего об опыте риелтора."),
         "seo_title": ("seo_title", "Создай SEO-заголовок страницы до 60 символов."),
         "seo_description": ("seo_description", "Создай SEO-описание до 155 символов."),
     }
@@ -100,12 +108,14 @@ class AIService:
         if content_type not in cls.CONTENT_INSTRUCTIONS or tone not in cls.TONE_INSTRUCTIONS:
             raise AIServiceError("Неизвестный тип текста или тон генерации.")
         deal_instruction = "Это объявление о долгосрочной аренде. Акцентируй только известные условия проживания, срок, доступность, мебель, коммунальные платежи и правила. Не называй объект продажей." if property.deal_type == "rent" else "Это объявление о продаже."
-        return "\n\n".join((
+        prompt_parts = (
             cls.CONTENT_INSTRUCTIONS[content_type],
             cls.TONE_INSTRUCTIONS[tone],
             deal_instruction,
+            cls.SERVICE_FACTS if content_type == "benefits" else "",
             "Данные объекта:\n" + cls._property_facts(property),
-        ))
+        )
+        return "\n\n".join(part for part in prompt_parts if part)
 
     @classmethod
     def generate_content(cls, property, content_type, tone):
@@ -127,17 +137,19 @@ class AIService:
         elif is_benefit_field:
             content_type = "benefits"
             instruction = "Создай описание одной карточки преимущества риелтора: одно предложение до 180 символов. Не добавляй заголовок или нумерацию."
-        prompt = "\n\n".join((
+        prompt_parts = (
             instruction,
             cls.TONE_INSTRUCTIONS[tone],
             "Это долгосрочная аренда; используй только известные условия аренды." if property.deal_type == "rent" else "Это продажа объекта.",
+            cls.SERVICE_FACTS if content_type == "benefits" else "",
             "Данные объекта:\n" + cls._property_facts(property),
-        ))
+        )
+        prompt = "\n\n".join(part for part in prompt_parts if part)
         return content_type, cls._run_prompt(prompt)
 
     @classmethod
     def _run_prompt(cls, prompt):
-        provider = getattr(settings, "AI_PROVIDER", "ollama").lower()
+        provider = getattr(settings, "AI_PROVIDER", "openai").lower()
         started_at = time.monotonic()
         record_provider(provider=provider, provider_status="started")
 
@@ -176,6 +188,7 @@ class AIService:
             sections,
             cls.TONE_INSTRUCTIONS[tone],
             "Это долгосрочная аренда; используй условия аренды." if property.deal_type == "rent" else "Это продажа объекта.",
+            cls.SERVICE_FACTS,
             "Данные объекта:\n" + cls._property_facts(property),
         ))
         result = cls._run_prompt(prompt)
@@ -264,16 +277,20 @@ class AIService:
     @classmethod
     def _generate_openai(cls, prompt):
         api_key = getattr(settings, "OPENAI_API_KEY", "")
-        model = getattr(settings, "OPENAI_MODEL", "gpt-4.1-mini")
+        model = getattr(settings, "OPENAI_MODEL", "gpt-6-luna")
         record_provider(provider="openai", provider_model=model)
         if not api_key:
             record_provider(provider_status="not_sent")
             raise AIServiceError("Для OpenAI задайте переменную окружения OPENAI_API_KEY.")
         try:
+            payload = {"model": model, "instructions": cls.SYSTEM_PROMPT, "input": prompt, "store": False}
+            reasoning_effort = getattr(settings, "OPENAI_REASONING_EFFORT", "") or ("none" if model == "gpt-6-luna" else "")
+            if reasoning_effort:
+                payload["reasoning"] = {"effort": reasoning_effort}
             response = requests.post(
                 "https://api.openai.com/v1/responses",
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                json={"model": model, "instructions": cls.SYSTEM_PROMPT, "input": prompt, "store": False},
+                json=payload,
                 timeout=120,
             )
             response.raise_for_status()

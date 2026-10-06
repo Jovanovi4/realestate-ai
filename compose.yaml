@@ -1,0 +1,111 @@
+services:
+  db:
+    image: postgres:17-bookworm
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env.docker}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env.docker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.docker}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - backend
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks:
+      - backend
+
+  migrate:
+    image: realestate-ai:pilot
+    env_file: .env.docker
+    environment: &app_environment
+      DJANGO_DEBUG: "False"
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env.docker}
+      DJANGO_ALLOWED_HOSTS: ${PILOT_DOMAIN:?Set PILOT_DOMAIN in .env.docker}
+      DJANGO_CSRF_TRUSTED_ORIGINS: https://${PILOT_DOMAIN}
+      ACCOUNT_PUBLIC_BASE_URL: https://${PILOT_DOMAIN}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      CACHE_BACKEND: django.core.cache.backends.redis.RedisCache
+      CACHE_LOCATION: redis://redis:6379/1
+      DJANGO_MEDIA_ROOT: /app/media
+      DJANGO_SERVE_MEDIA: "False"
+      AUTH_TRUST_X_FORWARDED_FOR: "True"
+      PUBLIC_FORMS_TRUST_X_FORWARDED_FOR: "True"
+    command: ["python", "manage.py", "migrate", "--noinput"]
+    volumes:
+      - media:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: "no"
+
+  web:
+    image: realestate-ai:pilot
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file: .env.docker
+    environment: *app_environment
+    volumes:
+      - media:/app/media
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; connection = socket.create_connection(('127.0.0.1', 8000), 2); connection.close()"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - backend
+      - frontend
+
+  proxy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    environment:
+      PILOT_DOMAIN: ${PILOT_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile.pilot:/etc/caddy/Caddyfile:ro
+      - media:/srv/media:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    networks:
+      - frontend
+
+networks:
+  frontend:
+  backend:
+    internal: true
+
+volumes:
+  pgdata:
+  media:
+  caddy_data:
+  caddy_config:

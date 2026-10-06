@@ -269,9 +269,10 @@ SERVICE_TERMS_VERSION = os.getenv("SERVICE_TERMS_VERSION", "2026-09-21")
 
 # AI provider settings. Values are read from the process environment so secrets
 # never need to be committed to the repository.
-AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama").lower()
+AI_PROVIDER = os.getenv("AI_PROVIDER", "openai").lower()
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://127.0.0.1:11434/api/generate")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-6-luna")
+OPENAI_REASONING_EFFORT = os.getenv("OPENAI_REASONING_EFFORT", "").strip().lower()
 AI_ENABLED = env_flag("AI_ENABLED", True)

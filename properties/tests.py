@@ -24,7 +24,7 @@ from PIL import Image
 from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientReminder, Deal, Lead, Property, PropertyImage, RealtorProfile, Showing, UserLegalAcceptance
 from .forms import AIContentEditForm, AIRequestForm
 from .ai_views import get_ai_history_context
-from .services.ai_service import AIServiceError
+from .services.ai_service import AIService, AIServiceError
 from .services.lead_notification_service import LeadNotificationService
 
 
@@ -1441,9 +1441,22 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertIn("landing_trust_about", targets)
         self.assertIn("seo_description", targets)
         self.assertEqual(run_prompt.call_count, 1)
+        self.assertIn("Возможности сервиса:", run_prompt.call_args.args[0])
         self.assertEqual(AIContent.objects.filter(property=property).count(), 9)
         property.refresh_from_db()
         self.assertEqual(property.description, "Ручной текст")
+
+    @patch("properties.services.ai_service.AIService._run_prompt")
+    def test_realtor_trust_prompt_uses_service_facts(self, run_prompt):
+        property = Property(title="Квартира", area=58, rooms=2)
+        run_prompt.return_value = {"content": "Ответим на вопросы и согласуем просмотр."}
+
+        kind, _ = AIService.generate_inline_content(property, "landing_trust_about", "business")
+
+        self.assertEqual(kind, "benefits")
+        prompt = run_prompt.call_args.args[0]
+        self.assertIn("Возможности сервиса:", prompt)
+        self.assertIn("Не перечисляй характеристики объекта", prompt)
 
     @patch("properties.ai_views.AIService.generate_bundle")
     def test_ai_landing_bundle_uses_landing_scenario(self, generate_bundle):

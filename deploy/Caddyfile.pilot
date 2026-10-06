@@ -1,0 +1,19 @@
+{$PILOT_DOMAIN} {
+    encode zstd gzip
+
+    # A gallery submission can contain ten 10 MiB images, a logo and form data.
+    request_body {
+        max_size 120MB
+    }
+
+    # Django's debug-only media helper does not serve uploads in production.
+    handle_path /media/* {
+        root * /srv/media
+        header X-Content-Type-Options nosniff
+        file_server
+    }
+
+    handle {
+        reverse_proxy web:8000
+    }
+}

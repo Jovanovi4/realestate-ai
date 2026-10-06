@@ -418,9 +418,25 @@ class AIObservationTests(MeteringFixture):
             result = self.client.post(reverse("ai_inline_generate", args=[self.prop.pk]), {"target": "marketing_headline"})
         self.assertEqual(result.status_code, 200)
         self.assertEqual(post.call_count, 1)
+        payload = post.call_args.kwargs["json"]
+        self.assertEqual(payload["model"], "gpt-6-luna")
+        self.assertEqual(payload["reasoning"], {"effort": "none"})
+        self.assertIs(payload["store"], False)
         operation = UsageOperation.objects.get(ai_action="short_text")
         self.assertEqual((operation.input_tokens, operation.output_tokens, operation.cached_input_tokens, operation.total_tokens), (20, 10, 5, 30))
         self.assertEqual((operation.provider_response_id, operation.provider_model), ("resp_test", "actual-model"))
+
+    @override_settings(AI_PROVIDER="openai", OPENAI_API_KEY="test-key-not-real",
+                       OPENAI_MODEL="gpt-4.1-mini", OPENAI_REASONING_EFFORT="")
+    def test_openai_omits_reasoning_for_non_reasoning_model(self):
+        response = Mock()
+        response.json.return_value = {"status": "completed", "output_text": "Готовый заголовок"}
+        self.client.force_login(self.user)
+        with patch("properties.services.ai_service.requests.post", return_value=response) as post:
+            result = self.client.post(reverse("ai_inline_generate", args=[self.prop.pk]), {"target": "marketing_headline"})
+        self.assertEqual(result.status_code, 200)
+        self.assertEqual(post.call_args.kwargs["json"]["model"], "gpt-4.1-mini")
+        self.assertNotIn("reasoning", post.call_args.kwargs["json"])
 
     @override_settings(AI_PROVIDER="openai", OPENAI_API_KEY="test-key-not-real")
     def test_incomplete_bundle_keeps_provider_usage_but_consumes_no_user_credit(self):
