@@ -306,11 +306,12 @@ class AccountRecoveryTests(TestCase):
     def test_mail_delivery_retries_are_bounded_and_successful_items_are_not_resent(self):
         self.verified_profile()
         item = enqueue_account_email(self.user, "reset")
-        with patch("properties.services.account_email_service.send_mail", side_effect=OSError("SMTP offline")), self.assertLogs("properties.services.account_email_service", level="ERROR"):
+        with patch("properties.services.account_email_service.send_mail", side_effect=OSError("SMTP auth failed: fake-app-password")), self.assertLogs("properties.services.account_email_service", level="ERROR") as logs:
             for _ in range(3):
                 item.last_attempt_at = timezone.now() - timedelta(minutes=3)
                 item.save(update_fields=["last_attempt_at"])
                 self.assertEqual(send_pending_account_emails()["failed"], 1)
+        self.assertNotIn("fake-app-password", "\n".join(logs.output))
         item.refresh_from_db()
         self.assertEqual(item.status, "failed")
         self.assertEqual(item.attempts, 3)

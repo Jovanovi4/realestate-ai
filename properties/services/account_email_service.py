@@ -105,8 +105,8 @@ def send_pending_account_emails(*, limit=100):
                     delivered = send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [profile.email], fail_silently=False)
                     if not delivered:
                         raise RuntimeError("Mail backend did not accept the message")
-                except Exception:
-                    logger.exception("Account email delivery failed for queue item %s", item.pk)
+                except Exception as error:
+                    logger.error("Account email delivery failed for queue item %s (%s)", item.pk, type(error).__name__)
                     if item.attempts >= 3:
                         item.status = "failed"
                         item.completed_at = now

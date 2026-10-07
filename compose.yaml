@@ -95,6 +95,21 @@ services:
       - backend
       - frontend
 
+  account-emails:
+    image: realestate-ai:pilot
+    profiles: ["mail"]
+    restart: unless-stopped
+    init: true
+    env_file: .env.docker
+    environment: *app_environment
+    command: ["python", "manage.py", "send_account_emails", "--loop"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - backend
+      - frontend
+
   publications:
     image: realestate-ai:pilot
     restart: unless-stopped
