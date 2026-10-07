@@ -5,7 +5,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
-from django.db import transaction
+from django.db import close_old_connections, transaction
 from django.utils import timezone
 
 from properties.models import TelegramConversation, TelegramDelivery, TelegramInboundUpdate, TelegramPublication
@@ -13,20 +13,36 @@ from properties.services.telegram_public_service import feed_matches_property, i
 
 
 class Command(BaseCommand):
-    help = "Отправить объявления публичного Telegram-бота подписчикам. Запускайте по расписанию."
+    help = "Отправить объявления подписчикам публичного бота. --loop проверяет очередь каждую минуту."
 
     def add_arguments(self, parser):
         parser.add_argument("--limit", type=int, default=20)
         parser.add_argument("--dry-run", action="store_true")
+        parser.add_argument("--loop", action="store_true")
 
     def handle(self, *args, **options):
         if options["limit"] < 1 or options["limit"] > 100:
             raise CommandError("--limit должен быть от 1 до 100")
+        if options["loop"] and options["dry_run"]:
+            raise CommandError("--dry-run нельзя использовать вместе с --loop")
+        while True:
+            if options["loop"]:
+                close_old_connections()
+            sent = self.send_pending(options["limit"], dry_run=options["dry_run"], allow_disabled=options["loop"])
+            if sent or (not options["loop"] and not options["dry_run"]):
+                self.stdout.write(f"Отправлено: {sent}")
+            if not options["loop"]:
+                break
+            time.sleep(60)
+
+    def send_pending(self, limit, *, dry_run, allow_disabled):
         pending = TelegramDelivery.objects.filter(sent_at__isnull=True, attempts__lt=5).order_by("id")
-        if options["dry_run"]:
+        if dry_run:
             self.stdout.write(f"Ожидают отправки: {pending.count()}")
-            return
+            return 0
         if not (settings.TELEGRAM_PUBLIC_ENABLED and settings.TELEGRAM_PUBLIC_BOT_TOKEN):
+            if allow_disabled:
+                return 0
             raise CommandError("Публичный Telegram-бот не настроен")
         TelegramConversation.objects.filter(pending_at__lt=timezone.now() - timedelta(days=1)).update(
             pending_property=None, pending_phone="", pending_at=None,
@@ -34,7 +50,7 @@ class Command(BaseCommand):
         TelegramInboundUpdate.objects.filter(created_at__lt=timezone.now() - timedelta(days=30)).delete()
         sent = 0
         last_sent_by_chat = {}
-        for delivery_id in list(pending.values_list("id", flat=True)[:options["limit"]]):
+        for delivery_id in list(pending.values_list("id", flat=True)[:limit]):
             with transaction.atomic():
                 delivery = TelegramDelivery.objects.select_for_update().select_related(
                     "subscriber", "publication__property", "publication__feed",
@@ -68,4 +84,4 @@ class Command(BaseCommand):
                 sent += 1
                 last_sent_by_chat[chat_id] = time.monotonic()
             time.sleep(0.04)
-        self.stdout.write(f"Отправлено: {sent}")
+        return sent

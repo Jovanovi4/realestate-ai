@@ -18,7 +18,8 @@ from billing.enforcement import TariffDenied, require_resource_action, require_t
 from billing.rules import Operation
 from .agency_access import workspace_queryset
 from .models import Property
-from .services.telegram_public_service import VISIBLE_STATUSES, process_update, publish, send_actions
+from .services.outbound_message_service import deliver_messages_safely, enqueue_public_actions
+from .services.telegram_public_service import VISIBLE_STATUSES, process_update, publish
 
 
 class TelegramPublishView(LoginRequiredMixin, View):
@@ -67,6 +68,10 @@ def telegram_public_webhook(request):
         return HttpResponse(status=400)
     if not isinstance(update, dict):
         return HttpResponse(status=400)
-    actions = process_update(update)
-    send_actions(actions)
+    with transaction.atomic():
+        actions = process_update(update)
+        queued_ids = enqueue_public_actions(update.get("update_id"), actions)
+    # Immediate best effort keeps the bot responsive. A failed attempt remains
+    # in the outbox for the worker; the incoming update is never replayed.
+    deliver_messages_safely(queued_ids)
     return JsonResponse({"ok": True})

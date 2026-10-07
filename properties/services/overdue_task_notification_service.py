@@ -29,7 +29,7 @@ class OverdueTaskNotificationService:
             lines.append(f"• {timezone.localtime(task.due_at):%d.%m %H:%M} — {task.text[:100]}{client_name}")
         message = "\n".join(lines)
         email_delivered = cls._send_email(profile.email, message)
-        telegram_delivered = cls._send_telegram(profile.telegram_chat_id, message)
+        telegram_delivered = cls._send_telegram(profile.telegram_chat_id, message, user_id=user.pk)
         delivered = email_delivered or telegram_delivered
         if delivered:
             ClientReminder.objects.filter(
@@ -58,7 +58,7 @@ class OverdueTaskNotificationService:
             return False
 
     @staticmethod
-    def _send_telegram(chat_id, message):
+    def _send_telegram(chat_id, message, *, user_id=None):
         if not (settings.TELEGRAM_NOTIFICATIONS_ENABLED and settings.TELEGRAM_BOT_TOKEN and chat_id):
             return False
         try:
@@ -69,6 +69,8 @@ class OverdueTaskNotificationService:
             )
             response.raise_for_status()
             return bool(response.json().get("ok"))
-        except (requests.RequestException, ValueError):
-            logger.exception("Could not send overdue task Telegram message")
+        except (requests.RequestException, ValueError) as error:
+            # Request exceptions can contain the bot token in the URL.
+            logger.warning("Could not send overdue task Telegram message for user %s (%s)",
+                           user_id, type(error).__name__)
             return False

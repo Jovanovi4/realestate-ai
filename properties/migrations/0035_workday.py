@@ -30,6 +30,9 @@ def move_schedule_data(apps, schema_editor):
 
 
 class Migration(migrations.Migration):
+    # PostgreSQL cannot ALTER a table with pending FK trigger events from the
+    # data copy below. Commit that copy before the final schema changes.
+    atomic = False
     dependencies = [("properties", "0034_deal_is_demo")]
 
     operations = [
@@ -88,7 +91,7 @@ class Migration(migrations.Migration):
                 "indexes": [models.Index(fields=["owner", "starts_at"], name="showing_owner_start_idx")],
             },
         ),
-        migrations.RunPython(move_schedule_data, migrations.RunPython.noop),
+        migrations.RunPython(move_schedule_data, migrations.RunPython.noop, atomic=True),
         migrations.AlterField(
             model_name="clientreminder",
             name="owner",

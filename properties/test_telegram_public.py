@@ -17,7 +17,9 @@ from .models import (
     Agency, AgencyMembership, Client, ClientReminder, Lead, Property, RealtorProfile,
     TelegramConversation, TelegramDelivery, TelegramFeed, TelegramPublication, TelegramSubscriber,
 )
-from .services.telegram_public_service import send_actions, send_listing
+from .services.telegram_public_service import (
+    feed_unsubscribe_callback_data, property_callback_data, property_start_payload, send_actions, send_listing,
+)
 
 
 BOT_SETTINGS = {
@@ -75,7 +77,7 @@ class TelegramPublicTests(TestCase):
         return response
 
     def subscribe(self):
-        self.assertEqual(self.update(1, self.user_message(f"/start p{self.property.pk}")).status_code, 200)
+        self.assertEqual(self.update(1, self.user_message(f"/start {property_start_payload(self.property)}")).status_code, 200)
         return TelegramSubscriber.objects.get(chat_id=1001)
 
     def subscribe_to_personal_and_team(self):
@@ -109,7 +111,35 @@ class TelegramPublicTests(TestCase):
         self.publish()
         self.client.post(reverse("telegram_publish", args=[self.property.pk]), {"action": "publish"})
         self.assertEqual(TelegramPublication.objects.count(), 1)
-        self.assertContains(self.client.get(reverse("property_detail", args=[self.property.pk])), f"start=p{self.property.pk}")
+        self.assertContains(self.client.get(reverse("property_detail", args=[self.property.pk])), f"start={property_start_payload(self.property)}")
+
+    def test_old_bot_links_and_buttons_cannot_target_reused_pilot_ids(self):
+        self.publish()
+        with patch("properties.services.telegram_public_service.requests.post", return_value=self.api_response) as post:
+            self.update(1, self.user_message(f"/start p{self.property.pk}"))
+        self.assertIn("устарела", post.call_args.kwargs["json"]["text"])
+        self.assertFalse(TelegramSubscriber.objects.exists())
+
+        subscriber = TelegramSubscriber.objects.create(feed=TelegramFeed.objects.get(owner=self.owner), chat_id=1001, user_id=1001)
+        self.update(2, self.callback(f"reply:{self.property.pk}"))
+        self.assertFalse(TelegramConversation.objects.exists())
+        self.update(3, self.callback(f"sub:off:{subscriber.feed_id}:0"))
+        self.update(4, self.callback("sub:all"))
+        subscriber.refresh_from_db()
+        self.assertTrue(subscriber.active)
+
+        self.update(5, self.callback(property_callback_data("reply", self.property)))
+        self.update(6, self.user_message("+79990000001"))
+        self.update(7, self.callback(f"consent:{self.property.pk}"))
+        self.update(8, self.callback(f"cancel:{self.property.pk}"))
+        self.assertEqual(TelegramConversation.objects.get(chat_id=1001).pending_property, self.property)
+        self.assertFalse(Lead.objects.exists())
+
+        tampered = property_start_payload(self.property)[:-1] + (
+            "0" if property_start_payload(self.property)[-1] != "0" else "1"
+        )
+        self.update(9, self.user_message(f"/start {tampered}", user_id=2002))
+        self.assertFalse(TelegramSubscriber.objects.filter(chat_id=2002).exists())
 
     @override_settings(BILLING_ENFORCEMENT_ENABLED=False)
     def test_telegram_entitlement_is_enforced_without_general_billing_limits(self):
@@ -169,7 +199,7 @@ class TelegramPublicTests(TestCase):
         self.assertTrue(any("Дом команды" in message for message in messages))
         self.assertFalse(any("Квартира у парка" in message for message in messages))
         with patch("properties.services.telegram_public_service.requests.post", return_value=self.api_response) as post:
-            self.update(2, self.user_message(f"/start p{self.property.pk}", user_id=2002))
+            self.update(2, self.user_message(f"/start {property_start_payload(self.property)}", user_id=2002))
         self.assertEqual(list(TelegramSubscriber.objects.filter(chat_id=2002).values_list("feed_id", flat=True)), [personal_feed.pk])
         messages = [call.kwargs["json"].get("text", "") for call in post.call_args_list]
         self.assertTrue(any("Квартира у парка" in message for message in messages))
@@ -263,7 +293,7 @@ class TelegramPublicTests(TestCase):
         newer = Property.objects.create(owner=self.owner, title="Новый объект", status="available")
         self.client.post(reverse("telegram_publish", args=[newer.pk]), {"action": "publish"})
         with patch("properties.services.telegram_public_service.requests.post", return_value=self.api_response) as post:
-            self.update(1, self.user_message(f"/start p{self.property.pk}"))
+            self.update(1, self.user_message(f"/start {property_start_payload(self.property)}"))
         self.assertEqual(TelegramSubscriber.objects.filter(chat_id=1001).count(), 1)
         messages = [call.kwargs["json"].get("text", "") for call in post.call_args_list]
         self.assertTrue(any("Квартира у парка" in message for message in messages))
@@ -282,7 +312,7 @@ class TelegramPublicTests(TestCase):
         self.client.post(reverse("telegram_publish", args=[team_new.pk]), {"action": "publish"})
         personal_delivery = TelegramDelivery.objects.get(publication__property=personal_new)
         team_delivery = TelegramDelivery.objects.get(publication__property=team_new)
-        self.update(3, self.callback(f"reply:{self.property.pk}"))
+        self.update(3, self.callback(property_callback_data("reply", self.property)))
         self.assertEqual(TelegramConversation.objects.get(chat_id=1001).pending_property, self.property)
         with patch("properties.services.telegram_public_service.requests.post", return_value=self.api_response) as post:
             self.update(4, self.user_message("/subscriptions"))
@@ -291,16 +321,16 @@ class TelegramPublicTests(TestCase):
         self.assertIn(f"риелтора №{self.owner.pk}", panel["text"])
         self.assertIn("Команда Север", panel["text"])
         callbacks = [button[0]["callback_data"] for button in panel["reply_markup"]["inline_keyboard"]]
-        self.assertIn(f"sub:off:{personal.feed_id}:0", callbacks)
-        self.assertIn(f"sub:off:{team.feed_id}:0", callbacks)
-        self.assertIn("sub:all", callbacks)
+        self.assertIn(feed_unsubscribe_callback_data(personal.feed_id, 0), callbacks)
+        self.assertIn(feed_unsubscribe_callback_data(team.feed_id, 0), callbacks)
+        self.assertIn("sub:v2:all", callbacks)
         with patch("properties.services.telegram_public_service.requests.post", return_value=self.api_response) as post:
             self.update(5, self.user_message("/start"))
         self.assertIn("Ваши подписки (2)", post.call_args.kwargs["json"]["text"])
         self.update(6, self.user_message("/stop"))
         self.assertEqual(TelegramSubscriber.objects.filter(chat_id=1001, active=True).count(), 2)
         with patch("properties.services.telegram_public_service.requests.post", return_value=self.api_response) as post:
-            self.update(7, self.callback(f"sub:off:{personal.feed_id}:0"))
+            self.update(7, self.callback(feed_unsubscribe_callback_data(personal.feed_id, 0)))
         self.assertTrue(any(call.kwargs.get("json", {}).get("reply_markup") == {"remove_keyboard": True} for call in post.call_args_list))
         personal.refresh_from_db()
         team.refresh_from_db()
@@ -312,16 +342,16 @@ class TelegramPublicTests(TestCase):
         self.assertEqual(personal_delivery.last_error, "Подписка остановлена")
         self.assertEqual(team_delivery.attempts, 0)
         self.assertIsNone(TelegramConversation.objects.get(chat_id=1001).pending_property_id)
-        self.update(8, self.callback(f"reply:{self.property.pk}"))
+        self.update(8, self.callback(property_callback_data("reply", self.property)))
         self.assertIsNone(TelegramConversation.objects.get(chat_id=1001).pending_property_id)
-        self.update(9, self.callback(f"reply:{team_property.pk}"))
+        self.update(9, self.callback(property_callback_data("reply", team_property)))
         self.assertEqual(TelegramConversation.objects.get(chat_id=1001).pending_property, team_property)
         call_command("send_telegram_publications", "--limit", "10", stdout=StringIO())
         personal_delivery.refresh_from_db()
         team_delivery.refresh_from_db()
         self.assertIsNone(personal_delivery.sent_at)
         self.assertIsNotNone(team_delivery.sent_at)
-        self.update(10, self.user_message(f"/start p{self.property.pk}"))
+        self.update(10, self.user_message(f"/start {property_start_payload(self.property)}"))
         personal.refresh_from_db()
         self.assertTrue(personal.active)
         self.assertEqual(TelegramSubscriber.objects.filter(feed=personal.feed, chat_id=1001).count(), 1)
@@ -336,23 +366,23 @@ class TelegramPublicTests(TestCase):
         with patch("properties.services.telegram_public_service.requests.post", return_value=self.api_response) as post:
             self.update(3, self.user_message("/subscriptions"))
         self.assertIn("Вы пока не подписаны", post.call_args.kwargs["json"]["text"])
-        self.update(4, self.user_message(f"/start p{self.property.pk}"))
+        self.update(4, self.user_message(f"/start {property_start_payload(self.property)}"))
         self.assertTrue(TelegramSubscriber.objects.get(pk=personal.pk).active)
         agency = Agency.objects.create(owner=self.owner, name="Команда")
         AgencyMembership.objects.create(agency=agency, user=self.owner, role="owner")
         feed = TelegramFeed.objects.create(agency=agency)
         self.update(5, self.user_message(f"/start f{feed.code.hex}"))
-        self.update(6, self.callback("sub:all"))
+        self.update(6, self.callback("sub:v2:all"))
         self.assertFalse(TelegramSubscriber.objects.filter(chat_id=1001, active=True).exists())
-        self.update(7, self.user_message(f"/start p{self.property.pk}"))
+        self.update(7, self.user_message(f"/start {property_start_payload(self.property)}"))
         self.update(8, self.user_message("/stop all"))
         self.assertFalse(TelegramSubscriber.objects.filter(chat_id=1001, active=True).exists())
 
     def test_subscription_buttons_cannot_disable_another_buyers_feed(self):
         self.publish()
         subscriber = self.subscribe()
-        self.update(2, self.callback(f"sub:off:{subscriber.feed_id}:0", user_id=2002))
-        self.update(3, self.callback("sub:all", user_id=2002))
+        self.update(2, self.callback(feed_unsubscribe_callback_data(subscriber.feed_id, 0), user_id=2002))
+        self.update(3, self.callback("sub:v2:all", user_id=2002))
         subscriber.refresh_from_db()
         self.assertTrue(subscriber.active)
 
@@ -366,9 +396,9 @@ class TelegramPublicTests(TestCase):
         first = post.call_args.kwargs["json"]
         self.assertIn("Ваши подписки (9)", first["text"])
         self.assertIn("Страница 1 из 2", first["text"])
-        self.assertIn("sub:page:1", str(first["reply_markup"]))
+        self.assertIn("sub:v2:page:1", str(first["reply_markup"]))
         with patch("properties.services.telegram_public_service.requests.post", return_value=self.api_response) as post:
-            self.update(2, self.callback("sub:page:1"))
+            self.update(2, self.callback("sub:v2:page:1"))
         second = [call.kwargs["json"] for call in post.call_args_list if call.args[0].endswith("/sendMessage")][0]
         self.assertIn("Страница 2 из 2", second["text"])
         self.assertEqual(len([row for row in second["reply_markup"]["inline_keyboard"] if row[0]["callback_data"].startswith("sub:off:")]), 1)
@@ -403,12 +433,12 @@ class TelegramPublicTests(TestCase):
         self.publish()
         subscriber = self.subscribe()
         self.assertEqual(subscriber.feed.owner, self.owner)
-        self.assertEqual(self.update(2, self.callback(f"reply:{self.property.pk}")).status_code, 200)
+        self.assertEqual(self.update(2, self.callback(property_callback_data("reply", self.property))).status_code, 200)
         self.assertEqual(self.update(3, self.user_message(contact={"phone_number": "+7 999 000-00-01", "user_id": 1001})).status_code, 200)
         self.assertEqual(Lead.objects.count(), 0)
         self.assertEqual(TelegramConversation.objects.get(chat_id=1001).pending_phone, "+79990000001")
-        self.assertEqual(self.update(4, self.callback(f"consent:{self.property.pk}")).status_code, 200)
-        self.assertEqual(self.update(4, self.callback(f"consent:{self.property.pk}")).status_code, 200)
+        self.assertEqual(self.update(4, self.callback(property_callback_data("consent", self.property))).status_code, 200)
+        self.assertEqual(self.update(4, self.callback(property_callback_data("consent", self.property))).status_code, 200)
         self.assertEqual(Lead.objects.count(), 1)
         lead = Lead.objects.get()
         self.assertEqual(lead.source, "telegram_bot")
@@ -437,31 +467,31 @@ class TelegramPublicTests(TestCase):
         self.assertTrue(any("Дом команды" in message for message in team_messages))
         self.assertFalse(any("Квартира у парка" in message for message in team_messages))
 
-        self.update(3, self.callback(f"reply:{self.property.pk}"))
+        self.update(3, self.callback(property_callback_data("reply", self.property)))
         with patch("properties.services.telegram_public_service.requests.post", return_value=self.api_response) as post:
             self.update(4, self.user_message("+79990000001"))
         consent_panel = post.call_args.kwargs["json"]
         keyboard = consent_panel["reply_markup"]["inline_keyboard"]
-        self.assertEqual(keyboard[0][0]["callback_data"], f"consent:{self.property.pk}")
+        self.assertEqual(keyboard[0][0]["callback_data"], property_callback_data("consent", self.property))
         self.assertTrue(any(button.get("url", "").endswith(reverse("personal_data_consent")) for row in keyboard for button in row))
         self.assertTrue(any(button.get("url", "").endswith(reverse("privacy_policy")) for row in keyboard for button in row))
         self.assertFalse(Lead.objects.exists())
-        self.update(5, self.callback(f"consent:{team_property.pk}"))
+        self.update(5, self.callback(property_callback_data("consent", team_property)))
         self.assertFalse(Lead.objects.exists())
         with patch("properties.services.telegram_public_service.LeadNotificationService.notify_new_lead") as notify:
             with self.captureOnCommitCallbacks(execute=True):
-                self.update(6, self.callback(f"consent:{self.property.pk}"))
+                self.update(6, self.callback(property_callback_data("consent", self.property)))
             notify.assert_called_once()
             self.assertEqual(notify.call_args.args[1], owner_profile)
         personal_lead = Lead.objects.get(property=self.property)
 
-        self.update(7, self.callback(f"reply:{team_property.pk}"))
+        self.update(7, self.callback(property_callback_data("reply", team_property)))
         self.update(8, self.user_message("+79990000001"))
-        self.update(9, self.callback(f"cancel:{self.property.pk}"))
+        self.update(9, self.callback(property_callback_data("cancel", self.property)))
         self.assertEqual(TelegramConversation.objects.get(chat_id=1001).pending_property, team_property)
         with patch("properties.services.telegram_public_service.LeadNotificationService.notify_new_lead") as notify:
             with self.captureOnCommitCallbacks(execute=True):
-                self.update(10, self.callback(f"consent:{team_property.pk}"))
+                self.update(10, self.callback(property_callback_data("consent", team_property)))
             notify.assert_called_once()
             self.assertEqual(notify.call_args.args[1], member_profile)
         team_lead = Lead.objects.get(property=team_property)
@@ -484,7 +514,7 @@ class TelegramPublicTests(TestCase):
         third_property = Property.objects.create(
             owner=third_owner, title="Объект чужой ленты", status="available", telegram_published=True,
         )
-        self.update(11, self.callback(f"reply:{third_property.pk}"))
+        self.update(11, self.callback(property_callback_data("reply", third_property)))
         self.assertIsNone(TelegramConversation.objects.get(chat_id=1001).pending_property_id)
         self.assertEqual(Lead.objects.count(), 2)
 
@@ -492,15 +522,15 @@ class TelegramPublicTests(TestCase):
         self.publish()
         self.subscribe()
         with patch("properties.services.telegram_public_service.requests.post", return_value=self.api_response) as post:
-            self.update(2, self.callback(f"reply:{self.property.pk}"))
-            self.update(2, self.callback(f"reply:{self.property.pk}"))
+            self.update(2, self.callback(property_callback_data("reply", self.property)))
+            self.update(2, self.callback(property_callback_data("reply", self.property)))
         self.assertEqual(post.call_count, 2)  # Callback answer and one phone request.
         self.update(3, self.user_message("+79990000001"))
         with patch("properties.services.telegram_public_service.LeadNotificationService.notify_new_lead") as notify:
             with self.captureOnCommitCallbacks(execute=True):
-                self.update(4, self.callback(f"consent:{self.property.pk}"))
-                self.update(4, self.callback(f"consent:{self.property.pk}"))
-                self.update(5, self.callback(f"consent:{self.property.pk}"))
+                self.update(4, self.callback(property_callback_data("consent", self.property)))
+                self.update(4, self.callback(property_callback_data("consent", self.property)))
+                self.update(5, self.callback(property_callback_data("consent", self.property)))
             notify.assert_called_once()
         self.assertEqual(Lead.objects.count(), 1)
         self.assertEqual(ClientReminder.objects.filter(lead=Lead.objects.get(), is_done=False).count(), 1)
@@ -527,13 +557,13 @@ class TelegramPublicTests(TestCase):
     def test_foreign_contact_and_removed_listing_do_not_create_lead(self):
         self.publish()
         self.subscribe()
-        self.update(2, self.callback(f"reply:{self.property.pk}"))
+        self.update(2, self.callback(property_callback_data("reply", self.property)))
         self.update(3, self.user_message(contact={"phone_number": "+79990000001", "user_id": 9009}))
         self.assertEqual(TelegramConversation.objects.get(chat_id=1001).pending_phone, "")
         self.update(4, self.user_message("+79990000001"))
         self.client.force_login(self.owner)
         self.client.post(reverse("telegram_publish", args=[self.property.pk]), {"action": "unpublish"})
-        self.update(5, self.callback(f"consent:{self.property.pk}"))
+        self.update(5, self.callback(property_callback_data("consent", self.property)))
         self.assertEqual(Lead.objects.count(), 0)
 
     def test_reserved_property_is_automatically_removed_from_bot(self):
@@ -543,7 +573,7 @@ class TelegramPublicTests(TestCase):
         self.property.save(update_fields=["status"])
         self.property.refresh_from_db()
         self.assertFalse(self.property.telegram_published)
-        self.update(2, self.callback(f"reply:{self.property.pk}"))
+        self.update(2, self.callback(property_callback_data("reply", self.property)))
         self.assertFalse(TelegramConversation.objects.filter(chat_id=1001).exists())
 
     def test_existing_client_keeps_original_source_and_team_audience_is_isolated(self):
@@ -555,12 +585,12 @@ class TelegramPublicTests(TestCase):
         self.client.force_login(self.owner)
         self.client.post(reverse("telegram_publish", args=[team_property.pk]), {"action": "publish"})
         self.assertEqual(TelegramDelivery.objects.count(), 0)
-        self.update(10, self.callback(f"reply:{team_property.pk}"))
+        self.update(10, self.callback(property_callback_data("reply", team_property)))
         self.assertFalse(TelegramConversation.objects.filter(chat_id=1001).exists())
         existing = Client.objects.create(owner=self.owner, name="Анна", phone="+79990000001", source="recommendation")
-        self.update(2, self.callback(f"reply:{self.property.pk}"))
+        self.update(2, self.callback(property_callback_data("reply", self.property)))
         self.update(3, self.user_message("+79990000001"))
-        self.update(4, self.callback(f"consent:{self.property.pk}"))
+        self.update(4, self.callback(property_callback_data("consent", self.property)))
         existing.refresh_from_db()
         self.assertEqual(existing.source, "recommendation")
         self.assertEqual(Lead.objects.get().client, existing)
@@ -599,7 +629,7 @@ class TelegramPublicTests(TestCase):
 
     def test_group_updates_are_ignored(self):
         self.publish()
-        group = self.user_message(f"/start p{self.property.pk}")
+        group = self.user_message(f"/start {property_start_payload(self.property)}")
         group["message"]["chat"] = {"id": -100, "type": "supergroup"}
         self.update(1, group)
         self.assertEqual(TelegramSubscriber.objects.count(), 0)
@@ -614,10 +644,10 @@ class TelegramPublicTests(TestCase):
         self.assertEqual(post.call_args.kwargs["data"]["secret_token"], "test-webhook-secret")
         self.assertNotIn("test-token", output.getvalue())
 
-    def test_plain_start_subscribes_only_when_one_public_feed_exists(self):
+    def test_plain_start_never_subscribes_to_an_unselected_feed(self):
         self.publish()
         self.update(1, self.user_message("/start"))
-        self.assertEqual(TelegramSubscriber.objects.filter(chat_id=1001, active=True).count(), 1)
+        self.assertFalse(TelegramSubscriber.objects.filter(chat_id=1001, active=True).exists())
         other_property = Property.objects.create(owner=self.other, title="Другой риелтор", status="available")
         self.client.force_login(self.other)
         self.client.post(reverse("telegram_publish", args=[other_property.pk]), {"action": "publish"})

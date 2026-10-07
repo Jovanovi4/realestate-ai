@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 from tempfile import TemporaryDirectory
+from unittest import skipUnless
 from unittest.mock import patch
 
 from django.contrib import admin
@@ -328,6 +329,7 @@ class CrmHistoryMigrationTests(TransactionTestCase):
         self.assertEqual(restored_deal.property_id, property.pk)
 
 
+@skipUnless(connection.vendor == "sqlite", "SQLite snapshot tests require SQLite")
 class CrmBackupTests(TransactionTestCase):
     def setUp(self):
         self.directory = TemporaryDirectory()
@@ -423,12 +425,6 @@ class CrmBackupTests(TransactionTestCase):
                 with self.assertRaises(BackupError):
                     verify_backup(snapshot)
 
-    def test_unsupported_backend_fails_clearly(self):
-        with patch("properties.services.crm_backup_service.connections") as mock_connections:
-            mock_connections.__getitem__.return_value.vendor = "postgresql"
-            with self.assertRaisesMessage(BackupError, "supports SQLite only"):
-                create_backup()
-
     @override_settings(CRM_BACKUP_REVIEW_DAYS=30)
     def test_old_backup_retention_report_does_not_delete_snapshot(self):
         snapshot = create_backup()
@@ -440,3 +436,11 @@ class CrmBackupTests(TransactionTestCase):
         self.assertEqual(report["backups_due"], 1)
         self.assertTrue(snapshot.is_dir())
         verify_backup(snapshot)
+
+
+class CrmBackupBackendTests(SimpleTestCase):
+    def test_unsupported_backend_fails_clearly(self):
+        with patch("properties.services.crm_backup_service.connections") as mock_connections:
+            mock_connections.__getitem__.return_value.vendor = "postgresql"
+            with self.assertRaisesMessage(BackupError, "supports SQLite only"):
+                create_backup()

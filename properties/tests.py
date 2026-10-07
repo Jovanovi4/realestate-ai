@@ -2129,7 +2129,8 @@ class LeadNotificationServiceTests(TestCase):
         DEFAULT_FROM_EMAIL="notifications@example.com",
     )
     def test_sends_new_lead_email_to_realtor_profile(self):
-        LeadNotificationService.notify_new_lead(self.lead, self.profile, "https://app.example.com/leads/1/")
+        with self.captureOnCommitCallbacks(execute=True):
+            LeadNotificationService.notify_new_lead(self.lead, self.profile, "https://app.example.com/leads/1/")
 
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ["agent@example.com"])
@@ -2137,13 +2138,14 @@ class LeadNotificationServiceTests(TestCase):
         self.assertIn("https://app.example.com/leads/1/", mail.outbox[0].body)
 
     @override_settings(TELEGRAM_NOTIFICATIONS_ENABLED=True, TELEGRAM_BOT_TOKEN="test-token")
-    @patch("properties.services.lead_notification_service.requests.post")
+    @patch("properties.services.outbound_message_service.requests.post")
     def test_sends_new_lead_to_realtor_telegram_chat(self, post):
         response = Mock()
         response.json.return_value = {"ok": True}
         post.return_value = response
 
-        LeadNotificationService.notify_new_lead(self.lead, self.profile, "https://app.example.com/leads/1/")
+        with self.captureOnCommitCallbacks(execute=True):
+            LeadNotificationService.notify_new_lead(self.lead, self.profile, "https://app.example.com/leads/1/")
 
         post.assert_called_once()
         self.assertEqual(post.call_args.args[0], "https://api.telegram.org/bottest-token/sendMessage")

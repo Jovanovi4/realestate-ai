@@ -43,7 +43,7 @@ from .services.cian_service import CianExportService
 from .services.demo_data_service import DemoDataService
 from .services.lead_notification_service import LeadNotificationService
 from .services.lead_outcome_service import convert_lead_to_deal
-from .services.telegram_public_service import feed_for, feed_link, public_bot_ready
+from .services.telegram_public_service import feed_for, feed_link, property_link, public_bot_ready
 from .services.public_form_security import PublicLeadFormSecurity
 from .services.presentation_service import PresentationError, PresentationService
 from .services.presentation_docx_service import PresentationDocxService
@@ -383,6 +383,7 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
         context["property_deals"] = workspace_queryset(Deal.objects.filter(property=self.object), self.request.user).select_related("client")[:5]
         context["telegram_bot_ready"] = public_bot_ready()
         context["telegram_bot_username"] = settings.TELEGRAM_PUBLIC_BOT_USERNAME
+        context["telegram_property_url"] = property_link(self.object)
         context["telegram_publish_denial"] = ""
         feed = TelegramFeed.objects.filter(agency=self.object.agency).first() if self.object.agency_id else TelegramFeed.objects.filter(owner=self.object.owner).first()
         if context["telegram_bot_ready"]:
@@ -1854,37 +1855,34 @@ class PublicLandingView(View):
             if not PublicLeadFormSecurity.verify_turnstile(request):
                 form.add_error(None, "Не удалось подтвердить, что вы не робот. Попробуйте ещё раз.")
                 return render(request, self.get_template_name(property), self.get_context(property, profile, form))
-            lead = form.save(commit=False)
-            lead.property = property
-            lead.interest_type = "long_rent" if property.deal_type == "rent" else "buy"
-            lead.personal_data_consent_at = timezone.now()
-            lead.personal_data_consent_version = settings.PERSONAL_DATA_CONSENT_VERSION
-            lead.is_demo = property.is_demo
-            client_lookup = {"agency": property.agency, "phone": form.cleaned_data["phone"]}
-            if property.agency_id is None:
-                client_lookup["owner"] = property.owner
-            client, created = Client.objects.get_or_create(
-                **client_lookup,
-                defaults={"owner": property.owner, "name": form.cleaned_data["name"], "source": "landing"},
-            )
-            if not created and not client.name and form.cleaned_data["name"]:
-                client.name = form.cleaned_data["name"]
-                client.save(update_fields=["name", "updated_at"])
-            lead.client = client
-            lead.save()
-            ClientInteraction.objects.create(
-                client=client,
-                lead=lead,
-                interaction_type="note",
-                text=f"Новая заявка с лендинга «{property.title}» · {lead.get_contact_purpose_display()} · {lead.get_interest_type_display()}.",
-            )
-            lead_url = request.build_absolute_uri(reverse("lead_detail", kwargs={"pk": lead.pk}))
-            if not property.is_demo:
-                transaction.on_commit(
-                    lambda lead=lead, profile=profile, lead_url=lead_url: LeadNotificationService.notify_new_lead(
-                        lead, profile, lead_url
-                    )
+            with transaction.atomic():
+                lead = form.save(commit=False)
+                lead.property = property
+                lead.interest_type = "long_rent" if property.deal_type == "rent" else "buy"
+                lead.personal_data_consent_at = timezone.now()
+                lead.personal_data_consent_version = settings.PERSONAL_DATA_CONSENT_VERSION
+                lead.is_demo = property.is_demo
+                client_lookup = {"agency": property.agency, "phone": form.cleaned_data["phone"]}
+                if property.agency_id is None:
+                    client_lookup["owner"] = property.owner
+                client, created = Client.objects.get_or_create(
+                    **client_lookup,
+                    defaults={"owner": property.owner, "name": form.cleaned_data["name"], "source": "landing"},
                 )
+                if not created and not client.name and form.cleaned_data["name"]:
+                    client.name = form.cleaned_data["name"]
+                    client.save(update_fields=["name", "updated_at"])
+                lead.client = client
+                lead.save()
+                ClientInteraction.objects.create(
+                    client=client,
+                    lead=lead,
+                    interaction_type="note",
+                    text=f"Новая заявка с лендинга «{property.title}» · {lead.get_contact_purpose_display()} · {lead.get_interest_type_display()}.",
+                )
+                if not property.is_demo:
+                    lead_url = request.build_absolute_uri(reverse("lead_detail", kwargs={"pk": lead.pk}))
+                    LeadNotificationService.notify_new_lead(lead, profile, lead_url)
             return render(
                 request,
                 self.get_template_name(property),

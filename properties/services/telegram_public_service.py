@@ -13,6 +13,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare, salted_hmac
 
 from billing.enforcement import TariffDenied, require_new_action
 from billing.rules import Operation
@@ -27,6 +28,38 @@ from .lead_notification_service import LeadNotificationService
 logger = logging.getLogger(__name__)
 VISIBLE_STATUSES = {"published", "available", "showing"}
 SUBSCRIPTIONS_PAGE_SIZE = 8
+OBSOLETE_BUTTON_MESSAGE = "Эта кнопка устарела. Откройте новую ссылку на объявление или ленту."
+
+
+def _signed_id(kind, identifier):
+    value = str(identifier)
+    signature = salted_hmac(f"telegram-public-{kind}", value).hexdigest()[:16]
+    return f"{value}_{signature}"
+
+
+def _parse_signed_id(kind, value):
+    if not re.fullmatch(r"[1-9][0-9]{0,17}_[0-9a-f]{16}", value):
+        return None
+    identifier, _ = value.split("_", 1)
+    if not constant_time_compare(value, _signed_id(kind, identifier)):
+        return None
+    return int(identifier)
+
+
+def property_start_payload(property):
+    return f"p{_signed_id('property', property.pk)}"
+
+
+def property_link(property):
+    return f"https://t.me/{settings.TELEGRAM_PUBLIC_BOT_USERNAME}?start={property_start_payload(property)}"
+
+
+def property_callback_data(action, property):
+    return f"{action}:{_signed_id('property', property.pk)}"
+
+
+def feed_unsubscribe_callback_data(feed_id, page):
+    return f"sub:off:{_signed_id('feed', feed_id)}:{page}"
 
 
 def public_bot_ready():
@@ -101,17 +134,17 @@ def _subscriptions_panel(chat_id, user_id, *, page=0, notice=""):
         label = _feed_label(subscriber.feed)
         lines.append(f"{number}. Объявления {label}")
         short_label = label if len(label) <= 43 else label[:42] + "…"
-        buttons.append([{"text": f"Отключить · {short_label}", "callback_data": f"sub:off:{subscriber.feed_id}:{page}"}])
+        buttons.append([{"text": f"Отключить · {short_label}", "callback_data": feed_unsubscribe_callback_data(subscriber.feed_id, page)}])
     if last_page:
         navigation = []
         if page:
-            navigation.append({"text": "← Назад", "callback_data": f"sub:page:{page - 1}"})
+            navigation.append({"text": "← Назад", "callback_data": f"sub:v2:page:{page - 1}"})
         if page < last_page:
-            navigation.append({"text": "Далее →", "callback_data": f"sub:page:{page + 1}"})
+            navigation.append({"text": "Далее →", "callback_data": f"sub:v2:page:{page + 1}"})
         buttons.append(navigation)
         lines.append(f"Страница {page + 1} из {last_page + 1}.")
     if total > 1:
-        buttons.append([{"text": "Отключить все ленты", "callback_data": "sub:all"}])
+        buttons.append([{"text": "Отключить все ленты", "callback_data": "sub:v2:all"}])
     lines.append("Выберите ленту, которую хотите отключить.")
     text = "\n".join(lines)
     if notice:
@@ -171,7 +204,7 @@ def publish(property):
 
 
 def _keyboard(property):
-    return {"inline_keyboard": [[{"text": "Откликнуться", "callback_data": f"reply:{property.pk}"}]]}
+    return {"inline_keyboard": [[{"text": "Откликнуться", "callback_data": property_callback_data("reply", property)}]]}
 
 
 def listing_text(property):
@@ -266,7 +299,7 @@ def _create_lead(property, subscriber, phone):
     )
     profile = RealtorProfile.objects.filter(user=responsible).first()
     lead_url = settings.ACCOUNT_PUBLIC_BASE_URL.rstrip("/") + reverse("lead_detail", kwargs={"pk": lead.pk})
-    transaction.on_commit(lambda: LeadNotificationService.notify_new_lead(lead, profile, lead_url))
+    LeadNotificationService.notify_new_lead(lead, profile, lead_url)
     return lead
 
 
@@ -292,13 +325,16 @@ def process_update(update):
             data = callback.get("data") or ""
             if not isinstance(data, str):
                 return actions
-            if data == "sub:all":
+            if data == "sub:v2:all":
                 count, cancelled = _unsubscribe_all(chat_id, user["id"])
                 notice = "Все подписки отключены." if count else "Активных подписок уже нет."
                 return actions + ([_cancelled_reply_action(chat_id)] if cancelled else []) + [_subscriptions_panel(chat_id, user["id"], notice=notice)]
-            unsubscribe = re.fullmatch(r"sub:off:([1-9][0-9]{0,17}):([0-9]{1,6})", data)
+            unsubscribe = re.fullmatch(r"sub:off:([1-9][0-9]{0,17}_[0-9a-f]{16}):([0-9]{1,6})", data)
             if unsubscribe:
-                feed_id, page = map(int, unsubscribe.groups())
+                feed_id = _parse_signed_id("feed", unsubscribe.group(1))
+                if feed_id is None:
+                    return actions + [("sendMessage", {"chat_id": chat_id, "text": OBSOLETE_BUTTON_MESSAGE})]
+                page = int(unsubscribe.group(2))
                 subscriber = _active_subscriptions(chat_id, user["id"]).filter(feed_id=feed_id).first()
                 disabled, cancelled = _unsubscribe(subscriber) if subscriber else (False, False)
                 if disabled:
@@ -306,18 +342,20 @@ def process_update(update):
                 else:
                     notice = "Эта подписка уже отключена или вам не принадлежит."
                 return actions + ([_cancelled_reply_action(chat_id)] if cancelled else []) + [_subscriptions_panel(chat_id, user["id"], page=page, notice=notice)]
-            page_request = re.fullmatch(r"sub:page:([0-9]{1,6})", data)
+            page_request = re.fullmatch(r"sub:v2:page:([0-9]{1,6})", data)
             if page_request:
                 return actions + [_subscriptions_panel(chat_id, user["id"], page=int(page_request.group(1)))]
-            if data.startswith("cancel:") and data[7:].isdigit():
+            cancel_id = _parse_signed_id("property", data[7:]) if data.startswith("cancel:") else None
+            if cancel_id is not None:
                 cancelled = TelegramConversation.objects.filter(
-                    chat_id=chat_id, pending_property_id=int(data[7:]),
+                    chat_id=chat_id, pending_property_id=cancel_id,
                 ).update(pending_property=None, pending_phone="", pending_at=None)
                 if cancelled:
                     return actions + [("sendMessage", {"chat_id": chat_id, "text": "Заявка отменена. Вы можете откликнуться на другое объявление.", "reply_markup": {"remove_keyboard": True}})]
                 return actions
-            if data.startswith("consent:") and data[8:].isdigit():
-                conversation = TelegramConversation.objects.select_for_update().filter(chat_id=chat_id, pending_property_id=int(data[8:])).first()
+            consent_id = _parse_signed_id("property", data[8:]) if data.startswith("consent:") else None
+            if consent_id is not None:
+                conversation = TelegramConversation.objects.select_for_update().filter(chat_id=chat_id, pending_property_id=consent_id).first()
                 if not conversation or not conversation.pending_phone or not conversation.pending_at or conversation.pending_at < timezone.now() - timedelta(days=1):
                     return actions + [("sendMessage", {"chat_id": chat_id, "text": "Срок подтверждения истёк. Откликнитесь на объявление ещё раз."})]
                 property = conversation.pending_property
@@ -341,9 +379,12 @@ def process_update(update):
                         )
                         return actions + [("sendMessage", {"chat_id": chat_id, "text": "Сейчас не удалось принять заявку. Попробуйте позже."})]
                 return actions + [("sendMessage", {"chat_id": chat_id, "text": "Спасибо! Заявка передана риелтору. Он свяжется с вами по указанному номеру.", "reply_markup": {"remove_keyboard": True}})]
-            if not data.startswith("reply:") or not data[6:].isdigit():
+            reply_id = _parse_signed_id("property", data[6:]) if data.startswith("reply:") else None
+            if reply_id is None:
+                if data.startswith(("reply:", "consent:", "cancel:", "sub:")):
+                    return actions + [("sendMessage", {"chat_id": chat_id, "text": OBSOLETE_BUTTON_MESSAGE})]
                 return actions
-            property = Property.objects.filter(pk=int(data[6:])).first()
+            property = Property.objects.filter(pk=reply_id).first()
             if not property or not is_visible(property):
                 return actions + [("sendMessage", {"chat_id": chat_id, "text": "Объявление больше не доступно."})]
             subscriber = TelegramSubscriber.objects.filter(feed=feed_for(property), chat_id=chat_id, active=True).first()
@@ -384,13 +425,16 @@ def process_update(update):
             token = argument.strip()
             if token:
                 TelegramConversation.objects.filter(chat_id=chat_id).update(pending_property=None, pending_phone="", pending_at=None)
-            if token.startswith("p") and token[1:].isdigit():
-                property = Property.objects.filter(pk=int(token[1:])).first()
+            property_id = _parse_signed_id("property", token[1:]) if token.startswith("p") else None
+            if property_id is not None:
+                property = Property.objects.filter(pk=property_id).first()
                 if property and is_visible(property):
                     feed = feed_for(property)
                     _subscribe(feed, chat_id, user)
                     return [("sendMessage", {"chat_id": chat_id, "text": _subscription_message(feed)}),
                             ("listing", {"chat_id": chat_id, "property_id": property.pk, "feed_id": feed.pk})]
+            if token.startswith("p") and property_id is None:
+                return [("sendMessage", {"chat_id": chat_id, "text": "Эта ссылка на объект устарела. Попросите риелтора прислать новую."})]
             if re.fullmatch(r"f[0-9a-fA-F]{32}", token):
                 feed = TelegramFeed.objects.filter(code=uuid.UUID(hex=token[1:])).first()
                 if feed:
@@ -404,17 +448,6 @@ def process_update(update):
             if not token:
                 if _active_subscriptions(chat_id, user["id"]).exists():
                     return [_subscriptions_panel(chat_id, user["id"])]
-                feeds = list(TelegramFeed.objects.filter(
-                    publications__property__telegram_published=True,
-                    publications__property__status__in=VISIBLE_STATUSES,
-                    publications__property__is_demo=False,
-                ).distinct()[:2])
-                if len(feeds) == 1:
-                    latest = latest_visible_property(feeds[0])
-                    if latest:
-                        _subscribe(feeds[0], chat_id, user)
-                        return [("sendMessage", {"chat_id": chat_id, "text": _subscription_message(feeds[0])}),
-                                ("listing", {"chat_id": chat_id, "property_id": latest.pk, "feed_id": feeds[0].pk})]
             return [("sendMessage", {"chat_id": chat_id, "text": "Откройте ссылку на ленту или опубликованный объект, чтобы получать объявления и оставлять заявки."})]
         conversation = TelegramConversation.objects.select_for_update().filter(chat_id=chat_id).first()
         if not conversation or not conversation.pending_property_id or not conversation.pending_at or conversation.pending_at < timezone.now() - timedelta(days=1):
@@ -443,9 +476,9 @@ def process_update(update):
             "chat_id": chat_id,
             "text": f"Телефон: {phone}. Чтобы передать его риелтору и создать заявку, подтвердите согласие на обработку персональных данных.",
             "reply_markup": {"inline_keyboard": [
-                [{"text": "Согласен, отправить заявку", "callback_data": f"consent:{property.pk}"}],
+                [{"text": "Согласен, отправить заявку", "callback_data": property_callback_data("consent", property)}],
                 [{"text": "Согласие", "url": base + reverse("personal_data_consent")}, {"text": "Политика", "url": base + reverse("privacy_policy")}],
-                [{"text": "Отмена", "callback_data": f"cancel:{property.pk}"}],
+                [{"text": "Отмена", "callback_data": property_callback_data("cancel", property)}],
             ]},
         })]
 

@@ -79,6 +79,38 @@ services:
       - backend
       - frontend
 
+  outbound:
+    image: realestate-ai:pilot
+    restart: unless-stopped
+    init: true
+    env_file: .env.docker
+    environment: *app_environment
+    command: ["python", "manage.py", "send_outbound_messages", "--loop"]
+    volumes:
+      - media:/app/media:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - backend
+      - frontend
+
+  publications:
+    image: realestate-ai:pilot
+    restart: unless-stopped
+    init: true
+    env_file: .env.docker
+    environment: *app_environment
+    command: ["python", "manage.py", "send_telegram_publications", "--loop"]
+    volumes:
+      - media:/app/media:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - backend
+      - frontend
+
   proxy:
     image: caddy:2.10-alpine
     restart: unless-stopped

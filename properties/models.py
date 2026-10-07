@@ -1158,6 +1158,41 @@ class TelegramInboundUpdate(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class OutboundMessage(models.Model):
+    """Durable delivery attempt for bot replies and new-lead notifications."""
+
+    class Channel(models.TextChoices):
+        PUBLIC_TELEGRAM = "public_telegram", "Публичный Telegram-бот"
+        STAFF_TELEGRAM = "staff_telegram", "Telegram риелтора"
+        EMAIL = "email", "Email риелтора"
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Ожидает"
+        SENDING = "sending", "Отправляется"
+        SENT = "sent", "Отправлено"
+        FAILED = "failed", "Ошибка"
+        CANCELLED = "cancelled", "Отменено"
+
+    dedupe_key = models.CharField(max_length=160, unique=True)
+    channel = models.CharField(max_length=20, choices=Channel.choices)
+    payload = models.JSONField()
+    status = models.CharField(max_length=12, choices=Status.choices, default=Status.PENDING)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_attempt_at = models.DateTimeField(default=timezone.now)
+    lease_until = models.DateTimeField(null=True, blank=True)
+    claim_token = models.UUIDField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=160, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["created_at", "pk"]
+        indexes = [models.Index(fields=["status", "next_attempt_at"], name="outbound_status_due_idx")]
+        verbose_name = "Исходящее сообщение"
+        verbose_name_plural = "Исходящие сообщения"
+
+
 class TelegramPublication(models.Model):
     property = models.ForeignKey(Property, on_delete=models.PROTECT, related_name="telegram_publications")
     feed = models.ForeignKey(TelegramFeed, on_delete=models.PROTECT, related_name="publications")

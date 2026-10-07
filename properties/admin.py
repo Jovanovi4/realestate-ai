@@ -4,7 +4,7 @@ from django.db import transaction
 from billing.enforcement import enabled as billing_enforcement_enabled
 from .forms import SafeImageField
 
-from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientInteraction, ClientPropertySuggestion, ClientReminder, Deal, Lead, Property, RealtorProfile, Showing, TelegramDelivery, TelegramPublication, TelegramSubscriber, UserLegalAcceptance
+from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientInteraction, ClientPropertySuggestion, ClientReminder, Deal, Lead, OutboundMessage, Property, RealtorProfile, Showing, TelegramDelivery, TelegramPublication, TelegramSubscriber, UserLegalAcceptance
 
 
 class BillingReadOnlyWhenEnforced:
@@ -29,6 +29,15 @@ class TelegramReadOnlyAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(OutboundMessage)
+class OutboundMessageAdmin(TelegramReadOnlyAdmin):
+    list_display = ("id", "channel", "status", "attempts", "created_at", "next_attempt_at", "last_error", "sent_at")
+    list_filter = ("channel", "status")
+    search_fields = ("dedupe_key",)
+    readonly_fields = ("dedupe_key", "channel", "payload", "status", "attempts", "next_attempt_at",
+                       "lease_until", "expires_at", "last_error", "created_at", "sent_at")
 
 
 @admin.register(TelegramSubscriber)
