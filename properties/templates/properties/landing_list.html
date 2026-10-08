@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Лендинги{% endblock %}
 {% block content %}
-<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Публикации</p><h1 class="ui-page-header__title">Лендинги</h1><p class="ui-page-header__description">Страницы объектов: настройка, публикация и публичные ссылки.</p></div><div class="ui-page-header__actions"><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></header>
+<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Недвижимость</p><h1 class="ui-page-header__title">Лендинги</h1><p class="ui-page-header__description">Страницы объектов: настройка, публикация и публичные ссылки.</p></div><div class="ui-page-header__actions"><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></header>
 <nav class="lead-status-filter landing-status-filter" aria-label="Фильтр лендингов по статусу">
   <span class="lead-status-filter__label">Статус</span>
   <div class="lead-status-filter__options">
@@ -11,10 +11,12 @@
   </div>
 </nav>
 
+<div data-catalog-view="landings" data-view="cards">
 {% if properties %}
-<div class="row g-3">
+{% include "properties/includes/catalog_view_switch.html" with catalog_label="лендингов" %}
+<div class="row g-3 catalog-card-grid">
   {% for property in properties %}
-  <div class="col-md-6 col-xl-4">
+  <div class="col-md-6 col-xl-4 catalog-card-grid__item">
     <article class="property-card landing-card h-100">
       <div class="property-card__media">
         {% if property.primary_image %}<img src="{{ property.primary_image.image.url }}" alt="{{ property.title }}" loading="lazy">
@@ -45,4 +47,5 @@
 </div>
 {% else %}<section class="empty-state" aria-labelledby="empty-landings-title"><div><span class="empty-state__icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-layout"></use></svg></span><h2 class="empty-state__title" id="empty-landings-title">Лендингов пока нет</h2><p class="empty-state__text mb-3">Создайте объект и настройте для него страницу в разделе «Лендинг».</p><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></section>{% endif %}
 {% if is_paginated %}<nav class="mt-4" aria-label="Страницы лендингов"><ul class="pagination mb-0">{% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.previous_page_number }}">Назад</a></li>{% endif %}<li class="page-item disabled"><span class="page-link">{{ page_obj.number }} из {{ paginator.num_pages }}</span></li>{% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.next_page_number }}">Вперёд</a></li>{% endif %}</ul></nav>{% endif %}
+</div>
 {% endblock %}

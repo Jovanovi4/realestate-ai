@@ -78,6 +78,12 @@ class PropertyForm(forms.ModelForm):
             "currency",
             "address",
             "area",
+            "commercial_purpose",
+            "ceiling_height_m",
+            "power_kw",
+            "entrance_type",
+            "parking_type",
+            "access_mode",
             "rooms",
             "bathrooms",
             "floor",
@@ -147,6 +153,12 @@ class PropertyForm(forms.ModelForm):
                 field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
         self.fields["property_type"].widget.attrs["x-model"] = "propertyType"
         self.fields["deal_type"].widget.attrs["x-model"] = "dealType"
+        selected_type = self.data.get(self.add_prefix("property_type")) if self.is_bound else self.initial.get("property_type", self.instance.property_type)
+        self.property_group = "commercial" if selected_type in Property.COMMERCIAL_TYPES else "residential"
+        self.residential_types = [(code, label) for code, label in Property.PROPERTY_TYPES if code in Property.RESIDENTIAL_TYPES]
+        self.commercial_types = [(code, label) for code, label in Property.PROPERTY_TYPES if code in Property.COMMERCIAL_TYPES]
+        for name in ("area", "ceiling_height_m", "power_kw"):
+            self.fields[name].widget.attrs.update({"step": "0.01", "min": "0", "inputmode": "decimal"})
         self.fields["landing_logo"].widget.attrs.update({
             "x-ref": "logoInput",
             "@change": "selectLogo($event)",
@@ -201,6 +213,23 @@ class PropertyForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
+        old_type = Property.objects.filter(pk=self.instance.pk).values_list("property_type", flat=True).first() if self.instance.pk else None
+        if cleaned_data.get("property_type") in Property.COMMERCIAL_TYPES:
+            cleaned_data["avito_export"] = False
+            cleaned_data["cian_export"] = False
+            if old_type in Property.COMMERCIAL_TYPES:
+                for name in ("rooms", "bathrooms", "land_area", "furnished", "pets_allowed", "children_allowed"):
+                    cleaned_data[name] = getattr(self.instance, name)
+            else:
+                for name in ("rooms", "bathrooms", "land_area"):
+                    cleaned_data[name] = None
+                for name in ("furnished", "pets_allowed", "children_allowed"):
+                    cleaned_data[name] = False
+        elif cleaned_data.get("property_type") in Property.RESIDENTIAL_TYPES:
+            for name in ("commercial_purpose", "entrance_type", "parking_type", "access_mode"):
+                cleaned_data[name] = ""
+            for name in ("ceiling_height_m", "power_kw"):
+                cleaned_data[name] = None
         for field_name, default in self._visual_landing_defaults.items():
             if not cleaned_data.get(field_name):
                 cleaned_data[field_name] = getattr(self.instance, field_name, None) or default
@@ -414,9 +443,15 @@ class ClientDetailsForm(ClientForm):
 class ClientSearchForm(forms.ModelForm):
     class Meta:
         model = Client
-        fields = ("search_deal_type", "search_property_type", "search_rooms_min", "preferred_area", "budget", "search_currency", "search_notes")
+        fields = (
+            "search_deal_type", "search_segment", "search_property_type", "search_rooms_min",
+            "search_area_min", "search_area_max", "search_commercial_purpose",
+            "preferred_area", "budget", "search_currency", "search_notes",
+        )
         widgets = {
             "budget": forms.NumberInput(attrs={"step": "1000", "min": "0"}),
+            "search_area_min": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
+            "search_area_max": forms.NumberInput(attrs={"step": "0.01", "min": "0"}),
             "search_notes": forms.Textarea(attrs={"rows": 2}),
         }
         labels = {"budget": "Бюджет до"}
@@ -425,12 +460,38 @@ class ClientSearchForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         for field in self.fields.values():
             field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+        if not self.is_bound and not self.initial.get("search_segment") and self.instance.search_property_type:
+            self.initial["search_segment"] = (
+                "commercial" if self.instance.search_property_type in Property.COMMERCIAL_TYPES else "residential"
+            )
+        self.fields["search_property_type"].widget.attrs["data-commercial-types"] = ",".join(sorted(Property.COMMERCIAL_TYPES))
         mark_invalid_fields(self)
 
     def clean(self):
         data = super().clean()
         if data.get("budget") and not data.get("search_currency"):
             self.add_error("search_currency", "Укажите валюту бюджета для подбора по цене.")
+        minimum, maximum = data.get("search_area_min"), data.get("search_area_max")
+        if minimum is not None and maximum is not None and minimum > maximum:
+            self.add_error("search_area_max", "Максимальная площадь не может быть меньше минимальной.")
+        segment = data.get("search_segment")
+        property_type = data.get("search_property_type")
+        if property_type:
+            type_segment = "commercial" if property_type in Property.COMMERCIAL_TYPES else "residential"
+            if segment and segment != type_segment:
+                self.add_error("search_property_type", "Тип объекта не соответствует выбранному сегменту.")
+            segment = type_segment
+        elif not segment:
+            if data.get("search_commercial_purpose"):
+                segment = "commercial"
+            elif data.get("search_rooms_min") is not None:
+                segment = "residential"
+        data["search_segment"] = segment
+        if segment == "commercial":
+            data["search_rooms_min"] = None
+        elif segment == "residential":
+            data["search_commercial_purpose"] = ""
+        data["search_commercial_purpose"] = (data.get("search_commercial_purpose") or "").strip()
         return data
 
     def clean_budget(self):

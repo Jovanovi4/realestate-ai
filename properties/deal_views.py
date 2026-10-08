@@ -1,11 +1,14 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.db import transaction
+from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.db.models import F, OuterRef, Subquery
 from django.db.models.functions import Coalesce
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import reverse
 from django.utils import timezone
+from django.views import View
 from django.views.generic import CreateView, TemplateView, UpdateView
 from billing.enforcement import TariffDenied, require_resource_action
 from billing.rules import Operation
@@ -47,8 +50,73 @@ class DealBoardView(LoginRequiredMixin, TemplateView):
             anchor_prefix="deal-board",
         )
         context["columns"] = columns
+        context["active_stages"] = Deal.ACTIVE_STAGES
         context["active_count"] = sum(column["count"] for column in columns if column["key"] in Deal.ACTIVE_STAGES)
         return context
+
+
+def record_deal_stage_change(deal, previous_stage):
+    if previous_stage == deal.stage:
+        return
+    if previous_stage in Deal.CLOSED_STAGES and deal.stage in Deal.ACTIVE_STAGES:
+        activate_client_relationship(
+            deal.client_id, reason=f"Возобновлена сделка по объекту «{deal.property.title}».",
+        )
+    ClientInteraction.objects.create(
+        client=deal.client,
+        lead=deal.lead,
+        interaction_type="status",
+        text=(
+            f"Сделка по объекту «{deal.property.title}»: "
+            f"{dict(Deal.STAGE_CHOICES)[previous_stage]} → {deal.get_stage_display()}."
+        ),
+    )
+
+
+class DealStageUpdateView(LoginRequiredMixin, View):
+    """Move a visible deal between board columns without editing its other fields."""
+
+    def post(self, request, pk):
+        visible = get_object_or_404(
+            workspace_queryset(Deal.objects.select_related("property"), request.user), pk=pk,
+        )
+        target = request.POST.get("stage", "")
+        expected = request.POST.get("expected_stage", "")
+        stages = {key for key, _ in Deal.STAGE_CHOICES}
+        if target not in stages or expected not in stages:
+            return JsonResponse({"error": "Выберите этап сделки заново."}, status=400)
+        outcome_note = request.POST.get("outcome_note", "").strip()
+        if target == "lost" and not outcome_note:
+            return JsonResponse({"error": "Укажите причину отказа."}, status=400)
+
+        try:
+            require_resource_action(request.user, visible.property, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            return JsonResponse({"error": error.message}, status=403)
+
+        try:
+            with transaction.atomic():
+                deal = get_object_or_404(
+                    workspace_queryset(
+                        Deal.objects.select_for_update().select_related("client", "property", "lead"), request.user,
+                    ),
+                    pk=pk,
+                )
+                if deal.stage != expected:
+                    return JsonResponse({"error": "Этап сделки уже изменился. Обновите страницу и повторите перенос."}, status=409)
+                if target == deal.stage:
+                    return JsonResponse({"stage": deal.stage, "changed": False})
+                previous_stage = deal.stage
+                deal.stage = target
+                update_fields = ["stage", "updated_at"]
+                if target == "lost":
+                    deal.outcome_note = outcome_note
+                    update_fields.append("outcome_note")
+                deal.save(update_fields=update_fields)
+                record_deal_stage_change(deal, previous_stage)
+        except (ValidationError, IntegrityError):
+            return JsonResponse({"error": "Не удалось перенести сделку. Проверьте, нет ли другой активной сделки по этому клиенту и объекту."}, status=409)
+        return JsonResponse({"stage": target, "changed": True})
 
 
 class DealFormMixin(LoginRequiredMixin):
@@ -155,18 +223,6 @@ class DealUpdateView(DealFormMixin, UpdateView):
                     text=f"Ответственный за сделку: {previous.responsible or 'Не назначен'} → {self.object.responsible}.",
                 )
             if previous.stage != self.object.stage:
-                if previous.stage in Deal.CLOSED_STAGES and self.object.stage in Deal.ACTIVE_STAGES:
-                    activate_client_relationship(
-                        self.object.client_id, reason=f"Возобновлена сделка по объекту «{self.object.property.title}».",
-                    )
-                ClientInteraction.objects.create(
-                    client=self.object.client,
-                    lead=self.object.lead,
-                    interaction_type="status",
-                    text=(
-                        f"Сделка по объекту «{self.object.property.title}»: "
-                        f"{dict(Deal.STAGE_CHOICES)[previous.stage]} → {self.object.get_stage_display()}."
-                    ),
-                )
+                record_deal_stage_change(self.object, previous.stage)
         messages.success(self.request, "Изменения в сделке сохранены.")
         return response

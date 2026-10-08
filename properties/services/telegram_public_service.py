@@ -23,6 +23,7 @@ from ..models import (
 )
 from .client_import_service import canonical_phone
 from .lead_notification_service import LeadNotificationService
+from .property_marketing import price_summary, property_fact_rows
 
 
 logger = logging.getLogger(__name__)
@@ -209,15 +210,12 @@ def _keyboard(property):
 
 def listing_text(property):
     parts = [property.marketing_headline or property.title]
-    if property.price is not None:
-        parts.append(f"{property.price:,.0f} {property.currency}")
-    facts = []
-    if property.area:
-        facts.append(f"{property.area} м²")
-    if property.rooms:
-        facts.append(f"{property.rooms} комн.")
+    price = price_summary(property)
+    if price:
+        parts.extend(line for line in (price.main, price.scope, price.per_sqm) if line)
     if property.address:
-        facts.append(property.address)
+        parts.append(property.address)
+    facts = [f"{label}: {value}" for label, value in property_fact_rows(property)]
     if facts:
         parts.append(" · ".join(facts))
     description = (property.short_description or property.description).strip()

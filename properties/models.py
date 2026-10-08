@@ -1,9 +1,11 @@
 import builtins
 import uuid
 from datetime import timedelta
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models, transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -44,7 +46,29 @@ class Property(models.Model):
         ("land", "Участок"),
         ("villa", "Вилла"),
         ("office", "Офис"),
-        ("commercial", "Коммерческая"),
+        ("retail", "Торговое помещение"),
+        ("warehouse", "Склад"),
+        ("commercial", "Помещение свободного назначения"),
+    ]
+    COMMERCIAL_TYPES = frozenset({"office", "retail", "warehouse", "commercial"})
+    RESIDENTIAL_TYPES = frozenset({"apartment", "house", "cottage", "land", "villa"})
+
+    ENTRANCE_CHOICES = [
+        ("street", "С улицы"),
+        ("courtyard", "Со двора"),
+        ("shared", "Общий вход"),
+        ("separate", "Отдельный вход"),
+    ]
+    PARKING_CHOICES = [
+        ("none", "Нет"),
+        ("street", "Уличная"),
+        ("on_site", "На территории"),
+        ("underground", "Подземная"),
+    ]
+    ACCESS_MODE_CHOICES = [
+        ("round_the_clock", "Круглосуточно"),
+        ("schedule", "По графику"),
+        ("by_agreement", "По согласованию"),
     ]
 
     STATUS_CHOICES = [
@@ -195,10 +219,38 @@ class Property(models.Model):
         verbose_name="Адрес"
     )
 
-    area = models.PositiveIntegerField(
+    area = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
         null=True,
         blank=True,
-        verbose_name="Площадь"
+        verbose_name="Площадь, м²",
+        validators=[MinValueValidator(Decimal("0"))],
+    )
+
+    commercial_purpose = models.CharField(
+        max_length=255, blank=True, verbose_name="Назначение помещения",
+        help_text="Например: магазин, салон, офис услуг или производство.",
+    )
+    commercial_purpose_search = models.TextField(blank=True, editable=False)
+    ceiling_height_m = models.DecimalField(
+        max_digits=5, decimal_places=2, null=True, blank=True,
+        verbose_name="Высота потолков, м",
+        validators=[MinValueValidator(Decimal("0"))],
+    )
+    power_kw = models.DecimalField(
+        max_digits=8, decimal_places=2, null=True, blank=True,
+        verbose_name="Электрическая мощность, кВт",
+        validators=[MinValueValidator(Decimal("0"))],
+    )
+    entrance_type = models.CharField(
+        max_length=20, choices=ENTRANCE_CHOICES, blank=True, verbose_name="Вход",
+    )
+    parking_type = models.CharField(
+        max_length=20, choices=PARKING_CHOICES, blank=True, verbose_name="Парковка",
+    )
+    access_mode = models.CharField(
+        max_length=20, choices=ACCESS_MODE_CHOICES, blank=True, verbose_name="Режим доступа",
     )
 
     rooms = models.PositiveSmallIntegerField(
@@ -331,6 +383,20 @@ class Property(models.Model):
         ordering = ["-created_at"]
         verbose_name = "Объект"
         verbose_name_plural = "Объекты"
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(area__gte=0) | Q(area__isnull=True),
+                name="property_area_nonnegative",
+            ),
+            models.CheckConstraint(
+                condition=Q(ceiling_height_m__gte=0) | Q(ceiling_height_m__isnull=True),
+                name="property_ceiling_height_nonnegative",
+            ),
+            models.CheckConstraint(
+                condition=Q(power_kw__gte=0) | Q(power_kw__isnull=True),
+                name="property_power_nonnegative",
+            ),
+        ]
 
     def __str__(self):
         return self.title
@@ -343,6 +409,8 @@ class Property(models.Model):
         fields = kwargs.get("update_fields")
         if fields is not None and not fields:
             return
+        if fields is None or "commercial_purpose" in fields:
+            self.commercial_purpose_search = (self.commercial_purpose or "").casefold()
         old = type(self).objects.filter(pk=self.pk).values("status", "archived_at", "status_before_archive").first() if self.pk else None
         writes_status = fields is None or "status" in fields
         effective_status = self.status if writes_status or not old else old["status"]
@@ -363,6 +431,8 @@ class Property(models.Model):
             self.telegram_published = False
             lifecycle_fields.add("telegram_published")
         if fields is not None:
+            if "commercial_purpose" in fields:
+                lifecycle_fields.add("commercial_purpose_search")
             kwargs["update_fields"] = set(fields) | lifecycle_fields
         super().save(*args, **kwargs)
 
@@ -373,6 +443,26 @@ class Property(models.Model):
     @property
     def price_period_label(self):
         return "в месяц" if self.deal_type == "rent" else ""
+
+    @property
+    def is_commercial(self):
+        return self.property_type in self.COMMERCIAL_TYPES
+
+    @property
+    def calculated_price_per_sqm(self):
+        """Derived from the full sale price or the whole-space monthly rent."""
+        if not self.is_commercial or self.price is None or not self.area:
+            return None
+        price = Decimal(str(self.price))
+        if price <= 0:
+            return None
+        return (price / Decimal(str(self.area))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    @property
+    def area_display(self):
+        if self.area is None:
+            return ""
+        return format(Decimal(str(self.area)).normalize(), "f")
 
     def ensure_primary_image(self):
         if not self.images.filter(is_primary=True).exists():
@@ -616,6 +706,10 @@ class Client(models.Model):
         ("manual", "Добавлен вручную"),
         ("other", "Другое"),
     ]
+    SEARCH_SEGMENT_CHOICES = [
+        ("residential", "Жилая"),
+        ("commercial", "Коммерческая"),
+    ]
 
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="clients")
     agency = models.ForeignKey(Agency, on_delete=models.PROTECT, null=True, blank=True, related_name="clients")
@@ -625,8 +719,18 @@ class Client(models.Model):
     budget = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True, verbose_name="Бюджет")
     preferred_area = models.CharField(max_length=255, blank=True, verbose_name="Интересующий район")
     search_deal_type = models.CharField(max_length=10, choices=Property.DEAL_TYPE_CHOICES, blank=True, verbose_name="Цель поиска")
+    search_segment = models.CharField(max_length=20, choices=SEARCH_SEGMENT_CHOICES, blank=True, verbose_name="Сегмент")
     search_property_type = models.CharField(max_length=20, choices=Property.PROPERTY_TYPES, blank=True, verbose_name="Тип недвижимости")
     search_rooms_min = models.PositiveSmallIntegerField(null=True, blank=True, verbose_name="Комнат от")
+    search_area_min = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(Decimal("0"))], verbose_name="Площадь от, м²",
+    )
+    search_area_max = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(Decimal("0"))], verbose_name="Площадь до, м²",
+    )
+    search_commercial_purpose = models.CharField(max_length=255, blank=True, verbose_name="Назначение помещения")
     search_currency = models.CharField(max_length=3, choices=Property.CURRENCY_CHOICES, blank=True, verbose_name="Валюта бюджета")
     search_notes = models.TextField(blank=True, verbose_name="Пожелания к объекту")
     source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default="landing", verbose_name="Источник")

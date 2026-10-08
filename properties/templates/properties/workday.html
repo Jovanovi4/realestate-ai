@@ -1,8 +1,8 @@
 {% extends "base.html" %}
-{% block title %}Мой день{% endblock %}
+{% block title %}Задачи{% endblock %}
 {% block content %}
 <header class="ui-page-header">
-  <div><p class="ui-page-header__eyebrow">Рабочее пространство</p><h1 class="ui-page-header__title">Мой день</h1><p class="ui-page-header__description">{{ today|date:"d.m.Y" }} · Ответственный: {{ request.user.realtor_profile.display_name|default:request.user.get_full_name|default:request.user.username }}</p></div>
+  <div><p class="ui-page-header__eyebrow">Рабочее пространство</p><h1 class="ui-page-header__title">Задачи</h1><p class="ui-page-header__description">{{ today|date:"d.m.Y" }} · Ответственный: {{ request.user.realtor_profile.display_name|default:request.user.get_full_name|default:request.user.username }}</p></div>
   <div class="ui-page-header__actions"><a href="{% url 'showing_create' %}" class="btn btn-neutral">Назначить показ</a><a href="{% url 'task_create' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Новая задача</a></div>
 </header>
 

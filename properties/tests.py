@@ -34,20 +34,23 @@ class NavigationStructureTests(TestCase):
         Property.objects.create(owner=self.user, title="Объект для навигации")
         self.client.force_login(self.user)
 
-    def test_sidebar_groups_keep_today_and_direct_page_links(self):
+    def test_sidebar_groups_keep_tasks_and_direct_page_links(self):
         response = self.client.get(reverse("property_list"))
         self.assertEqual(response.status_code, 200)
         html = response.content.decode()
         primary_nav = html.split('<nav class="sidebar-main-nav"', 1)[1].split("</nav>", 1)[0]
         self.assertEqual(primary_nav.count('<a class="sidebar-link'), 7)
-        self.assertIn('>Сегодня</span>', primary_nav)
+        self.assertIn('>Задачи</span>', primary_nav)
         self.assertIn('>Недвижимость</span>', primary_nav)
         self.assertIn('>CRM</span>', primary_nav)
         self.assertIn('>Интеграции</span>', primary_nav)
         self.assertIn(f'href="{reverse("landing_list")}"', primary_nav)
         self.assertIn(f'href="{reverse("integration_telegram")}"', primary_nav)
         self.assertNotIn(f'href="{reverse("agency_dashboard")}"', primary_nav)
-        self.assertIn("openGroup: 'realty'", html)
+        self.assertIn("reaicrmSidebar('realty')", html)
+        self.assertIn('class="sidebar-rail-toggle"', html)
+        self.assertIn('aria-label="Задачи', primary_nav)
+        self.assertIn("toggleGroup('realty')", primary_nav)
         self.assertIn(f'class="sidebar-link active" href="{reverse("property_list")}"', primary_nav)
         self.assertIn(f'class="sidebar-link " href="{reverse("landing_list")}"', primary_nav)
         self.assertContains(response, f'href="{reverse("agency_dashboard")}"')
@@ -60,7 +63,7 @@ class NavigationStructureTests(TestCase):
         primary_nav = html.split('<nav class="sidebar-main-nav"', 1)[1].split("</nav>", 1)[0]
         self.assertIn(f'class="sidebar-link active" href="{reverse("landing_list")}"', primary_nav)
         self.assertIn(f'class="sidebar-link " href="{reverse("property_list")}"', primary_nav)
-        self.assertIn("openGroup: 'realty'", html)
+        self.assertIn("reaicrmSidebar('realty')", html)
         self.assertContains(response, 'aria-label="Фильтр лендингов по статусу"')
         self.assertContains(response, 'href="?status=published"')
         self.assertContains(response, 'href="?status=draft"')
@@ -71,15 +74,18 @@ class NavigationStructureTests(TestCase):
         response = self.client.get(reverse("property_list"))
         navigation = response.content.decode().split('<nav class="sidebar-main-nav"', 1)[1].split("</nav>", 1)[0]
         crm_button = navigation.split('aria-controls="sidebar-crm-links"', 1)[1].split("</button>", 1)[0]
-        self.assertIn("openGroup: 'realty'", response.content.decode())
+        lead_link = navigation.split(f'href="{reverse("lead_list")}"', 1)[1].split("</a>", 1)[0]
+        self.assertIn("reaicrmSidebar('realty')", response.content.decode())
         self.assertIn('class="sidebar-counter"', crm_button)
         self.assertIn('>1</span>', crm_button)
-        self.assertContains(self.client.get(reverse("lead_list")), "openGroup: 'crm'")
+        self.assertIn('class="sidebar-counter"', lead_link)
+        self.assertIn('>1</span>', lead_link)
+        self.assertContains(self.client.get(reverse("lead_list")), "reaicrmSidebar('crm')")
 
     def test_integration_link_opens_its_group(self):
         response = self.client.get(reverse("integration_telegram"))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "openGroup: 'integrations'")
+        self.assertContains(response, "reaicrmSidebar('integrations')")
         self.assertContains(response, f'href="{reverse("integration_telegram")}" aria-current="page">Telegram</a>')
 
     def test_property_header_uses_accessible_archive_and_xml_icons(self):
@@ -124,6 +130,9 @@ class NavigationStructureTests(TestCase):
         published = Property.objects.create(owner=self.user, title="Опубликованный объект", landing_published=True)
         response = self.client.get(reverse("landing_list"))
 
+        self.assertContains(response, 'data-catalog-view="landings" data-view="cards"')
+        for view in ("cards", "compact", "list"):
+            self.assertContains(response, f'data-catalog-option="{view}"')
         self.assertContains(response, 'class="property-card landing-card h-100"', count=2)
         self.assertContains(response, 'class="property-card__footer"', count=2)
         self.assertContains(response, f'href="{reverse("edit_property", args=[published.pk])}#landing-pane"')
@@ -132,19 +141,36 @@ class NavigationStructureTests(TestCase):
         self.assertContains(response, "Опубликован")
         self.assertContains(response, "Черновик")
 
+    def test_property_view_switch_and_filters_stay_outside_replaced_results(self):
+        full = self.client.get(reverse("property_list"))
+        partial = self.client.get(reverse("property_list"), HTTP_HX_REQUEST="true")
+        filtered = self.client.get(reverse("property_list"), {"q": "Объект"})
+
+        self.assertContains(full, 'data-catalog-view="properties" data-view="cards"')
+        self.assertContains(full, 'id="property-results"')
+        self.assertContains(full, 'data-property-count>1</span>')
+        self.assertContains(partial, 'data-result-count="1"')
+        self.assertContains(full, 'data-bs-target="#property-filter-panel"')
+        self.assertContains(full, 'class="collapse" id="property-filter-panel"')
+        self.assertContains(filtered, 'aria-label="Поиск и фильтры, активных условий: 1"')
+        for view in ("cards", "compact", "list"):
+            self.assertContains(full, f'data-catalog-option="{view}"')
+            self.assertNotContains(partial, f'data-catalog-option="{view}"')
+        self.assertContains(partial, 'class="row g-3 catalog-card-grid"')
+
     def test_agency_screen_is_available_from_profile_menu(self):
         response = self.client.get(reverse("agency_dashboard"))
         self.assertEqual(response.status_code, 200)
         html = response.content.decode()
         self.assertIn('href="/agency/"', html.split('class="sidebar-bottom"', 1)[1])
-        self.assertIn("openGroup: 'profile'", html)
+        self.assertIn("reaicrmSidebar('profile')", html)
 
     def test_sidebar_uses_one_state_for_all_expandable_groups(self):
         response = self.client.get(reverse("property_list"))
         html = response.content.decode()
         for group in ("realty", "crm", "integrations", "profile"):
-            self.assertIn(f"@click=\"openGroup = openGroup === '{group}' ? null : '{group}'\"", html)
-            self.assertIn(f'x-show="openGroup === \'{group}\'"', html)
+            self.assertIn(f"@click=\"toggleGroup('{group}')\"", html)
+            self.assertIn(f'x-show="openGroup === \'{group}\' && !isRail()"', html)
         self.assertNotIn("realtyOpen", html)
         self.assertNotIn("crmOpen", html)
         self.assertNotIn("integrationsOpen", html)

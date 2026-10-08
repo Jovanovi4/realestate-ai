@@ -1,0 +1,82 @@
+<details class="form-section" open>
+  <summary><span class="form-section-number">1</span><span>Основное</span></summary>
+  <div class="form-section-body">
+    <fieldset class="property-kind-picker">
+      <legend class="form-label">Категория недвижимости</legend>
+      <div class="property-kind-switch">
+        <button type="button" :class="{ 'is-active': propertyGroup === 'residential' }" :aria-pressed="propertyGroup === 'residential'" @click="setPropertyGroup('residential')">Жилая</button>
+        <button type="button" :class="{ 'is-active': propertyGroup === 'commercial' }" :aria-pressed="propertyGroup === 'commercial'" @click="setPropertyGroup('commercial')">Коммерческая</button>
+      </div>
+    </fieldset>
+    <div class="row">
+      <div class="col-md-6 mb-3">
+        <label class="form-label" for="id_property_type_residential" x-cloak x-show="propertyGroup === 'residential'">Тип недвижимости</label>
+        <label class="form-label" for="id_property_type_commercial" x-cloak x-show="propertyGroup === 'commercial'">Тип недвижимости</label>
+        <select id="id_property_type_residential" name="property_type" class="form-select" x-model="propertyType" :disabled="propertyGroup !== 'residential'" x-cloak x-show="propertyGroup === 'residential'" required {% if form.property_type.errors %}aria-invalid="true"{% endif %} {% if form.property_group == 'commercial' %}disabled{% endif %}>
+          {% for code, label in form.residential_types %}<option value="{{ code }}" {% if form.property_type.value == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <select id="id_property_type_commercial" name="property_type" class="form-select" x-model="propertyType" :disabled="propertyGroup !== 'commercial'" x-cloak x-show="propertyGroup === 'commercial'" required {% if form.property_type.errors %}aria-invalid="true"{% endif %} {% if form.property_group == 'residential' %}disabled{% endif %}>
+          {% for code, label in form.commercial_types %}<option value="{{ code }}" {% if form.property_type.value == code %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </select>
+        <noscript><label class="form-label" for="{{ form.property_type.id_for_label }}">{{ form.property_type.label }}</label>{{ form.property_type }}</noscript>
+        {% if form.property_type.errors %}<div class="text-danger small">{{ form.property_type.errors|striptags }}</div>{% endif %}
+      </div>
+      <div class="col-md-6 mb-3"><label class="form-label" for="{{ form.deal_type.id_for_label }}">{{ form.deal_type.label }}</label>{{ form.deal_type }}{% if form.deal_type.errors %}<div class="text-danger small">{{ form.deal_type.errors|striptags }}</div>{% endif %}</div>
+      <div class="col-12 mb-3"><label class="form-label" for="{{ form.title.id_for_label }}">{{ form.title.label }}</label>{{ form.title }}{% if form.title.errors %}<div class="text-danger small">{{ form.title.errors|striptags }}</div>{% endif %}</div>
+      <div class="col-md-6 mb-3"><label class="form-label" for="{{ form.status.id_for_label }}">{{ form.status.label }}</label>{{ form.status }}{% if form.status.errors %}<div class="text-danger small">{{ form.status.errors|striptags }}</div>{% endif %}</div>
+      <div class="col-md-6 mb-3"><label class="form-label" for="{{ form.price.id_for_label }}">{{ form.price.label }}</label>{{ form.price }}<div class="form-text" x-text="propertyGroup === 'commercial' ? (dealType === 'rent' ? 'Аренда всего помещения за месяц; ставка за м² рассчитывается автоматически.' : 'Полная цена помещения; цена за м² рассчитывается автоматически.') : (dealType === 'rent' ? 'Стоимость аренды за месяц.' : 'Полная стоимость объекта.')"></div>{% if form.price.errors %}<div class="text-danger small">{{ form.price.errors|striptags }}</div>{% endif %}</div>
+      <div class="col-md-6 mb-3"><label class="form-label" for="{{ form.currency.id_for_label }}">{{ form.currency.label }}</label>{{ form.currency }}{% if form.currency.errors %}<div class="text-danger small">{{ form.currency.errors|striptags }}</div>{% endif %}</div>
+      <div class="col-12 mb-3"><label class="form-label" for="{{ form.address.id_for_label }}">{{ form.address.label }}</label>{{ form.address }}{% if form.address.errors %}<div class="text-danger small">{{ form.address.errors|striptags }}</div>{% endif %}</div>
+    </div>
+  </div>
+</details>
+
+<details class="form-section">
+  <summary><span class="form-section-number">2</span><span>Характеристики</span></summary>
+  <div class="form-section-body"><div class="row">
+    <div class="col-md-6 mb-3" x-cloak x-show="propertyType !== 'land'"><label class="form-label" for="{{ form.area.id_for_label }}">{{ form.area.label }}</label>{{ form.area }}{% if form.area.errors %}<div class="text-danger small">{{ form.area.errors|striptags }}</div>{% endif %}</div>
+    <div class="col-md-6 mb-3" x-cloak x-show="propertyGroup === 'residential' && propertyType !== 'land'"><label class="form-label" for="{{ form.rooms.id_for_label }}">{{ form.rooms.label }}</label>{{ form.rooms }}{% if form.rooms.errors %}<div class="text-danger small">{{ form.rooms.errors|striptags }}</div>{% endif %}</div>
+    <div class="col-md-6 mb-3" x-cloak x-show="propertyGroup === 'residential' && propertyType !== 'land'"><label class="form-label" for="{{ form.bathrooms.id_for_label }}">{{ form.bathrooms.label }}</label>{{ form.bathrooms }}{% if form.bathrooms.errors %}<div class="text-danger small">{{ form.bathrooms.errors|striptags }}</div>{% endif %}</div>
+    <div class="col-md-6 mb-3" x-cloak x-show="propertyType === 'apartment' || propertyGroup === 'commercial'"><label class="form-label" for="{{ form.floor.id_for_label }}">{{ form.floor.label }}</label>{{ form.floor }}{% if form.floor.errors %}<div class="text-danger small">{{ form.floor.errors|striptags }}</div>{% endif %}</div>
+    <div class="col-md-6 mb-3" x-cloak x-show="propertyType === 'apartment' || propertyGroup === 'commercial'"><label class="form-label" for="{{ form.floors_total.id_for_label }}">{{ form.floors_total.label }}</label>{{ form.floors_total }}{% if form.floors_total.errors %}<div class="text-danger small">{{ form.floors_total.errors|striptags }}</div>{% endif %}</div>
+    <div class="col-md-6 mb-3" x-cloak x-show="propertyGroup === 'residential' && ['house', 'cottage', 'villa', 'land'].includes(propertyType)"><label class="form-label" for="{{ form.land_area.id_for_label }}">{{ form.land_area.label }}</label>{{ form.land_area }}{% if form.land_area.errors %}<div class="text-danger small">{{ form.land_area.errors|striptags }}</div>{% endif %}</div>
+    <div class="col-md-6 mb-3" x-cloak x-show="propertyType !== 'land'"><label class="form-label" for="{{ form.year_built.id_for_label }}">{{ form.year_built.label }}</label>{{ form.year_built }}{% if form.year_built.errors %}<div class="text-danger small">{{ form.year_built.errors|striptags }}</div>{% endif %}</div>
+    <div class="col-md-6 mb-3"><label class="form-label" for="{{ form.condition.id_for_label }}">{{ form.condition.label }}</label>{{ form.condition }}{% if form.condition.errors %}<div class="text-danger small">{{ form.condition.errors|striptags }}</div>{% endif %}</div>
+  </div></div>
+</details>
+
+<details class="form-section" x-cloak x-show="propertyGroup === 'commercial'">
+  <summary><span class="form-section-number">3</span><span>Коммерческие характеристики</span></summary>
+  <div class="form-section-body"><div class="row">
+    {% for field in form %}
+      {% if field.name == 'commercial_purpose' or field.name == 'ceiling_height_m' or field.name == 'power_kw' or field.name == 'entrance_type' or field.name == 'parking_type' or field.name == 'access_mode' %}
+        <div class="col-md-6 mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.help_text %}<div class="form-text">{{ field.help_text }}</div>{% endif %}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>
+      {% endif %}
+    {% endfor %}
+  </div></div>
+</details>
+
+<details class="form-section">
+  <summary><span class="form-section-number">3</span><span>Особенности</span></summary>
+  <div class="form-section-body"><div class="mb-3"><label class="form-label" for="{{ form.amenities.id_for_label }}">{{ form.amenities.label }}</label>{{ form.amenities }}<div class="form-text" x-text="propertyGroup === 'commercial' ? 'Например: погрузочная зона, вентиляция, охрана или витрины.' : 'Например: парковка, бассейн, терраса, охрана или вид на море.'"></div>{% if form.amenities.errors %}<div class="text-danger small">{{ form.amenities.errors|striptags }}</div>{% endif %}</div></div>
+</details>
+
+<details class="form-section" x-cloak x-show="dealType === 'rent'">
+  <summary><span class="form-section-number">4</span><span>Условия аренды</span></summary>
+  <div class="form-section-body">
+    <div class="row">
+      {% for field in form %}
+        {% if field.name == 'rent_deposit' or field.name == 'rent_commission' or field.name == 'utilities_terms' or field.name == 'min_lease_months' or field.name == 'available_from' %}
+          <div class="col-md-6 mb-3"><label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>{{ field }}{% if field.errors %}<div class="text-danger small">{{ field.errors|striptags }}</div>{% endif %}</div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    <div class="d-flex flex-wrap gap-4" x-cloak x-show="propertyGroup === 'residential'">
+      {% for field in form %}
+        {% if field.name == 'furnished' or field.name == 'pets_allowed' or field.name == 'children_allowed' %}
+          <div class="form-check">{{ field }}<label class="form-check-label" for="{{ field.id_for_label }}">{{ field.label }}</label></div>
+        {% endif %}
+      {% endfor %}
+    </div>
+  </div>
+</details>

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Сделки{% endblock %}
 {% block content %}
 <header class="ui-page-header">
@@ -6,24 +7,38 @@
   <div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Клиенты</a><a href="{% url 'deal_create' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Новая сделка</a></div>
 </header>
 
-{% if active_count %}<p class="detail-muted mb-3">Активных сделок: {{ active_count }}</p>{% endif %}
-<div class="client-board deal-board" aria-label="Воронка сделок">
+<p class="detail-muted mb-2" data-deal-active-count data-count="{{ active_count }}">Активных сделок: {{ active_count }}</p>
+<p class="detail-muted mb-3">Перетащите сделку в нужный этап. Этап также можно изменить в самой сделке.</p>
+<div class="alert alert-danger d-none mb-3" role="alert" data-deal-board-error></div>
+<p class="visually-hidden" role="status" aria-live="polite" data-deal-board-status></p>
+<form class="d-none" data-deal-board-csrf>{% csrf_token %}</form>
+<div class="client-board deal-board" aria-label="Воронка сделок" data-deal-board>
   {% for column in columns %}
-    <section class="client-board__column is-{{ column.key }}" aria-labelledby="deal-board-{{ column.key }}">
+    <section class="client-board__column deal-board__column is-{{ column.key }}" aria-labelledby="deal-board-{{ column.key }}" data-deal-stage="{{ column.key }}" data-active-stage="{% if column.key in active_stages %}true{% else %}false{% endif %}">
       <header class="client-board__heading"><h2 id="deal-board-{{ column.key }}">{{ column.label }}</h2><span class="client-board__count" aria-label="Сделок на этапе: {{ column.count }}">{{ column.count }}</span></header>
       <div class="client-board__items">
         {% for deal in column.page %}
-          <a class="client-board__card" href="{% url 'deal_detail' deal.pk %}">
-            <strong>{{ deal.client.name }}{% if deal.is_demo %} · демо{% endif %}</strong>
-            <span class="client-board__area">{{ deal.property.title }}</span>
-            <span class="client-board__source">Ответственный: {% if deal.responsible %}{{ deal.responsible.realtor_profile.display_name|default:deal.responsible.get_full_name|default:deal.responsible.username }}{% else %}Не назначен{% endif %}</span>
-            {% if deal.next_showing_at %}<span class="client-board__phone">Показ: {{ deal.next_showing_at|date:"d.m.Y · H:i" }}</span>{% endif %}
-            {% if deal.next_task_text %}<span class="client-board__source">{{ deal.next_task_text }}{% if deal.next_task_due_at %} · {{ deal.next_task_due_at|date:"d.m.Y" }}{% endif %}</span>{% endif %}
-          </a>
+          <article class="client-board__card deal-board__card" draggable="true" data-deal-card data-deal-stage="{{ column.key }}" data-stage-url="{% url 'deal_stage_update' deal.pk %}">
+            <a class="deal-board__card-link" href="{% url 'deal_detail' deal.pk %}" draggable="false">
+              <strong>{{ deal.client.name }}{% if deal.is_demo %} · демо{% endif %}</strong>
+              <span class="client-board__area">{{ deal.property.title }}</span>
+              <span class="client-board__source">Ответственный: {% if deal.responsible %}{{ deal.responsible.realtor_profile.display_name|default:deal.responsible.get_full_name|default:deal.responsible.username }}{% else %}Не назначен{% endif %}</span>
+              {% if deal.next_showing_at %}<span class="client-board__phone">Показ: {{ deal.next_showing_at|date:"d.m.Y · H:i" }}</span>{% endif %}
+              {% if deal.next_task_text %}<span class="client-board__source">{{ deal.next_task_text }}{% if deal.next_task_due_at %} · {{ deal.next_task_due_at|date:"d.m.Y" }}{% endif %}</span>{% endif %}
+            </a>
+          </article>
         {% empty %}<p class="client-board__empty">Пока нет сделок</p>{% endfor %}
       </div>
       {% if column.page.has_other_pages %}<nav class="client-board__pager" aria-label="Страницы: {{ column.label }}"><a class="btn btn-neutral btn-sm{% if not column.previous_url %} disabled{% endif %}"{% if column.previous_url %} href="{{ column.previous_url }}"{% else %} aria-disabled="true"{% endif %} aria-label="Предыдущие сделки: {{ column.label }}">Назад</a><span>{{ column.page.number }} / {{ column.page.paginator.num_pages }}</span><a class="btn btn-neutral btn-sm{% if not column.next_url %} disabled{% endif %}"{% if column.next_url %} href="{{ column.next_url }}"{% else %} aria-disabled="true"{% endif %} aria-label="Следующие сделки: {{ column.label }}">Далее</a></nav>{% endif %}
     </section>
   {% endfor %}
 </div>
+<div class="modal fade" id="deal-loss-modal" tabindex="-1" aria-labelledby="deal-loss-title" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
+    <div class="modal-header"><h2 class="modal-title h5" id="deal-loss-title">Причина отказа</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button></div>
+    <div class="modal-body"><label class="form-label" for="deal-loss-note">Что стало причиной отказа?</label><textarea class="form-control" id="deal-loss-note" rows="3" maxlength="3000" data-deal-loss-note></textarea><div class="invalid-feedback">Укажите причину отказа.</div><div class="alert alert-danger d-none mt-3 mb-0" role="alert" data-deal-loss-error></div></div>
+    <div class="modal-footer"><button type="button" class="btn btn-neutral" data-bs-dismiss="modal">Отмена</button><button type="button" class="btn btn-primary" data-deal-loss-confirm>Перенести в отказ</button></div>
+  </div></div>
+</div>
+<script src="{% static 'js/deal-board.js' %}" defer></script>
 {% endblock %}

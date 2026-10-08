@@ -13,6 +13,8 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from .property_marketing import price_summary, property_fact_rows
+
 
 class PresentationError(Exception):
     pass
@@ -84,10 +86,12 @@ class PresentationService:
         contact_style = ParagraphStyle("PresentationContact", parent=styles["Normal"], fontName=font, fontSize=9, leading=13, alignment=TA_CENTER, textColor=muted)
 
         story = [Paragraph(f"{escape(property.get_deal_type_display())} - {escape(property.get_property_type_display())}", subtitle_style), Paragraph(escape(property.marketing_headline or property.title), title_style)]
-        if property.price:
-            suffix = " / месяц" if property.deal_type == "rent" else ""
-            currency = {"RUB": "руб.", "USD": "USD", "EUR": "EUR"}.get(property.currency, property.currency)
-            story.append(Paragraph(f"{currency} {property.price}{suffix}", accent_style))
+        price = price_summary(property)
+        if price:
+            story.append(Paragraph(escape(price.main), accent_style))
+            for line in (price.scope, price.per_sqm):
+                if line:
+                    story.append(Paragraph(escape(line), subtitle_style))
         if property.address:
             story.append(Paragraph(escape(property.address), subtitle_style))
         story.append(Spacer(1, .45 * cm))
@@ -98,14 +102,10 @@ class PresentationService:
             if image:
                 story.extend([image, Spacer(1, .35 * cm)])
 
-        facts = []
-        for label, value in (("Площадь", f"{property.area} м²" if property.area else None), ("Комнаты", property.rooms), ("Этаж", f"{property.floor} / {property.floors_total}" if property.floor and property.floors_total else property.floor), ("Участок", f"{property.land_area} м²" if property.land_area else None), ("Состояние", property.get_condition_display() if property.condition else None)):
-            if value:
-                facts.append([Paragraph(label, subtitle_style), Paragraph(str(value), body_style)])
-        if property.deal_type == "rent":
-            for label, value in (("Мебель", "Есть" if property.furnished else None), ("Залог", str(property.rent_deposit) if property.rent_deposit else None), ("Срок", f"от {property.min_lease_months} мес." if property.min_lease_months else None)):
-                if value:
-                    facts.append([Paragraph(label, subtitle_style), Paragraph(value, body_style)])
+        facts = [
+            [Paragraph(escape(label), subtitle_style), Paragraph(escape(str(value)), body_style)]
+            for label, value in property_fact_rows(property)
+        ]
         if facts and include_facts:
             table = Table(facts, colWidths=[4.1 * cm, 4.4 * cm], hAlign="LEFT")
             table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), surface), ("BOX", (0, 0), (-1, -1), .35, accent if is_premium else colors.HexColor("#E5E9EF")), ("INNERGRID", (0, 0), (-1, -1), .35, colors.HexColor("#DED6CA" if is_premium else "#E5E9EF")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10), ("TOPPADDING", (0, 0), (-1, -1), 7), ("BOTTOMPADDING", (0, 0), (-1, -1), 7)]))

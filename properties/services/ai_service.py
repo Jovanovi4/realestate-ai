@@ -5,6 +5,8 @@ import requests
 from django.conf import settings
 from billing.usage import record_provider
 
+from .property_marketing import price_summary, property_fact_rows
+
 
 class AIServiceError(Exception):
     def __init__(self, message, *, outcome_unknown=False):
@@ -82,36 +84,64 @@ class AIService:
             ("Тип сделки", property.get_deal_type_display()),
             ("Тип", property.get_property_type_display()),
             ("Статус", property.get_status_display()),
-            ("Ставка аренды в месяц" if property.deal_type == "rent" else "Цена", f"{property.price} {property.get_currency_display()}" if property.price else ""),
+        ]
+        price = price_summary(property)
+        if price:
+            facts.append(("Цена", price.main))
+            facts.extend((label, value) for label, value in (
+                ("Единица цены", price.scope), ("Цена за м²", price.per_sqm),
+            ) if value)
+        facts.extend([
             ("Адрес", property.address),
-            ("Площадь", f"{property.area} м²" if property.area else ""),
-            ("Комнаты", property.rooms),
-            ("Санузлы", property.bathrooms),
-            ("Этаж", f"{property.floor} из {property.floors_total}" if property.floor and property.floors_total else property.floor),
-            ("Площадь участка", f"{property.land_area} м²" if property.land_area else ""),
+            *property_fact_rows(property),
             ("Год постройки", property.year_built),
-            ("Состояние", property.get_condition_display() if property.condition else ""),
             ("Особенности и удобства", property.amenities),
-            ("Залог", property.rent_deposit if property.deal_type == "rent" else ""),
             ("Комиссия, %", property.rent_commission if property.deal_type == "rent" else ""),
             ("Коммунальные платежи", property.get_utilities_terms_display() if property.deal_type == "rent" and property.utilities_terms else ""),
-            ("Минимальный срок аренды, мес.", property.min_lease_months if property.deal_type == "rent" else ""),
-            ("Свободен с", property.available_from if property.deal_type == "rent" else ""),
-            ("Мебель", "есть" if property.deal_type == "rent" and property.furnished else ""),
-            ("Можно с животными", "да" if property.deal_type == "rent" and property.pets_allowed else ""),
-            ("Можно с детьми", "да" if property.deal_type == "rent" and property.children_allowed else ""),
-        ]
+        ])
+        if property.deal_type == "rent" and not property.is_commercial:
+            facts.extend([
+                ("Можно с животными", "да" if property.pets_allowed else ""),
+                ("Можно с детьми", "да" if property.children_allowed else ""),
+            ])
         return "\n".join(f"- {label}: {value}" for label, value in facts if value not in (None, ""))
+
+    @staticmethod
+    def _deal_instruction(property):
+        if property.is_commercial:
+            if property.deal_type == "rent":
+                return (
+                    "Это аренда коммерческого помещения. Цена указана за всё помещение в месяц; "
+                    "ставка за м² только расчётная. Описывай назначение, площадь, доступ и условия аренды "
+                    "только при наличии фактов. Не используй формулировки о проживании, жильцах, "
+                    "детях, домашних животных или ипотеке. Не называй объект продажей."
+                )
+            return (
+                "Это продажа коммерческого помещения. Цена указана за весь объект; ставка за м² "
+                "только расчётная. Описывай деловое назначение и характеристики помещения "
+                "только при наличии фактов. Не используй формулировки о проживании, жильцах или ипотеке."
+            )
+        if property.deal_type == "rent":
+            return (
+                "Это объявление о долгосрочной аренде. Акцентируй только известные условия проживания, "
+                "срок, доступность, мебель, коммунальные платежи и правила. Не называй объект продажей."
+            )
+        return "Это объявление о продаже."
+
+    @classmethod
+    def _content_instruction(cls, property, content_type):
+        if property.is_commercial and content_type == "cta":
+            return "Создай один короткий призыв уточнить условия коммерческого помещения или договориться об осмотре."
+        return cls.CONTENT_INSTRUCTIONS[content_type]
 
     @classmethod
     def build_prompt(cls, property, content_type, tone):
         if content_type not in cls.CONTENT_INSTRUCTIONS or tone not in cls.TONE_INSTRUCTIONS:
             raise AIServiceError("Неизвестный тип текста или тон генерации.")
-        deal_instruction = "Это объявление о долгосрочной аренде. Акцентируй только известные условия проживания, срок, доступность, мебель, коммунальные платежи и правила. Не называй объект продажей." if property.deal_type == "rent" else "Это объявление о продаже."
         prompt_parts = (
-            cls.CONTENT_INSTRUCTIONS[content_type],
+            cls._content_instruction(property, content_type),
             cls.TONE_INSTRUCTIONS[tone],
-            deal_instruction,
+            cls._deal_instruction(property),
             cls.SERVICE_FACTS if content_type == "benefits" else "",
             "Данные объекта:\n" + cls._property_facts(property),
         )
@@ -137,10 +167,12 @@ class AIService:
         elif is_benefit_field:
             content_type = "benefits"
             instruction = "Создай описание одной карточки преимущества риелтора: одно предложение до 180 символов. Не добавляй заголовок или нумерацию."
+        elif property.is_commercial and target == "landing_contact_title":
+            instruction = cls._content_instruction(property, "cta")
         prompt_parts = (
             instruction,
             cls.TONE_INSTRUCTIONS[tone],
-            "Это долгосрочная аренда; используй только известные условия аренды." if property.deal_type == "rent" else "Это продажа объекта.",
+            cls._deal_instruction(property),
             cls.SERVICE_FACTS if content_type == "benefits" else "",
             "Данные объекта:\n" + cls._property_facts(property),
         )
@@ -182,12 +214,14 @@ class AIService:
         content_types = bundles.get(bundle_type)
         if not content_types:
             raise AIServiceError("Неизвестный комплект генерации.")
-        sections = "\n".join(f"[[{content_type}]] — {cls.CONTENT_INSTRUCTIONS[content_type]}" for content_type in content_types)
+        sections = "\n".join(
+            f"[[{content_type}]] — {cls._content_instruction(property, content_type)}" for content_type in content_types
+        )
         prompt = "\n\n".join((
             "Создай комплект текстов. Для каждого пункта верни результат строго после его маркера. Не пропускай маркеры.",
             sections,
             cls.TONE_INSTRUCTIONS[tone],
-            "Это долгосрочная аренда; используй условия аренды." if property.deal_type == "rent" else "Это продажа объекта.",
+            cls._deal_instruction(property),
             cls.SERVICE_FACTS,
             "Данные объекта:\n" + cls._property_facts(property),
         ))
@@ -217,7 +251,10 @@ class AIService:
         }
         if improvement not in labels:
             raise AIServiceError("Выберите способ улучшения текста.")
-        prompt = "\n\n".join((labels[improvement], cls.TONE_INSTRUCTIONS[tone], "Исходный текст:\n" + source_text, "Данные объекта:\n" + cls._property_facts(property)))
+        prompt = "\n\n".join((
+            labels[improvement], cls.TONE_INSTRUCTIONS[tone], cls._deal_instruction(property),
+            "Исходный текст:\n" + source_text, "Данные объекта:\n" + cls._property_facts(property),
+        ))
         return cls._run_prompt(prompt)
 
     @classmethod
@@ -225,6 +262,7 @@ class AIService:
         prompt = "\n\n".join((
             "Подготовь первый ответ риелтора на заявку. Поздоровайся по имени, поблагодари за интерес, ответь нейтрально и предложи уточнить удобное время для связи. Не обещай и не утверждай ничего, чего нет в данных.",
             cls.TONE_INSTRUCTIONS[tone],
+            cls._deal_instruction(property),
             f"Заявка клиента:\nИмя: {lead.name}\nСообщение: {lead.message or 'не указано'}",
             "Данные объекта:\n" + cls._property_facts(property),
         ))

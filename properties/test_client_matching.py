@@ -1,4 +1,5 @@
 from datetime import timedelta
+from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
@@ -6,6 +7,7 @@ from django.test import TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from .forms import ClientSearchForm
 from .models import Agency, AgencyMembership, Client, ClientInteraction, ClientPropertySuggestion, ClientReminder, Deal, Property, Showing
 
 
@@ -44,6 +46,62 @@ class ClientMatchingTests(TestCase):
         self.client.post(reverse("client_search_update", args=[self.client_record.pk]), {"budget": "6000000"})
         self.client_record.refresh_from_db()
         self.assertIsNone(self.client_record.budget)
+
+    def test_commercial_search_matches_area_and_purpose_across_property_types(self):
+        office = Property.objects.create(
+            owner=self.owner, title="Офис для салона", status="available", property_type="office",
+            deal_type="rent", area=Decimal("75.50"), commercial_purpose="Салон красоты",
+            price=Decimal("180000"), currency="RUB",
+        )
+        retail = Property.objects.create(
+            owner=self.owner, title="Торговое помещение для салона", status="available", property_type="retail",
+            deal_type="rent", area=Decimal("83.25"), commercial_purpose="Салон услуг",
+            price=Decimal("190000"), currency="RUB",
+        )
+        Property.objects.create(
+            owner=self.owner, title="Маленький салон", status="available", property_type="commercial",
+            deal_type="rent", area=Decimal("45"), commercial_purpose="Салон услуг", price=Decimal("100000"), currency="RUB",
+        )
+        Property.objects.create(
+            owner=self.owner, title="Большой офис", status="available", property_type="office",
+            deal_type="rent", area=Decimal("100"), commercial_purpose="Офис продаж", price=Decimal("180000"), currency="RUB",
+        )
+        response = self.client.post(reverse("client_search_update", args=[self.client_record.pk]), {
+            "search_deal_type": "rent", "search_segment": "commercial", "search_property_type": "",
+            "search_rooms_min": "5", "search_area_min": "70", "search_area_max": "90",
+            "search_commercial_purpose": "салон", "budget": "200000", "search_currency": "RUB",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.client_record.refresh_from_db()
+        self.assertEqual(self.client_record.search_area_min, Decimal("70"))
+        self.assertEqual(self.client_record.search_area_max, Decimal("90"))
+        self.assertIsNone(self.client_record.search_rooms_min)
+        page = self.client.get(reverse("client_detail", args=[self.client_record.pk]))
+        self.assertEqual({item.pk for item in page.context["matching_properties"]}, {office.pk, retail.pk})
+        self.assertIn("Назначение", page.content.decode())
+        self.assertIn("за всё помещение", page.content.decode())
+
+        self.client_record.search_rooms_min = 6  # A legacy preference must not exclude commercial matches.
+        self.client_record.save(update_fields=["search_rooms_min"])
+        page = self.client.get(reverse("client_detail", args=[self.client_record.pk]))
+        self.assertEqual({item.pk for item in page.context["matching_properties"]}, {office.pk, retail.pk})
+
+        office.commercial_purpose = "Офис продаж"
+        office.save(update_fields=["commercial_purpose"])
+        page = self.client.get(reverse("client_detail", args=[self.client_record.pk]))
+        self.assertEqual([item.pk for item in page.context["matching_properties"]], [retail.pk])
+
+    def test_search_rejects_inverted_area_range_and_mismatched_type(self):
+        invalid_range = ClientSearchForm({
+            "search_segment": "commercial", "search_area_min": "90", "search_area_max": "70",
+        }, instance=self.client_record)
+        self.assertFalse(invalid_range.is_valid())
+        self.assertIn("search_area_max", invalid_range.errors)
+        wrong_type = ClientSearchForm({
+            "search_segment": "commercial", "search_property_type": "apartment",
+        }, instance=self.client_record)
+        self.assertFalse(wrong_type.is_valid())
+        self.assertIn("search_property_type", wrong_type.errors)
 
     def test_suggestion_send_and_reaction_are_idempotent_and_recorded(self):
         add = reverse("client_suggestion_create", args=[self.client_record.pk])

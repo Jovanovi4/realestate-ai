@@ -22,6 +22,8 @@ class CianExportService:
 
     @classmethod
     def validation_errors(cls, property, profile):
+        if property.is_commercial:
+            return ["коммерческая выгрузка в ЦИАН пока недоступна"]
         errors = []
         if property.status != "published":
             errors.append("объект не опубликован")
@@ -54,6 +56,9 @@ class CianExportService:
 
     @classmethod
     def build_xml(cls, properties, profile, base_url):
+        properties = list(properties)
+        if any(property.is_commercial for property in properties):
+            raise ValueError("Коммерческая выгрузка в ЦИАН пока недоступна")
         root = ET.Element("Feed")
         cls._add(root, "Feed_Version", "2")
         for property in properties:
@@ -76,7 +81,7 @@ class CianExportService:
                 photo = ET.SubElement(photos, "PhotoSchema")
                 cls._add(photo, "FullUrl", f"{base_url}{image.image.url}")
             if property.area:
-                cls._add(obj, "TotalArea", str(property.area))
+                cls._add(obj, "TotalArea", property.area_display)
             if property.rooms:
                 cls._add(obj, "RoomsCount", str(property.rooms))
             if property.floor:

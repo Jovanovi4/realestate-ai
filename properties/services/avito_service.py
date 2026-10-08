@@ -11,12 +11,12 @@ class AvitoExportService:
         "cottage": ("Дома, дачи, коттеджи", "Дача"),
         "villa": ("Дома, дачи, коттеджи", "Коттедж"),
         "land": ("Земельные участки", "Земельный участок"),
-        "office": ("Коммерческая недвижимость", "Офис"),
-        "commercial": ("Коммерческая недвижимость", "Коммерческая недвижимость"),
     }
 
     @classmethod
     def validation_errors(cls, property, profile):
+        if property.is_commercial:
+            return ["коммерческая выгрузка в Avito пока недоступна"]
         errors = []
         if property.status != "published":
             errors.append("объект не опубликован")
@@ -49,6 +49,9 @@ class AvitoExportService:
 
     @classmethod
     def build_xml(cls, properties, profile, base_url):
+        properties = list(properties)
+        if any(property.is_commercial for property in properties):
+            raise ValueError("Коммерческая выгрузка в Avito пока недоступна")
         root = ET.Element("Ads", {"formatVersion": "3", "target": "Avito.ru"})
         for property in properties:
             category, object_type = cls.TYPE_MAPPING[property.property_type]
@@ -64,7 +67,7 @@ class AvitoExportService:
             cls._add(ad, "Address", property.address)
             cls._add(ad, "ContactPhone", profile.phone)
             if property.area:
-                cls._add(ad, "Square", str(property.area))
+                cls._add(ad, "Square", property.area_display)
             if property.rooms:
                 cls._add(ad, "Rooms", str(property.rooms))
             if property.floor:

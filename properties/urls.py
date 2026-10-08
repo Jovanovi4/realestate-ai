@@ -5,7 +5,7 @@ from .ai_views import AIAssistantView, AIBundleGenerateView, AIContentDeleteView
 from .forms import AccountPasswordChangeForm, PhoneAuthenticationForm
 from .account_views import AccountRecoveryView, AccountResetConfirmView, ConfirmEmailView, VerifyEmailView
 from django.views.generic import TemplateView
-from .deal_views import DealBoardView, DealCreateView, DealUpdateView
+from .deal_views import DealBoardView, DealCreateView, DealStageUpdateView, DealUpdateView
 from .client_import_views import ClientImportView
 from .client_matching_views import (
     ClientPropertySuggestionCreateView, ClientPropertySuggestionReactionView,
@@ -137,6 +137,7 @@ urlpatterns = [
     path("deals/", DealBoardView.as_view(), name="deal_board"),
     path("deals/new/", DealCreateView.as_view(), name="deal_create"),
     path("deals/<int:pk>/", DealUpdateView.as_view(), name="deal_detail"),
+    path("deals/<int:pk>/stage/", DealStageUpdateView.as_view(), name="deal_stage_update"),
     path("today/", WorkdayView.as_view(), name="workday"),
     path("tasks/", WorkItemsView.as_view(), name="work_items"),
     path("tasks/new/", TaskCreateView.as_view(), name="task_create"),

@@ -85,7 +85,8 @@ Gunicorn начнёт принимать соединения. Это прове
   [настроить SMTP](docker-account-email.md) и включить профиль `mail`:
   `docker compose --env-file .env.docker --profile mail up -d account-emails`.
 - Проверить [резервную копию PostgreSQL и медиа](docker-backups.md), затем
-  настроить вывоз копий с VPS и расписание. `backup_crm` поддерживает только SQLite.
+  настроить [зашифрованный вывоз копий и расписание](docker-offsite-backups.md).
+  `backup_crm` поддерживает только SQLite.
 - Проверить путь CRM → лендинг → заявка, выдачу фото, webhook и рассылку Telegram,
   генерацию OpenAI. Гонки тарифных ресурсов проверить на отдельной пустой
   тестовой PostgreSQL. До сверки счетов и этих тестов не включать ограничения.

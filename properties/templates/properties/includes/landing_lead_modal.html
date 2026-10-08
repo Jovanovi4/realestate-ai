@@ -3,7 +3,7 @@
     <div class="modal-content border-0 shadow">
       <div class="modal-body p-4 p-md-5">
         <div class="d-flex justify-content-between align-items-start gap-3 mb-4">
-          <div><p class="eyebrow mb-2">Связаться</p><h2 id="leadModalTitle" class="h3 mb-1">{{ property.landing_contact_title|default:"Запланировать просмотр" }}</h2><p class="text-muted mb-0">Оставьте контакты — риелтор ответит в ближайшее время.</p></div>
+          <div><p class="eyebrow mb-2">Связаться</p><h2 id="leadModalTitle" class="h3 mb-1">{% if property.landing_contact_title %}{{ property.landing_contact_title }}{% elif property.is_commercial %}Уточнить условия помещения{% else %}Запланировать просмотр{% endif %}</h2><p class="text-muted mb-0">Оставьте контакты — риелтор ответит в ближайшее время.</p></div>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
         </div>
         {% if turnstile_enabled %}<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{% endif %}

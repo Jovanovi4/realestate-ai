@@ -2,7 +2,7 @@
 {% block title %}{% if object %}Показ · {{ object.deal.property.title }}{% else %}Новый показ{% endif %}{% endblock %}
 {% block content %}
 <header class="ui-page-header">
-  <div><p class="ui-page-header__eyebrow">Мой день · показ</p><h1 class="ui-page-header__title">{% if object %}Показ объекта{% else %}Назначить показ{% endif %}</h1></div>
+  <div><p class="ui-page-header__eyebrow">Задачи · показ</p><h1 class="ui-page-header__title">{% if object %}Показ объекта{% else %}Назначить показ{% endif %}</h1></div>
   <div class="ui-page-header__actions"><a href="{{ return_url }}" class="btn btn-neutral">К делам</a>{% if object %}<a href="{% url 'deal_detail' object.deal.pk %}" class="btn btn-neutral">Сделка</a>{% endif %}</div>
 </header>
 <section class="app-form-panel">

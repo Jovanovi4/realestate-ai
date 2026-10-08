@@ -40,7 +40,7 @@ class ClientSearchUpdateView(ClientMatchingView):
             form.save()
             messages.success(request, "Запрос клиента сохранён.")
         else:
-            messages.error(request, "Проверьте критерии поиска: бюджет указывается вместе с валютой.")
+            messages.error(request, "Проверьте сегмент, тип объекта, диапазон площади и валюту бюджета.")
         return self.back_to_client(client)
 
 

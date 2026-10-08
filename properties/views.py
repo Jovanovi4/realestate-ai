@@ -49,7 +49,7 @@ from .services.presentation_service import PresentationError, PresentationServic
 from .services.presentation_docx_service import PresentationDocxService
 from .services.image_upload_service import prepare_image_upload
 from .services.csv_security import spreadsheet_safe_cell
-from .services.client_relationship_service import activate_client_relationship
+from .services.client_relationship_service import activate_client_relationship, change_client_relationship, relationship_change_error
 
 
 class PropertyListView(LoginRequiredMixin, ListView):
@@ -74,6 +74,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
     def get_queryset(self):
         queryset = workspace_queryset(Property.objects, self.request.user)
         query = self.request.GET.get("q", "").strip()
+        segment = self.request.GET.get("segment")
         property_type = self.request.GET.get("property_type")
         deal_type = self.request.GET.get("deal_type")
         status = self.request.GET.get("status")
@@ -85,6 +86,10 @@ class PropertyListView(LoginRequiredMixin, ListView):
             queryset = queryset.filter(
                 Q(title__icontains=query) | Q(marketing_headline__icontains=query) | Q(address__icontains=query)
             )
+        if segment == "residential":
+            queryset = queryset.filter(property_type__in=Property.RESIDENTIAL_TYPES)
+        elif segment == "commercial":
+            queryset = queryset.filter(property_type__in=Property.COMMERCIAL_TYPES)
         if property_type in dict(Property.PROPERTY_TYPES):
             queryset = queryset.filter(property_type=property_type)
         if deal_type in dict(Property.DEAL_TYPE_CHOICES):
@@ -109,6 +114,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["property_types"] = Property.PROPERTY_TYPES
+        context["segment_choices"] = [("residential", "Жилая"), ("commercial", "Коммерческая")]
         context["deal_types"] = Property.DEAL_TYPE_CHOICES
         context["status_choices"] = Property.STATUS_CHOICES
         context["filters"] = self.request.GET
@@ -122,6 +128,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
         ]
         filter_labels = {
             "q": lambda value: f"Поиск: {value.strip()}",
+            "segment": lambda value: f"Сегмент: {dict(context['segment_choices'])[value]}",
             "property_type": lambda value: f"Тип: {dict(Property.PROPERTY_TYPES)[value]}",
             "deal_type": lambda value: f"Сделка: {dict(Property.DEAL_TYPE_CHOICES)[value]}",
             "status": lambda value: f"Статус: {dict(Property.STATUS_CHOICES)[value]}",
@@ -135,6 +142,8 @@ class PropertyListView(LoginRequiredMixin, ListView):
             if not value or (key == "sort" and value == "newest"):
                 continue
             if key == "property_type" and value not in dict(Property.PROPERTY_TYPES):
+                continue
+            if key == "segment" and value not in dict(context["segment_choices"]):
                 continue
             if key == "deal_type" and value not in dict(Property.DEAL_TYPE_CHOICES):
                 continue
@@ -862,19 +871,41 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
         available = workspace_queryset(Property.objects, self.request.user).exclude(
             status__in=("archived", "reserved", "sold", "rented"),
         ).exclude(pk__in=[item.property_id for item in suggestions])
+        search_segment = self.object.search_segment
+        if not search_segment and self.object.search_property_type:
+            search_segment = "commercial" if self.object.search_property_type in Property.COMMERCIAL_TYPES else "residential"
+        if not search_segment and self.object.search_commercial_purpose:
+            search_segment = "commercial"
+        if not search_segment and self.object.search_rooms_min:
+            search_segment = "residential"
+        if search_segment == "commercial":
+            available = available.filter(property_type__in=Property.COMMERCIAL_TYPES)
+        elif search_segment == "residential":
+            available = available.filter(property_type__in=Property.RESIDENTIAL_TYPES)
         if self.object.search_deal_type:
             available = available.filter(deal_type=self.object.search_deal_type)
         if self.object.search_property_type:
             available = available.filter(property_type=self.object.search_property_type)
-        if self.object.search_rooms_min:
+        if self.object.search_rooms_min and search_segment != "commercial":
             available = available.filter(rooms__gte=self.object.search_rooms_min)
+        if self.object.search_area_min is not None:
+            available = available.filter(area__gte=self.object.search_area_min)
+        if self.object.search_area_max is not None:
+            available = available.filter(area__lte=self.object.search_area_max)
+        if self.object.search_commercial_purpose and search_segment == "commercial":
+            available = available.filter(
+                commercial_purpose_search__contains=self.object.search_commercial_purpose.strip().casefold(),
+            )
         if self.object.preferred_area:
             available = available.filter(address__icontains=self.object.preferred_area.strip())
         if self.object.budget and self.object.search_currency:
             available = available.filter(currency=self.object.search_currency, price__lte=self.object.budget)
         context["matching_properties"] = available.order_by("-updated_at")[:8]
         context["has_search_criteria"] = any((
-            self.object.search_deal_type, self.object.search_property_type, self.object.search_rooms_min,
+            self.object.search_deal_type, search_segment, self.object.search_property_type,
+            self.object.search_rooms_min if search_segment != "commercial" else None,
+            self.object.search_area_min is not None, self.object.search_area_max is not None,
+            self.object.search_commercial_purpose if search_segment == "commercial" else "",
             self.object.preferred_area, self.object.budget,
         ))
         context["interaction_form"] = ClientInteractionForm()
@@ -992,30 +1023,13 @@ class ClientStatusUpdateView(LoginRequiredMixin, View):
                 return render(request, "properties/includes/client_status_control.html", {"client": client, "status_error": error})
             messages.error(request, error)
             return redirect("client_detail", pk=client.pk)
-        active_deal = client.deals.filter(stage__in=Deal.ACTIVE_STAGES).exists()
-        open_lead = client.leads.filter(outcome="open").exclude(status="archived").exists()
-        if status == "new" and client.first_contacted_at:
-            error = "Первый контакт уже записан. Используйте состояние «В работе»."
-        elif status in {"new", "nurture", "inactive"} and active_deal:
-            error = "У клиента есть активная сделка. Завершите её или оставьте отношения «В работе»."
-        elif status in {"nurture", "inactive"} and open_lead:
-            error = "У клиента есть открытая заявка. Завершите её или оставьте отношения «В работе»."
-        else:
-            error = None
+        error = relationship_change_error(client, status)
         if error:
             if request.headers.get("HX-Request") == "true":
                 return render(request, "properties/includes/client_status_control.html", {"client": client, "status_error": error})
             messages.error(request, error)
             return redirect("client_detail", pk=client.pk)
-        if status != client.status:
-            previous_status = client.get_status_display()
-            client.status = status
-            client.save(update_fields=["status", "updated_at"])
-            ClientInteraction.objects.create(
-                client=client,
-                interaction_type="status",
-                text=f"Отношения с клиентом: {previous_status} → {client.get_status_display()}.",
-            )
+        change_client_relationship(client, status)
         if request.headers.get("HX-Request") == "true":
             return render(request, "properties/includes/client_status_control.html", {"client": client})
         return redirect("client_detail", pk=client.pk)
@@ -1100,10 +1114,38 @@ class ClientReminderCompleteView(LoginRequiredMixin, View):
 
 class ClientBulkActionView(LoginRequiredMixin, View):
     def post(self, request):
-        client_ids = [int(pk) for pk in request.POST.getlist("client_ids") if pk.isdigit()]
+        client_ids = sorted({int(pk) for pk in request.POST.getlist("client_ids") if pk.isdigit()})
         clients = workspace_queryset(Client.objects, request.user).filter(pk__in=client_ids)
         action = request.POST.get("action")
-        if action == "delete":
+        if action == "status":
+            status = request.POST.get("status")
+            if status not in dict(Client.STATUS_CHOICES):
+                messages.error(request, "Выберите состояние отношений для выбранных клиентов.")
+            elif not client_ids:
+                messages.error(request, "Выберите хотя бы одного клиента.")
+            else:
+                try:
+                    with transaction.atomic():
+                        selected = list(workspace_queryset(
+                            Client.objects.select_for_update(), request.user,
+                        ).filter(pk__in=client_ids).order_by("pk"))
+                        if len(selected) != len(client_ids):
+                            raise ValidationError("Некоторые выбранные клиенты недоступны. Обновите список.")
+                        for client in selected:
+                            require_resource_action(request.user, client, Operation.EDIT_CRM)
+                            error = relationship_change_error(client, status)
+                            if error:
+                                raise ValidationError(f"{client.name}: {error}")
+                        changed = sum(change_client_relationship(client, status) for client in selected)
+                    if changed:
+                        messages.success(request, f"Отношения изменены у {changed} клиентов.")
+                    else:
+                        messages.info(request, "У выбранных клиентов уже установлены эти отношения.")
+                except TariffDenied as error:
+                    messages.error(request, error.message)
+                except ValidationError as error:
+                    messages.error(request, " ".join(error.messages))
+        elif action == "delete":
             if not may_manage_agency(request.user) and clients.filter(agency__isnull=False).exists():
                 raise PermissionDenied
             try:

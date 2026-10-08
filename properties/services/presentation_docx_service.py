@@ -5,6 +5,8 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.shared import Cm, Pt, RGBColor
 from PIL import Image as PilImage
 
+from .property_marketing import price_summary, property_fact_rows
+
 
 class PresentationDocxService:
     @staticmethod
@@ -21,11 +23,15 @@ class PresentationDocxService:
         title.alignment = WD_ALIGN_PARAGRAPH.LEFT
         meta = document.add_paragraph(f"{property.get_deal_type_display()} · {property.get_property_type_display()}")
         meta.style = document.styles["Subtitle"]
-        if property.price:
+        price_details = price_summary(property)
+        if price_details:
             price = document.add_paragraph()
-            price_run = price.add_run(f"{property.get_currency_display()[:1]} {property.price}{' / месяц' if property.deal_type == 'rent' else ''}")
+            price_run = price.add_run(price_details.main)
             price_run.font.size = Pt(16)
             price_run.font.color.rgb = RGBColor(7, 134, 110)
+            for line in (price_details.scope, price_details.per_sqm):
+                if line:
+                    document.add_paragraph(line, style="Subtitle")
         if property.address:
             document.add_paragraph(property.address)
 
@@ -52,10 +58,7 @@ class PresentationDocxService:
         if property.primary_image:
             add_image(property.primary_image, Cm(16.5))
         if include_facts:
-            facts = [("Площадь", f"{property.area} м²" if property.area else ""), ("Комнаты", property.rooms or ""), ("Этаж", f"{property.floor} / {property.floors_total}" if property.floor and property.floors_total else property.floor or ""), ("Участок", f"{property.land_area} м²" if property.land_area else ""), ("Состояние", property.get_condition_display() if property.condition else "")]
-            if property.deal_type == "rent":
-                facts += [("Мебель", "Есть" if property.furnished else ""), ("Залог", property.rent_deposit or ""), ("Срок", f"от {property.min_lease_months} мес." if property.min_lease_months else "")]
-            facts = [(label, value) for label, value in facts if value]
+            facts = property_fact_rows(property)
             if facts:
                 document.add_heading("Характеристики", level=1)
                 table = document.add_table(rows=0, cols=2)
