@@ -4,7 +4,7 @@ from django.db import transaction
 from billing.enforcement import enabled as billing_enforcement_enabled
 from .forms import SafeImageField
 
-from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientInteraction, ClientPropertySuggestion, ClientReminder, Deal, Lead, OutboundMessage, Property, RealtorProfile, Showing, TelegramDelivery, TelegramPublication, TelegramSubscriber, UserLegalAcceptance
+from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientInteraction, ClientPropertySuggestion, ClientReminder, Deal, Lead, OutboundMessage, OwnerInquiry, Property, PropertyOwnerLink, RealtorProfile, Showing, TelegramDelivery, TelegramPublication, TelegramSubscriber, UserLegalAcceptance
 
 
 class BillingReadOnlyWhenEnforced:
@@ -137,9 +137,23 @@ class LeadAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
 @admin.register(Client)
 class ClientAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
     readonly_fields = ("legacy_status",)
-    list_display = ("name", "phone", "owner", "agency", "status", "source", "created_at")
+    list_display = ("name", "phone", "contact_role", "owner", "agency", "status", "source", "created_at")
     search_fields = ("name", "phone", "preferred_area")
-    list_filter = ("status", "source")
+    list_filter = ("contact_role", "status", "source")
+
+
+@admin.register(PropertyOwnerLink)
+class PropertyOwnerLinkAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
+    list_display = ("property", "client", "role", "agreement_expires_on", "publication_approved_at")
+    search_fields = ("property__title", "client__name", "client__phone")
+    list_filter = ("role",)
+
+
+@admin.register(OwnerInquiry)
+class OwnerInquiryAdmin(BillingReadOnlyWhenEnforced, admin.ModelAdmin):
+    list_display = ("client", "deal_type", "address", "assigned_to", "result", "first_response_due_at", "property", "created_at")
+    list_filter = ("deal_type", "result", "source")
+    search_fields = ("client__name", "client__phone", "address")
 
 
 @admin.register(ClientInteraction)

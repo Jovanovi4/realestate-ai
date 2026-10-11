@@ -2,7 +2,7 @@
 {% block title %}Редактирование — {{ property.title }}{% endblock %}
 {% block content %}
 <div class="app-form-page">
-  <header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Объект</p><h1 class="ui-page-header__title">Редактирование</h1><p class="ui-page-header__description">{{ property.title }}</p></div><div class="ui-page-header__actions"><a href="{% url 'property_detail' property.pk %}" class="btn btn-neutral">К объекту</a></div></header>
+  <header class="ui-page-header"><div>{% url 'property_detail' property.pk as breadcrumb_href %}{% include "properties/includes/detail_breadcrumb.html" with href=breadcrumb_href parent="Объект" current="Редактирование" %}<h1 class="ui-page-header__title">Редактирование</h1><p class="ui-page-header__description">{{ property.title }}</p></div></header>
   {% include "properties/property_form.html" with submit_label="Сохранить изменения" %}
 </div>
 {% endblock %}

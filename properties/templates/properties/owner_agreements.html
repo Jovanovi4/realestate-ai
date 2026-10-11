@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Сроки договорённостей{% endblock %}
+{% block content %}
+<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">CRM · собственники</p><h1 class="ui-page-header__title">Сроки договорённостей</h1><p class="ui-page-header__description">Объекты, по которым нужно проверить продолжение работы.</p></div></header>
+{% include "properties/includes/owner_workspace_nav.html" with active="agreements" %}
+<nav class="nav nav-pills workspace-tabs ui-switch detail-tabs billing-workspace-tabs" aria-label="Период договорённостей">
+  <a class="nav-link ui-switch__option{% if scope == 'soon' %} active{% endif %}" href="?scope=soon"{% if scope == 'soon' %} aria-current="page"{% endif %}>Истекли и до 30 дней</a>
+  <a class="nav-link ui-switch__option{% if scope == 'all' %} active{% endif %}" href="?scope=all"{% if scope == 'all' %} aria-current="page"{% endif %}>Все сроки</a>
+</nav>
+<section class="detail-section" aria-label="Договорённости по объектам">
+  {% for link in links %}<article class="workday-item">
+    <div class="workday-item__time{% if link.agreement_expires_on < today %} lead-deadline--overdue{% endif %}"><time datetime="{{ link.agreement_expires_on|date:'Y-m-d' }}">{{ link.agreement_expires_on|date:"d.m.Y" }}</time></div>
+    <div class="workday-item__body"><a href="{% url 'property_detail' link.property.pk %}#property-owners"><strong>{{ link.property.title }}</strong></a><span>{{ link.client.name }} · {{ link.get_role_display }}{% if link.agreement_expires_on < today %} · Срок истёк{% elif link.agreement_expires_on == today %} · Сегодня{% endif %}</span></div>
+    <a class="btn btn-icon btn-sm btn-neutral" href="{% url 'owner_report' link.pk %}" data-tooltip="Открыть отчёт" aria-label="Открыть отчёт для {{ link.client.name }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-external-link"></use></svg></a>
+  </article>{% empty %}<p class="detail-muted mb-0">{% if scope == 'soon' %}На ближайшие 30 дней договорённостей с указанным сроком нет.{% else %}Пока нет договорённостей с указанным сроком.{% endif %}</p>{% endfor %}
+</section>
+{% if page_obj.has_other_pages %}<nav class="mt-3" aria-label="Страницы договорённостей"><div class="d-flex gap-2 align-items-center">{% if page_obj.has_previous %}<a class="btn btn-sm btn-neutral" href="?scope={{ scope }}&amp;page={{ page_obj.previous_page_number }}">Назад</a>{% endif %}<span class="small text-muted">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>{% if page_obj.has_next %}<a class="btn btn-sm btn-neutral" href="?scope={{ scope }}&amp;page={{ page_obj.next_page_number }}">Далее</a>{% endif %}</div></nav>{% endif %}
+{% endblock %}

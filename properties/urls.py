@@ -7,6 +7,14 @@ from .account_views import AccountRecoveryView, AccountResetConfirmView, Confirm
 from django.views.generic import TemplateView
 from .deal_views import DealBoardView, DealCreateView, DealStageUpdateView, DealUpdateView
 from .client_import_views import ClientImportView
+from .property_owner_views import (
+    PropertyOwnerAttachView, PropertyOwnerCreateView, PropertyOwnerInteractionView,
+    PropertyOwnerRemoveView, PropertyOwnerUpdateView,
+)
+from .owner_inquiry_views import OwnerInquiryAssignView, OwnerInquiryCreateView, OwnerInquiryDetailView, OwnerInquiryListView, OwnerInquiryProcessView
+from .owner_feedback_views import OwnerFeedbackCompleteView, OwnerFeedbackPlanView
+from .owner_report_views import OwnerAgreementListView, OwnerReportPDFView, OwnerReportView
+from .landing_presets import LandingStylePresetCreateView, LandingStylePresetDeleteView
 from .client_matching_views import (
     ClientPropertySuggestionCreateView, ClientPropertySuggestionReactionView,
     ClientPropertySuggestionSendView, ClientSearchUpdateView,
@@ -37,6 +45,7 @@ from .views import (
     PropertyUpdateView,
     PublicLandingView,
     PropertyLandingPreviewView,
+    PropertyLandingDraftPreviewView,
     RealtorProfileUpdateView,
     LeadListView,
     LeadDetailView,
@@ -49,6 +58,7 @@ from .views import (
     ClientCreateView,
     ClientDetailView,
     ClientStatusUpdateView,
+    ClientBoardStatusUpdateView,
     ClientInteractionCreateView,
     ClientReminderCreateView,
     ClientReminderCompleteView,
@@ -111,6 +121,14 @@ urlpatterns = [
         name="password_change",
     ),
     path("leads/", LeadListView.as_view(), name="lead_list"),
+    path("owner-inquiries/", OwnerInquiryListView.as_view(), name="owner_inquiry_list"),
+    path("owner-inquiries/new/", OwnerInquiryCreateView.as_view(), name="owner_inquiry_create"),
+    path("owner-inquiries/<int:pk>/", OwnerInquiryDetailView.as_view(), name="owner_inquiry_detail"),
+    path("owner-inquiries/<int:pk>/process/", OwnerInquiryProcessView.as_view(), name="owner_inquiry_process"),
+    path("owner-inquiries/<int:pk>/assign/", OwnerInquiryAssignView.as_view(), name="owner_inquiry_assign"),
+    path("owners/agreements/", OwnerAgreementListView.as_view(), name="owner_agreement_list"),
+    path("owners/reports/<int:link_pk>/", OwnerReportView.as_view(), name="owner_report"),
+    path("owners/reports/<int:link_pk>.pdf", OwnerReportPDFView.as_view(), name="owner_report_pdf"),
     path("leads/bulk-status/", LeadBulkStatusUpdateView.as_view(), name="lead_bulk_status_update"),
     path("leads/<int:pk>/ai-reply/", AILeadReplyView.as_view(), name="lead_ai_reply"),
     path("leads/<int:pk>/assign/", LeadAssignView.as_view(), name="lead_assign"),
@@ -131,6 +149,7 @@ urlpatterns = [
     path("clients/<int:pk>/suggestions/<int:suggestion_pk>/sent/", ClientPropertySuggestionSendView.as_view(), name="client_suggestion_sent"),
     path("clients/<int:pk>/suggestions/<int:suggestion_pk>/reaction/", ClientPropertySuggestionReactionView.as_view(), name="client_suggestion_reaction"),
     path("clients/<int:pk>/status/", ClientStatusUpdateView.as_view(), name="client_status_update"),
+    path("clients/<int:pk>/board-status/", ClientBoardStatusUpdateView.as_view(), name="client_board_status_update"),
     path("clients/<int:pk>/interactions/", ClientInteractionCreateView.as_view(), name="client_interaction_create"),
     path("clients/<int:pk>/reminders/", ClientReminderCreateView.as_view(), name="client_reminder_create"),
     path("clients/<int:pk>/reminders/<int:reminder_pk>/complete/", ClientReminderCompleteView.as_view(), name="client_reminder_complete"),
@@ -145,12 +164,22 @@ urlpatterns = [
     path("tasks/<int:pk>/complete/", TaskCompleteView.as_view(), name="task_complete"),
     path("showings/new/", ShowingCreateView.as_view(), name="showing_create"),
     path("showings/<int:pk>/", ShowingUpdateView.as_view(), name="showing_detail"),
+    path("showings/<int:pk>/owner-feedback/<int:link_pk>/plan/", OwnerFeedbackPlanView.as_view(), name="owner_feedback_plan"),
+    path("showings/<int:pk>/owner-feedback/<int:task_pk>/complete/", OwnerFeedbackCompleteView.as_view(), name="owner_feedback_complete"),
     path("landings/", LandingListView.as_view(), name="landing_list"),
     path("landings/<int:pk>/unpublish/", PropertyLandingUnpublishView.as_view(), name="landing_unpublish"),
     path("", PropertyListView.as_view(), name="property_list"),
+    path("landing/style-presets/", LandingStylePresetCreateView.as_view(), name="landing_style_preset_create"),
+    path("landing/style-presets/<int:pk>/delete/", LandingStylePresetDeleteView.as_view(), name="landing_style_preset_delete"),
     path("landing/<slug:slug>/", PublicLandingView.as_view(), name="public_landing"),
     path("create/", PropertyCreateView.as_view(), name="create_property"),
+    path("create/landing-preview/", PropertyLandingDraftPreviewView.as_view(), name="create_landing_draft_preview"),
     path("<int:pk>/edit/", PropertyUpdateView.as_view(), name="edit_property"),
+    path("<int:pk>/owners/attach/", PropertyOwnerAttachView.as_view(), name="property_owner_attach"),
+    path("<int:pk>/owners/create/", PropertyOwnerCreateView.as_view(), name="property_owner_create"),
+    path("<int:pk>/owners/<int:link_pk>/", PropertyOwnerUpdateView.as_view(), name="property_owner_update"),
+    path("<int:pk>/owners/<int:link_pk>/remove/", PropertyOwnerRemoveView.as_view(), name="property_owner_remove"),
+    path("<int:pk>/owners/<int:link_pk>/interactions/", PropertyOwnerInteractionView.as_view(), name="property_owner_interaction"),
     path("<int:pk>/delete/", PropertyDeleteView.as_view(), name="delete_property"),
     path("<int:pk>/restore/", PropertyRestoreView.as_view(), name="restore_property"),
     path("<int:pk>/status/", PropertyStatusUpdateView.as_view(), name="update_property_status"),
@@ -159,6 +188,7 @@ urlpatterns = [
     path("<int:pk>/ai/inline/", AIInlineGenerateView.as_view(), name="ai_inline_generate"),
     path("<int:pk>/ai/bundle/", AIBundleGenerateView.as_view(), name="ai_bundle_generate"),
     path("<int:pk>/landing-preview/", PropertyLandingPreviewView.as_view(), name="property_landing_preview"),
+    path("<int:pk>/landing-preview-draft/", PropertyLandingDraftPreviewView.as_view(), name="property_landing_draft_preview"),
     path("<int:pk>/presentation.pdf", PropertyPresentationPDFView.as_view(), name="property_presentation_pdf"),
     path("<int:pk>/presentation.docx", PropertyPresentationDOCXView.as_view(), name="property_presentation_docx"),
     path("<int:pk>/", PropertyDetailView.as_view(), name="property_detail"),

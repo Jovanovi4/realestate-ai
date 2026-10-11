@@ -4,10 +4,10 @@
 <header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Недвижимость</p><h1 class="ui-page-header__title">Лендинги</h1><p class="ui-page-header__description">Страницы объектов: настройка, публикация и публичные ссылки.</p></div><div class="ui-page-header__actions"><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></header>
 <nav class="lead-status-filter landing-status-filter" aria-label="Фильтр лендингов по статусу">
   <span class="lead-status-filter__label">Статус</span>
-  <div class="lead-status-filter__options">
-    <a href="{% url 'landing_list' %}" class="lead-status-filter__option {% if not selected_status %}is-active{% endif %}" {% if not selected_status %}aria-current="page"{% endif %}>Все <span class="lead-status-filter__count">{{ published_count|add:draft_count }}</span></a>
-    <a href="?status=published" class="lead-status-filter__option {% if selected_status == 'published' %}is-active{% endif %}" {% if selected_status == 'published' %}aria-current="page"{% endif %}>Опубликованы <span class="lead-status-filter__count">{{ published_count }}</span></a>
-    <a href="?status=draft" class="lead-status-filter__option {% if selected_status == 'draft' %}is-active{% endif %}" {% if selected_status == 'draft' %}aria-current="page"{% endif %}>Черновики <span class="lead-status-filter__count">{{ draft_count }}</span></a>
+  <div class="lead-status-filter__options ui-switch">
+    <a href="{% url 'landing_list' %}" class="lead-status-filter__option ui-switch__option {% if not selected_status %}is-active{% endif %}" {% if not selected_status %}aria-current="page"{% endif %}>Все <span class="lead-status-filter__count">{{ published_count|add:draft_count }}</span></a>
+    <a href="?status=published" class="lead-status-filter__option ui-switch__option {% if selected_status == 'published' %}is-active{% endif %}" {% if selected_status == 'published' %}aria-current="page"{% endif %}>Опубликованы <span class="lead-status-filter__count">{{ published_count }}</span></a>
+    <a href="?status=draft" class="lead-status-filter__option ui-switch__option {% if selected_status == 'draft' %}is-active{% endif %}" {% if selected_status == 'draft' %}aria-current="page"{% endif %}>Черновики <span class="lead-status-filter__count">{{ draft_count }}</span></a>
   </div>
 </nav>
 
@@ -32,7 +32,6 @@
         <div class="property-card__footer">
           <div><strong class="property-card__price">Заявок: {{ property.landing_leads_count }}</strong></div>
           <div class="property-card__actions">
-            <a href="{% url 'edit_property' property.pk %}#landing-pane" class="btn btn-icon btn-sm btn-text" data-tooltip="Редактировать лендинг" aria-label="Редактировать лендинг {{ property.title }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></a>
             {% if property.landing_published %}
             {% url 'public_landing' property.landing_slug as public_url %}
             <a href="{{ public_url }}" target="_blank" rel="noopener" class="btn btn-icon btn-sm btn-outline-secondary" data-tooltip="Открыть публичный лендинг" aria-label="Открыть публичный лендинг {{ property.title }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-external-link"></use></svg></a>
@@ -45,7 +44,20 @@
   </div>
   {% endfor %}
 </div>
-{% else %}<section class="empty-state" aria-labelledby="empty-landings-title"><div><span class="empty-state__icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-layout"></use></svg></span><h2 class="empty-state__title" id="empty-landings-title">Лендингов пока нет</h2><p class="empty-state__text mb-3">Создайте объект и настройте для него страницу в разделе «Лендинг».</p><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></section>{% endif %}
+{% else %}
+<section class="empty-state" aria-labelledby="empty-landings-title"><div>
+  <span class="empty-state__icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-layout"></use></svg></span>
+  {% if selected_status == 'draft' or selected_status == 'published' %}
+    <h2 class="empty-state__title" id="empty-landings-title">По выбранному статусу лендингов нет</h2>
+    <p class="empty-state__text mb-3">Выберите другой статус или посмотрите все лендинги.</p>
+    <a href="{% url 'landing_list' %}" class="btn btn-neutral">Показать все лендинги</a>
+  {% else %}
+    <h2 class="empty-state__title" id="empty-landings-title">Лендингов пока нет</h2>
+    <p class="empty-state__text mb-3">Создайте объект и настройте для него страницу в разделе «Лендинг».</p>
+    <a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a>
+  {% endif %}
+</div></section>
+{% endif %}
 {% if is_paginated %}<nav class="mt-4" aria-label="Страницы лендингов"><ul class="pagination mb-0">{% if page_obj.has_previous %}<li class="page-item"><a class="page-link" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.previous_page_number }}">Назад</a></li>{% endif %}<li class="page-item disabled"><span class="page-link">{{ page_obj.number }} из {{ paginator.num_pages }}</span></li>{% if page_obj.has_next %}<li class="page-item"><a class="page-link" href="?{{ pagination_query }}{% if pagination_query %}&{% endif %}page={{ page_obj.next_page_number }}">Вперёд</a></li>{% endif %}</ul></nav>{% endif %}
 </div>
 {% endblock %}

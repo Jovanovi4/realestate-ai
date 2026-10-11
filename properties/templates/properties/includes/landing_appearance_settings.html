@@ -1,0 +1,149 @@
+<section class="landing-publication" aria-labelledby="landing-publication-title"
+         x-data="{ selected: {{ form.landing_published.value|yesno:'true,false' }}, saved: {{ form.initial.landing_published|yesno:'true,false' }} }"
+         @change="if ($event.target.name === 'landing_published') selected = $event.target.checked">
+  <div class="landing-publication__summary">
+    <div>
+      <h2 id="landing-publication-title">Публикация лендинга</h2>
+      <p>Текущий статус</p>
+    </div>
+    <span class="landing-publication__status {% if form.initial.landing_published %}landing-publication__status--published{% endif %}">
+      {% if form.initial.landing_published %}Опубликован{% else %}Черновик{% endif %}
+    </span>
+  </div>
+  <div class="landing-publication__control">
+    <div class="form-check form-switch mb-0">
+      {{ form.landing_published }}
+      <label class="form-check-label" for="{{ form.landing_published.id_for_label }}">Публиковать лендинг</label>
+    </div>
+    {% if form.instance.pk and form.initial.landing_published and form.instance.landing_slug %}
+      <a href="{% url 'public_landing' form.instance.landing_slug %}" target="_blank" rel="noopener noreferrer">Открыть страницу</a>
+    {% endif %}
+  </div>
+  <p class="landing-publication__hint" x-show="selected === saved">Изменения вступят в силу после сохранения объекта.</p>
+  <p class="landing-publication__hint" x-show="selected !== saved" x-cloak>
+    После сохранения лендинг <strong x-text="selected ? 'будет опубликован' : 'станет черновиком'"></strong>.
+  </p>
+  {% if form.landing_published.errors %}<div class="text-danger small mt-2">{{ form.landing_published.errors|striptags }}</div>{% endif %}
+</section>
+
+<details class="form-section" open>
+  <summary><span class="form-section-number">1</span><span>Лендинг и внешний вид</span></summary>
+  <div class="form-section-body">
+    <fieldset class="landing-template-picker">
+      <legend class="visual-setting-label">{{ form.landing_template.label }}</legend>
+      <div class="landing-template-grid">
+        {% for value, label in form.fields.landing_template.choices %}
+          <input class="visual-radio-input" type="radio" name="{{ form.landing_template.html_name }}"
+                 value="{{ value }}" id="{{ form.landing_template.id_for_label }}-{{ value }}"
+                 {% if form.landing_template.value == value %}checked{% endif %}>
+          <label class="landing-template-choice ui-choice-tile" for="{{ form.landing_template.id_for_label }}-{{ value }}">
+            <span class="landing-template-preview landing-template-preview--{{ value }}" aria-hidden="true">
+              <span class="landing-template-preview__top"><span></span><span></span></span>
+              <span class="landing-template-preview__hero">
+                <span class="landing-template-preview__copy">
+                  <small>ПРОДАЖА · КВАРТИРА</small>
+                  <strong>Пространство для жизни</strong>
+                  <b>12,5 млн ₽</b>
+                  <em>Записаться на просмотр</em>
+                </span>
+                <span class="landing-template-preview__media"></span>
+              </span>
+              <span class="landing-template-preview__facts"><i></i><i></i><i></i></span>
+            </span>
+            <span class="landing-template-choice__caption"><strong>{{ label }}</strong><span class="landing-template-choice__check" aria-hidden="true">✓</span></span>
+          </label>
+        {% endfor %}
+      </div>
+      {% if form.landing_template.errors %}<div class="text-danger small mt-2">{{ form.landing_template.errors|striptags }}</div>{% endif %}
+    </fieldset>
+
+    <div class="border-top pt-4">
+      <h3 class="h6 mb-1">Внешний вид</h3>
+      <p class="form-text mb-3">Нажмите на вариант, чтобы выбрать его.</p>
+      <div class="visual-settings-grid">
+        <fieldset class="visual-setting">
+          <legend class="visual-setting-label">{{ form.landing_accent.label }}</legend>
+          <div class="visual-choice-list">
+            {% for value, label in form.fields.landing_accent.choices %}
+              <input class="visual-radio-input" type="radio" name="{{ form.landing_accent.html_name }}" value="{{ value }}"
+                     id="{{ form.landing_accent.id_for_label }}-{{ value }}" {% if form.landing_accent.value == value %}checked{% endif %}>
+              <label class="visual-swatch-choice ui-choice-tile" for="{{ form.landing_accent.id_for_label }}-{{ value }}">
+                <span class="visual-swatch visual-swatch-{{ value }}" aria-hidden="true">{% if value == 'custom' %}<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3a9 9 0 1 0 0 18h1.1a2 2 0 0 0 1.7-3.1 1.7 1.7 0 0 1 1.4-2.7H18a3 3 0 0 0 3-3A9 9 0 0 0 12 3Z"/><circle cx="7.5" cy="11" r=".7"/><circle cx="10" cy="7.5" r=".7"/><circle cx="14.5" cy="7.5" r=".7"/><circle cx="17.5" cy="11" r=".7"/></svg>{% endif %}</span>{{ label }}
+              </label>
+            {% endfor %}
+          </div>
+          <div class="landing-custom-color" data-custom-color-control {% if form.landing_accent.value != 'custom' %}hidden{% endif %}>
+            <label class="form-label" for="{{ form.landing_custom_color.id_for_label }}">Цвет HEX</label>
+            <div class="landing-custom-color__inputs">
+              <input type="color" value="#2563eb" data-custom-color-picker aria-label="Выбрать цвет из палитры">
+              {{ form.landing_custom_color }}
+            </div>
+            <small>Для читаемости цвет на лендинге может стать светлее или темнее.</small>
+          </div>
+          {% if form.landing_accent.errors %}<div class="text-danger small mt-2">{{ form.landing_accent.errors|striptags }}</div>{% endif %}
+          {% if form.landing_custom_color.errors %}<div class="text-danger small mt-2">{{ form.landing_custom_color.errors|striptags }}</div>{% endif %}
+        </fieldset>
+        <fieldset class="visual-setting">
+          <legend class="visual-setting-label">{{ form.landing_button_style.label }}</legend>
+          <div class="visual-choice-list">
+            {% for value, label in form.fields.landing_button_style.choices %}
+              <input class="visual-radio-input" type="radio" name="{{ form.landing_button_style.html_name }}" value="{{ value }}" id="{{ form.landing_button_style.id_for_label }}-{{ value }}" {% if form.landing_button_style.value == value %}checked{% endif %}>
+              <label class="visual-option ui-choice-tile" for="{{ form.landing_button_style.id_for_label }}-{{ value }}">
+                <span class="visual-option-preview visual-option-preview--button preview-button-{{ value }}" aria-hidden="true"><span>{% if value == 'template' %}Авто{% else %}Записаться{% endif %}</span></span>
+                {{ label }}
+              </label>
+            {% endfor %}
+          </div>
+          {% if form.landing_button_style.errors %}<div class="text-danger small mt-2">{{ form.landing_button_style.errors|striptags }}</div>{% endif %}
+        </fieldset>
+        <fieldset class="visual-setting">
+          <legend class="visual-setting-label">{{ form.landing_hero_layout.label }}</legend>
+          <div class="visual-choice-list">
+            {% for value, label in form.fields.landing_hero_layout.choices %}
+              <input class="visual-radio-input" type="radio" name="{{ form.landing_hero_layout.html_name }}" value="{{ value }}" id="{{ form.landing_hero_layout.id_for_label }}-{{ value }}" {% if form.landing_hero_layout.value == value %}checked{% endif %}>
+              <label class="visual-option ui-choice-tile" for="{{ form.landing_hero_layout.id_for_label }}-{{ value }}">
+                <span class="visual-option-preview visual-option-preview--hero preview-hero-{{ value }}" aria-hidden="true"><span class="visual-preview-copy"><i></i><i></i><b></b></span><span class="visual-preview-image"></span></span>
+                {{ label }}
+              </label>
+            {% endfor %}
+          </div>
+          {% if form.landing_hero_layout.errors %}<div class="text-danger small mt-2">{{ form.landing_hero_layout.errors|striptags }}</div>{% endif %}
+        </fieldset>
+        <fieldset class="visual-setting">
+          <legend class="visual-setting-label">{{ form.landing_gallery_style.label }}</legend>
+          <div class="visual-choice-list">
+            {% for value, label in form.fields.landing_gallery_style.choices %}
+              <input class="visual-radio-input" type="radio" name="{{ form.landing_gallery_style.html_name }}" value="{{ value }}" id="{{ form.landing_gallery_style.id_for_label }}-{{ value }}" {% if form.landing_gallery_style.value == value %}checked{% endif %}>
+              <label class="visual-option ui-choice-tile" for="{{ form.landing_gallery_style.id_for_label }}-{{ value }}">
+                <span class="visual-option-preview visual-option-preview--gallery preview-gallery-{{ value }}" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                {{ label }}
+              </label>
+            {% endfor %}
+          </div>
+          {% if form.landing_gallery_style.errors %}<div class="text-danger small mt-2">{{ form.landing_gallery_style.errors|striptags }}</div>{% endif %}
+        </fieldset>
+      </div>
+      <details class="landing-presets" data-landing-presets data-create-url="{% url 'landing_style_preset_create' %}" data-property-id="{{ form.instance.pk|default:'' }}">
+        <summary>Стилевые пресеты</summary>
+        <div class="landing-presets__body">
+        <p class="landing-presets__hint">Сохранённые варианты {{ landing_preset_scope_label }}. Применение изменит только оформление этой формы.</p>
+        {{ landing_style_presets|json_script:"landing-style-presets-data" }}
+        <div class="landing-presets__controls">
+          <label class="visually-hidden" for="landing-preset-select">Выбрать стилевой пресет</label>
+          <select class="form-select" id="landing-preset-select" data-preset-select><option value="">Выберите пресет</option></select>
+          <button type="button" class="btn btn-neutral" data-preset-apply disabled>Применить</button>
+          {% if landing_preset_can_manage %}<button type="button" class="btn btn-outline-secondary" data-preset-delete disabled>Удалить</button>{% endif %}
+        </div>
+        {% if landing_preset_can_manage %}
+          <div class="landing-presets__save">
+            <label class="visually-hidden" for="landing-preset-name">Название нового пресета</label>
+            <input class="form-control" id="landing-preset-name" data-preset-name type="text" maxlength="60" placeholder="Название пресета">
+            <button type="button" class="btn btn-outline-secondary" data-preset-save>Сохранить оформление</button>
+          </div>
+        {% endif %}
+        <p class="landing-presets__message" data-preset-message role="status" aria-live="polite"></p>
+        </div>
+      </details>
+    </div>
+  </div>
+</details>

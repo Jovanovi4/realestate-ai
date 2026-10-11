@@ -1,18 +1,25 @@
 {% extends "base.html" %}
+{% load crm_display %}
 {% load static %}
 {% block title %}Сделки{% endblock %}
 {% block content %}
 <header class="ui-page-header">
   <div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Сделки</h1></div>
-  <div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Клиенты</a><a href="{% url 'deal_create' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Новая сделка</a></div>
+  <div class="ui-page-header__actions"><a href="{% url 'deal_create' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Новая сделка</a></div>
 </header>
 
 <p class="detail-muted mb-2" data-deal-active-count data-count="{{ active_count }}">Активных сделок: {{ active_count }}</p>
-<p class="detail-muted mb-3">Перетащите сделку в нужный этап. Этап также можно изменить в самой сделке.</p>
+<div class="board-desktop-hint board-onboarding-hint" data-board-hint="deals" hidden><span>Перетащите карточку, чтобы изменить этап. Это также можно сделать в самой сделке.</span><button class="btn btn-text btn-sm" type="button" data-board-hint-dismiss>Понятно</button></div>
 <div class="alert alert-danger d-none mb-3" role="alert" data-deal-board-error></div>
 <p class="visually-hidden" role="status" aria-live="polite" data-deal-board-status></p>
 <form class="d-none" data-deal-board-csrf>{% csrf_token %}</form>
-<div class="client-board deal-board" aria-label="Воронка сделок" data-deal-board>
+<div class="board-mobile-picker" data-board-mobile-picker>
+  <label class="form-label" for="deal-mobile-stage">Этап сделки</label>
+  <select class="form-select" id="deal-mobile-stage" data-board-stage-picker>
+    {% for column in columns %}<option value="{{ column.key }}">{{ column.label }} · {{ column.count }}</option>{% endfor %}
+  </select>
+</div>
+<div class="client-board deal-board" aria-label="Воронка сделок" data-deal-board data-mobile-board>
   {% for column in columns %}
     <section class="client-board__column deal-board__column is-{{ column.key }}" aria-labelledby="deal-board-{{ column.key }}" data-deal-stage="{{ column.key }}" data-active-stage="{% if column.key in active_stages %}true{% else %}false{% endif %}">
       <header class="client-board__heading"><h2 id="deal-board-{{ column.key }}">{{ column.label }}</h2><span class="client-board__count" aria-label="Сделок на этапе: {{ column.count }}">{{ column.count }}</span></header>
@@ -22,7 +29,7 @@
             <a class="deal-board__card-link" href="{% url 'deal_detail' deal.pk %}" draggable="false">
               <strong>{{ deal.client.name }}{% if deal.is_demo %} · демо{% endif %}</strong>
               <span class="client-board__area">{{ deal.property.title }}</span>
-              <span class="client-board__source">Ответственный: {% if deal.responsible %}{{ deal.responsible.realtor_profile.display_name|default:deal.responsible.get_full_name|default:deal.responsible.username }}{% else %}Не назначен{% endif %}</span>
+              <span class="client-board__source">Ответственный: {% if deal.responsible %}{{ deal.responsible|staff_name }}{% else %}Не назначен{% endif %}</span>
               {% if deal.next_showing_at %}<span class="client-board__phone">Показ: {{ deal.next_showing_at|date:"d.m.Y · H:i" }}</span>{% endif %}
               {% if deal.next_task_text %}<span class="client-board__source">{{ deal.next_task_text }}{% if deal.next_task_due_at %} · {{ deal.next_task_due_at|date:"d.m.Y" }}{% endif %}</span>{% endif %}
             </a>
@@ -40,5 +47,7 @@
     <div class="modal-footer"><button type="button" class="btn btn-neutral" data-bs-dismiss="modal">Отмена</button><button type="button" class="btn btn-primary" data-deal-loss-confirm>Перенести в отказ</button></div>
   </div></div>
 </div>
+{% include "properties/includes/mobile_board_script.html" %}
 <script src="{% static 'js/deal-board.js' %}" defer></script>
+{% include "properties/includes/board_hint_script.html" %}
 {% endblock %}

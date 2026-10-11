@@ -1,37 +1,65 @@
 {% extends "base.html" %}
+{% load crm_display %}
 {% block title %}{% if object %}Сделка · {{ object.client.name }}{% else %}Новая сделка{% endif %}{% endblock %}
 {% block content %}
-<header class="ui-page-header detail-page-header">
-  <div><p class="ui-page-header__eyebrow">CRM · сделка</p><h1 class="ui-page-header__title">{% if object %}Сделка{% else %}Новая сделка{% endif %}</h1></div>
-  <div class="ui-page-header__actions"><a href="{% url 'deal_board' %}" class="btn btn-neutral">Все сделки</a></div>
+<header class="ui-page-header detail-page-header deal-page-header">
+  <div>{% url 'deal_board' as breadcrumb_href %}{% if object %}{% include "properties/includes/detail_breadcrumb.html" with href=breadcrumb_href parent="Сделки" current="Сделка" %}{% else %}{% include "properties/includes/detail_breadcrumb.html" with href=breadcrumb_href parent="Сделки" current="Новая сделка" %}{% endif %}<h1 class="ui-page-header__title">{% if object %}Сделка{% else %}Новая сделка{% endif %}</h1></div>
 </header>
 
 {% if object %}
+<section class="deal-focus" aria-label="Этап и ближайшее действие">
+  <div class="deal-focus__stage">
+    <span class="detail-kicker">Этап сделки</span>
+    <details class="deal-focus__editor"{% if form.stage.errors %} open{% endif %}>
+      <summary><span class="deal-stage-badge is-{{ object.stage }}">{{ object.get_stage_display }}</span><span class="deal-focus__edit-label">Изменить этап</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
+      <div class="deal-focus__editor-body"><div class="app-field">{% include "includes/form_field.html" with field=form.stage %}</div><button class="btn btn-neutral btn-sm" type="submit" form="deal-edit-form">Сохранить этап</button></div>
+    </details>
+  </div>
+  <div class="deal-focus__next">
+    <span class="detail-kicker">Ближайшее действие</span>
+    {% if deal_next_task %}
+      {% if deal_next_task.owner_id == request.user.pk %}<a href="{% url 'task_detail' deal_next_task.pk %}"><strong>{{ deal_next_task.text }}</strong></a>{% else %}<strong>{{ deal_next_task.text }}</strong>{% endif %}
+      {% if deal_next_task.due_at %}<time{% if deal_next_overdue %} class="is-overdue"{% endif %} datetime="{{ deal_next_task.due_at|date:'c' }}">{% if deal_next_overdue %}Просрочено · {% else %}До {% endif %}{{ deal_next_task.due_at|date:"d.m.Y · H:i" }}</time>{% else %}<span>Без срока</span>{% endif %}
+    {% elif deal_next_showing %}
+      {% if deal_next_showing.owner_id == request.user.pk %}<a href="{% url 'showing_detail' deal_next_showing.pk %}"><strong>Показ объекта</strong></a>{% else %}<strong>Показ объекта</strong>{% endif %}
+      <time datetime="{{ deal_next_showing.starts_at|date:'c' }}">{{ deal_next_showing.starts_at|date:"d.m.Y · H:i" }}</time>
+    {% else %}
+      <a href="{% url 'task_create' %}?deal={{ object.pk }}" class="deal-focus__plan">Запланировать действие</a>
+    {% endif %}
+  </div>
+</section>
+{% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+{% if form.outcome_note.errors %}<div class="alert alert-danger" role="alert">Проверьте <a href="#deal-details">итог или причину отказа</a> ниже.</div>{% endif %}
+{% if form.expected_commission.errors %}<div class="alert alert-danger" role="alert">Проверьте <a href="#deal-details">сумму комиссии</a> ниже.</div>{% endif %}
 <section class="detail-summary-bar deal-summary" aria-label="Связанные данные сделки">
   <div><span class="detail-kicker">Клиент</span><a href="{% url 'client_detail' object.client.pk %}">{{ object.client.name }}</a></div>
   <div><span class="detail-kicker">Объект</span><a href="{% url 'property_detail' object.property.pk %}">{{ object.property.title }}</a></div>
-  <div><span class="detail-kicker">Ответственный</span><strong>{% if object.responsible %}{{ object.responsible.realtor_profile.display_name|default:object.responsible.get_full_name|default:object.responsible.username }}{% else %}Не назначен{% endif %}</strong></div>
+  <div><span class="detail-kicker">Ответственный</span><strong>{% if object.responsible %}{{ object.responsible|staff_name }}{% else %}Не назначен{% endif %}</strong>
+    {% if form.responsible %}<details class="deal-summary__editor"{% if form.responsible.errors %} open{% endif %}><summary>Изменить ответственного</summary><div class="deal-summary__editor-body"><div class="app-field">{% include "includes/form_field.html" with field=form.responsible %}</div><p class="form-text">Открытые задачи и запланированные показы перейдут новому ответственному.</p><button class="btn btn-neutral btn-sm" type="submit" form="deal-edit-form">Сохранить</button></div></details>{% endif %}
+  </div>
 </section>
 {% endif %}
 
+{% if object and owner_links %}<section class="detail-section mb-4" aria-label="Сторона собственника"><div class="detail-section__heading"><div><span class="detail-kicker">По объекту</span><h2>Собственник</h2></div><a class="btn btn-text btn-sm" href="{% url 'property_detail' object.property.pk %}#property-owners">Условия по объекту</a></div><div class="detail-linked-list">{% for link in owner_links %}<a class="detail-linked-list__item" href="{% url 'client_detail' link.client.pk %}"><span><strong>{{ link.client.name }}</strong><span class="detail-linked-list__description">{{ link.get_role_display }} · {{ link.client.phone }}</span></span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endfor %}</div></section>{% endif %}
+
 {% if object %}
 <div class="detail-two-column deal-workflow">
-  <section class="detail-section" aria-labelledby="deal-tasks-title"><div class="detail-section__heading"><div><span class="detail-kicker">Следующие действия</span><h2 id="deal-tasks-title">Задачи</h2></div><a href="{% url 'task_create' %}?deal={{ object.pk }}" class="btn btn-neutral btn-sm">Добавить задачу</a></div>
-    {% if deal_tasks %}<div class="detail-linked-list">{% for task in deal_tasks %}{% if task.owner_id == request.user.pk %}<a class="detail-linked-list__item" href="{% url 'task_detail' task.pk %}">{% else %}<div class="detail-linked-list__item">{% endif %}<span><strong>{{ task.text }}</strong></span><span class="detail-linked-list__aside">{% if task.due_at %}<time datetime="{{ task.due_at|date:'c' }}">{{ task.due_at|date:"d.m.Y · H:i" }}</time>{% else %}Без срока{% endif %}<span>{{ task.owner.realtor_profile.display_name|default:task.owner.get_full_name|default:task.owner.username }}</span></span>{% if task.owner_id == request.user.pk %}</a>{% else %}</div>{% endif %}{% endfor %}</div>{% else %}<p class="detail-muted mb-0">Запланируйте следующий шаг по сделке.</p>{% endif %}
+  <section class="detail-section{% if not deal_tasks %} deal-workflow__empty{% endif %}" aria-labelledby="deal-tasks-title"><div class="detail-section__heading"><h2 id="deal-tasks-title">{% if deal_tasks %}Задачи{% else %}Нет задач{% endif %}</h2><a href="{% url 'task_create' %}?deal={{ object.pk }}" class="btn {% if deal_tasks %}btn-icon {% endif %}btn-neutral btn-sm"{% if deal_tasks %} data-tooltip="Добавить задачу" aria-label="Добавить задачу"{% endif %}>{% if deal_tasks %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>{% else %}Добавить задачу{% endif %}</a></div>
+    {% if deal_tasks %}<div class="detail-linked-list">{% for task in deal_tasks %}{% if task.owner_id == request.user.pk %}<a class="detail-linked-list__item" href="{% url 'task_detail' task.pk %}">{% else %}<div class="detail-linked-list__item">{% endif %}<span><strong>{{ task.text }}</strong></span><span class="detail-linked-list__aside">{% if task.due_at %}<time datetime="{{ task.due_at|date:'c' }}">{{ task.due_at|date:"d.m.Y · H:i" }}</time>{% else %}Без срока{% endif %}<span>{{ task.owner|staff_name }}</span></span>{% if task.owner_id == request.user.pk %}</a>{% else %}</div>{% endif %}{% endfor %}</div>{% endif %}
   </section>
-  <section class="detail-section" aria-labelledby="deal-showings-title"><div class="detail-section__heading"><div><span class="detail-kicker">Встречи</span><h2 id="deal-showings-title">Показы</h2></div><a href="{% url 'showing_create' %}?deal={{ object.pk }}" class="btn btn-neutral btn-sm">Назначить показ</a></div>
-    {% if deal_showings %}<div class="detail-linked-list">{% for showing in deal_showings %}{% if showing.owner_id == request.user.pk %}<a class="detail-linked-list__item" href="{% url 'showing_detail' showing.pk %}">{% else %}<div class="detail-linked-list__item">{% endif %}<span><strong>{{ showing.starts_at|date:"d.m.Y · H:i" }}</strong><span class="detail-linked-list__description">{{ showing.location|default:object.property.address|default:"Место не указано" }}</span></span><span class="detail-linked-list__aside">{{ showing.get_status_display }}<span>{{ showing.owner.realtor_profile.display_name|default:showing.owner.get_full_name|default:showing.owner.username }}</span></span>{% if showing.owner_id == request.user.pk %}</a>{% else %}</div>{% endif %}{% endfor %}</div>{% else %}<p class="detail-muted mb-0">Показов пока нет.</p>{% endif %}
+  <section class="detail-section{% if not deal_showings %} deal-workflow__empty{% endif %}" aria-labelledby="deal-showings-title"><div class="detail-section__heading"><h2 id="deal-showings-title">{% if deal_showings %}Показы{% else %}Нет показов{% endif %}</h2><a href="{% url 'showing_create' %}?deal={{ object.pk }}" class="btn {% if deal_showings %}btn-icon {% endif %}btn-neutral btn-sm"{% if deal_showings %} data-tooltip="Назначить показ" aria-label="Назначить показ"{% endif %}>{% if deal_showings %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>{% else %}Назначить показ{% endif %}</a></div>
+    {% if deal_showings %}<div class="detail-linked-list">{% for showing in deal_showings %}{% if showing.owner_id == request.user.pk %}<a class="detail-linked-list__item" href="{% url 'showing_detail' showing.pk %}">{% else %}<div class="detail-linked-list__item">{% endif %}<span><strong>{{ showing.starts_at|date:"d.m.Y · H:i" }}</strong><span class="detail-linked-list__description">{{ showing.location|default:object.property.address|default:"Место не указано" }}</span></span><span class="detail-linked-list__aside">{{ showing.get_status_display }}<span>{{ showing.owner|staff_name }}</span></span>{% if showing.owner_id == request.user.pk %}</a>{% else %}</div>{% endif %}{% endfor %}</div>{% endif %}
   </section>
 </div>
 {% endif %}
 
-<section class="app-form-panel deal-form-panel">
-  <div class="app-form-panel__heading"><h2>{% if object %}Данные сделки{% else %}Начните работу по объекту{% endif %}</h2>{% if not object %}<p>Задачи и показы можно добавить после создания сделки.</p>{% endif %}</div>
-  <form method="post" class="app-form" novalidate>
+<section class="app-form-panel deal-form-panel"{% if object %} id="deal-details"{% endif %}>
+  <div class="app-form-panel__heading"><h2>{% if object %}Детали сделки{% else %}Начните работу по объекту{% endif %}</h2>{% if not object %}<p>Задачи и показы можно добавить после создания сделки.</p>{% endif %}</div>
+  <form method="post" class="app-form"{% if object %} id="deal-edit-form"{% endif %} novalidate>
     {% csrf_token %}
     {{ form.lead }}
     {% if form.lead.errors %}<div class="alert alert-danger" role="alert">{{ form.lead.errors }}</div>{% endif %}
-    {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    {% if not object and form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
     <div class="detail-form-grid">
       {% if not object %}
       <div class="app-field">{% include "includes/form_field.html" with field=form.client %}</div>
@@ -39,8 +67,8 @@
       {% endif %}
       {% if object and form.client.errors %}<div class="alert alert-danger">{{ form.client.errors }}</div>{% endif %}
       {% if object and form.property.errors %}<div class="alert alert-danger">{{ form.property.errors }}</div>{% endif %}
-      {% if form.responsible %}<div class="app-field">{% include "includes/form_field.html" with field=form.responsible %}{% if object %}<p class="form-text">При смене ответственного его открытые задачи и запланированные показы по сделке перейдут новому исполнителю.</p>{% endif %}</div>{% endif %}
-      <div class="app-field">{% include "includes/form_field.html" with field=form.stage %}</div>
+      {% if not object and form.responsible %}<div class="app-field">{% include "includes/form_field.html" with field=form.responsible %}</div>{% endif %}
+      {% if not object %}<div class="app-field">{% include "includes/form_field.html" with field=form.stage %}</div>{% endif %}
       <div class="app-field">{% include "includes/form_field.html" with field=form.expected_commission %}<p class="form-text">Укажите сумму в валюте объекта.</p></div>
       <div class="app-field is-wide">{% include "includes/form_field.html" with field=form.outcome_note %}</div>
     </div>

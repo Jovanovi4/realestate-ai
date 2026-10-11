@@ -23,7 +23,7 @@ from billing.usage import attempt
 from .agency_access import membership_for, may_manage_agency, workspace_queryset
 from .models import (
     Agency, AgencyInvitation, AgencyMembership, Client, ClientReminder, Deal,
-    Lead, Property, Showing,
+    Lead, OwnerInquiry, Property, Showing,
 )
 
 
@@ -207,13 +207,16 @@ class AgencyMemberRemoveView(LoginRequiredMixin, View):
             return redirect("agency_dashboard")
         replacement = membership.agency.owner
         with transaction.atomic():
-            for model in (Property, Client, Deal, ClientReminder, Showing):
+            for model in (Property, Client, Deal, ClientReminder, Showing, OwnerInquiry):
                 for record in model.objects.filter(agency=membership.agency, owner=target.user).iterator():
                     record.owner = replacement
                     record.save(update_fields=["owner"])
             for lead in Lead.objects.filter(property__agency=membership.agency, assigned_to=target.user).iterator():
                 lead.assigned_to = replacement
                 lead.save(update_fields=["assigned_to"])
+            for inquiry in OwnerInquiry.objects.filter(agency=membership.agency, assigned_to=target.user).iterator():
+                inquiry.assigned_to = replacement
+                inquiry.save(update_fields=["assigned_to", "updated_at"])
             for deal in Deal.objects.filter(agency=membership.agency, responsible=target.user).iterator():
                 deal.responsible = replacement
                 deal.save(update_fields=["responsible"])

@@ -1,0 +1,25 @@
+<script>
+(() => {
+  const hint = document.querySelector('[data-board-hint]');
+  if (!hint) return;
+
+  const key = `reaicrm-board-hint-${hint.dataset.boardHint}`;
+  try {
+    if (window.localStorage.getItem(key)) return;
+  } catch {
+    // Keep the hint available when browser storage is disabled.
+  }
+  hint.hidden = false;
+
+  const dismiss = () => {
+    hint.hidden = true;
+    try {
+      window.localStorage.setItem(key, 'seen');
+    } catch {
+      // Dismissal still works for the current page.
+    }
+  };
+  hint.querySelector('[data-board-hint-dismiss]').addEventListener('click', dismiss);
+  document.addEventListener('board-move-saved', dismiss, { once: true });
+})();
+</script>

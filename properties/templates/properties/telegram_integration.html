@@ -6,9 +6,9 @@
 </header>
 
 {% if telegram_has_team %}
-<nav class="nav nav-pills workspace-tabs detail-tabs billing-workspace-tabs" aria-label="Пространство Telegram">
-  <a class="nav-link{% if telegram_workspace == 'personal' %} active{% endif %}" href="{% url 'integration_telegram' %}"{% if telegram_workspace == 'personal' %} aria-current="page"{% endif %}>Личное пространство</a>
-  <a class="nav-link{% if telegram_workspace == 'team' %} active{% endif %}" href="{% url 'integration_telegram' %}?workspace=team"{% if telegram_workspace == 'team' %} aria-current="page"{% endif %}>Команда</a>
+<nav class="nav nav-pills workspace-tabs ui-switch detail-tabs billing-workspace-tabs" aria-label="Пространство Telegram">
+  <a class="nav-link ui-switch__option{% if telegram_workspace == 'personal' %} active{% endif %}" href="{% url 'integration_telegram' %}"{% if telegram_workspace == 'personal' %} aria-current="page"{% endif %}>Личное пространство</a>
+  <a class="nav-link ui-switch__option{% if telegram_workspace == 'team' %} active{% endif %}" href="{% url 'integration_telegram' %}?workspace=team"{% if telegram_workspace == 'team' %} aria-current="page"{% endif %}>Команда</a>
 </nav>
 {% endif %}
 

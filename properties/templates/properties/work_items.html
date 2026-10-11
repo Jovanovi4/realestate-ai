@@ -1,21 +1,23 @@
 {% extends "base.html" %}
+{% load crm_display %}
 {% block title %}Все дела{% endblock %}
 {% block content %}
 <header class="ui-page-header">
-  <div><p class="ui-page-header__eyebrow">Рабочее пространство</p><h1 class="ui-page-header__title">Все дела</h1><p class="ui-page-header__description">Ответственный: {{ request.user.realtor_profile.display_name|default:request.user.get_full_name|default:request.user.username }}</p></div>
+  <div><p class="ui-page-header__eyebrow">Рабочее пространство</p><h1 class="ui-page-header__title">Все дела</h1><p class="ui-page-header__description">Ответственный: {{ request.user|staff_name }}</p></div>
   <div class="ui-page-header__actions"><a href="{% url 'showing_create' %}?next={% url 'work_items' %}" class="btn btn-neutral">Назначить показ</a><a href="{% url 'task_create' %}?next={% url 'work_items' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Новая задача</a></div>
 </header>
 
-<nav class="nav nav-pills workspace-tabs detail-tabs billing-workspace-tabs" aria-label="Период дел">
-  <a class="nav-link" href="{% url 'workday' %}">Сегодня</a>
-  <a class="nav-link active" href="{% url 'work_items' %}" aria-current="page">Все дела</a>
+<nav class="nav nav-pills workspace-tabs ui-switch detail-tabs billing-workspace-tabs" aria-label="Период дел">
+  <a class="nav-link ui-switch__option" href="{% url 'workday' %}">Сегодня</a>
+  <a class="nav-link ui-switch__option active" href="{% url 'work_items' %}" aria-current="page">Все дела</a>
 </nav>
 
-<nav class="work-items-filters" aria-label="Тип дела">
-  <a href="{% url 'work_items' %}"{% if selected_kind == 'all' %} class="active" aria-current="page"{% endif %}>Все</a>
-  <a href="?kind=task"{% if selected_kind == 'task' %} class="active" aria-current="page"{% endif %}>Задачи</a>
-  <a href="?kind=lead"{% if selected_kind == 'lead' %} class="active" aria-current="page"{% endif %}>Заявки</a>
-  <a href="?kind=showing"{% if selected_kind == 'showing' %} class="active" aria-current="page"{% endif %}>Показы</a>
+<nav class="work-items-filters ui-switch" aria-label="Тип дела">
+  <a class="ui-switch__option{% if selected_kind == 'all' %} active{% endif %}" href="{% url 'work_items' %}"{% if selected_kind == 'all' %} aria-current="page"{% endif %}>Все</a>
+  <a class="ui-switch__option{% if selected_kind == 'task' %} active{% endif %}" href="?kind=task"{% if selected_kind == 'task' %} aria-current="page"{% endif %}>Задачи</a>
+  <a class="ui-switch__option{% if selected_kind == 'lead' %} active{% endif %}" href="?kind=lead"{% if selected_kind == 'lead' %} aria-current="page"{% endif %}>Заявки</a>
+  <a class="ui-switch__option{% if selected_kind == 'owner' %} active{% endif %}" href="?kind=owner"{% if selected_kind == 'owner' %} aria-current="page"{% endif %}>Собственники</a>
+  <a class="ui-switch__option{% if selected_kind == 'showing' %} active{% endif %}" href="?kind=showing"{% if selected_kind == 'showing' %} aria-current="page"{% endif %}>Показы</a>
 </nav>
 
 {% if groups %}

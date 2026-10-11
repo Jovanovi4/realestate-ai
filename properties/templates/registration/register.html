@@ -5,7 +5,7 @@
 <section class="auth-page"><div class="auth-panel">
   <a class="auth-brand" href="{% url 'login' %}"><span class="auth-brand-mark">RE</span><span>RealtorAI</span></a>
   <div class="auth-card"><div class="auth-card-body">
-    <nav class="auth-tabs" aria-label="Авторизация"><a href="{% url 'login' %}">Вход</a><a class="is-active" href="{% url 'register' %}" aria-current="page">Регистрация</a></nav>
+    <nav class="auth-tabs ui-switch" aria-label="Авторизация"><a class="ui-switch__option" href="{% url 'login' %}">Вход</a><a class="ui-switch__option is-active" href="{% url 'register' %}" aria-current="page">Регистрация</a></nav>
     <h1 class="auth-heading">Создайте кабинет</h1><p class="auth-subtitle">Все объекты, лендинги и заявки — в одном рабочем пространстве.</p>
     <form method="post" class="app-form" novalidate>{% csrf_token %}
       {% if form.non_field_errors %}<div class="app-form-error-summary" role="alert">{{ form.non_field_errors|striptags }}</div>{% endif %}

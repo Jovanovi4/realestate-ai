@@ -6,6 +6,8 @@ from django.contrib.auth.models import User
 from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from django.test import TestCase, TransactionTestCase
+from django.template.loader import render_to_string
+from django.urls import reverse
 from docx import Document
 from reportlab.platypus import Paragraph, Table
 
@@ -13,7 +15,7 @@ from .models import Lead, Property
 from .services.ai_service import AIService
 from .services.presentation_docx_service import PresentationDocxService
 from .services.presentation_service import PresentationService
-from .services.property_marketing import price_summary, property_fact_rows
+from .services.property_marketing import format_money, price_summary, property_fact_rows
 from .services.telegram_public_service import listing_text
 
 
@@ -48,6 +50,19 @@ class CommercialMarketingTests(TestCase):
         self.property.price = Decimal("18000000.00")
         self.assertEqual(price_summary(self.property).scope, "Полная цена помещения")
         self.assertEqual(price_summary(self.property).per_sqm, "Расчётно 300 000 ₽ / м²")
+
+    def test_price_has_one_format_in_crm_and_landing(self):
+        self.assertEqual(format_money(Decimal("140000.00"), "RUB"), "140 000 ₽")
+        self.assertEqual(format_money(Decimal("125000.50"), "USD"), "125 000,5 $")
+        self.client.force_login(self.property.owner)
+        for name in ("property_list", "property_detail"):
+            args = [self.property.pk] if name == "property_detail" else []
+            response = self.client.get(reverse(name, args=args))
+            self.assertContains(response, "180 000 ₽ / мес.")
+            self.assertNotContains(response, "180000,00")
+        landing_price = render_to_string("properties/includes/landing_price.html", {"property": self.property})
+        self.assertIn("180 000 ₽ / мес.", landing_price)
+        self.assertIn("Расчётно 3 000 ₽ / м² / мес.", landing_price)
 
     def test_telegram_announcement_uses_commercial_units_and_facts(self):
         text = listing_text(self.property)

@@ -19,10 +19,6 @@
       .auth-brand-mark { display:grid; width:2.2rem; height:2.2rem; place-items:center; border-radius:.65rem; color:#fff; background:#334155; font-size:.7rem; letter-spacing:.06em; }
       .auth-card { overflow:hidden; border:1px solid #e2e8f0; border-radius:1rem; background:rgba(255,255,255,.94); box-shadow:0 1.25rem 3.5rem rgba(15,23,42,.09); }
       .auth-card-body { padding:2rem; }
-      .auth-tabs { display:grid; grid-template-columns:repeat(2,1fr); gap:.25rem; padding:.28rem; margin-bottom:1.75rem; border-radius:.7rem; background:#f1f5f9; }
-      .auth-tabs a { padding:.55rem .75rem; border-radius:.5rem; color:#64748b; font-size:.875rem; font-weight:700; text-align:center; text-decoration:none; }
-      .auth-tabs a:hover { color:#334155; }
-      .auth-tabs a.is-active { color:#172033; background:#fff; box-shadow:0 .1rem .4rem rgba(15,23,42,.1); }
       .auth-heading { margin:0 0 .35rem; color:#172033; font-size:1.5rem; font-weight:750; letter-spacing:-.035em; }
       .auth-subtitle { margin:0 0 1.5rem; color:#64748b; font-size:.92rem; line-height:1.55; }
       .auth-card .form-label { margin-bottom:.45rem; color:#475569; font-size:.84rem; font-weight:700; }
@@ -51,11 +47,9 @@
       .table thead th { color: var(--muted); font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
       .ai-scenario { width:100%; min-height:112px; padding:1rem; border:1px solid #dbe3ee; border-radius:.75rem; color:var(--ink); background:#fff; text-align:left; transition:border-color .15s ease, background .15s ease, box-shadow .15s ease; }
       .ai-scenario:hover { border-color:#94a3b8; background:#f8fafc; }
-      .ai-scenario.is-active { border-color:#334155; background:#f1f5f9; box-shadow:inset 0 0 0 1px #334155; }
       .ai-scenario-icon { display:grid; width:2rem; height:2rem; place-items:center; margin-bottom:.75rem; border-radius:.55rem; color:#334155; background:#e8edf3; font-weight:800; }
       .ai-tone { padding:.38rem .65rem; border:1px solid #dbe3ee; border-radius:.48rem; color:#64748b; background:#fff; font-size:.8rem; font-weight:700; }
       .ai-tone:hover { color:#172033; background:#f8fafc; }
-      .ai-tone.is-active { border-color:#334155; color:#fff; background:#334155; }
       .ai-field-trigger { display:inline-grid; width:2rem; height:2rem; padding:0; place-items:center; border:0; border-radius:50%; color:#fff; background:#0d6efd; box-shadow:0 .2rem .55rem rgba(13,110,253,.25); opacity:0; pointer-events:none; transform:scale(.85); transition:opacity .15s ease, transform .15s ease, background .15s ease; }
       .ai-field-active .ai-field-trigger { opacity:1; pointer-events:auto; transform:scale(1); }
       .ai-field-trigger:hover { color:#fff; background:#0b5ed7; }
@@ -65,7 +59,6 @@
       .ai-field-panel-inner { padding:.8rem; border:1px solid #dbe3ee; border-radius:.7rem; background:#f8fafc; }
       .ai-improvement { padding:.32rem .55rem; border:1px solid #dbe3ee; border-radius:.48rem; color:#64748b; background:#fff; font-size:.75rem; font-weight:700; }
       .ai-improvement:hover { color:#172033; background:#f1f5f9; }
-      .ai-improvement.is-active { border-color:#334155; color:#fff; background:#334155; }
       .history-delete { display:inline-grid; width:2rem; height:2rem; place-items:center; border:1px solid #f1c7c3; border-radius:.5rem; color:#b42318; background:#fff; }
       .history-delete:hover { border-color:#e7a7a1; color:#8f1d16; background:#fff7f6; }
       .visual-settings-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:1.25rem; }
@@ -75,10 +68,8 @@
       .visual-radio-input { position:absolute; inline-size:1px; block-size:1px; opacity:0; pointer-events:none; }
       .visual-swatch-choice { display:inline-flex; align-items:center; gap:.45rem; min-height:2.4rem; padding:.35rem .55rem .35rem .4rem; border:1px solid #dbe3ee; border-radius:999px; color:#64748b; background:#fff; cursor:pointer; font-size:.78rem; font-weight:700; transition:border-color .15s ease, box-shadow .15s ease, color .15s ease; }
       .visual-swatch { display:block; width:1.3rem; height:1.3rem; border:1px solid rgba(15,23,42,.12); border-radius:50%; background:#64748b; }.visual-swatch-template { background:linear-gradient(135deg,#334155 50%,#e2e8f0 50%); }.visual-swatch-graphite { background:#334155; }.visual-swatch-blue { background:#2563eb; }.visual-swatch-emerald { background:#07866e; }.visual-swatch-terracotta { background:#bf5c3d; }
-      .visual-radio-input:checked + .visual-swatch-choice, .visual-radio-input:focus-visible + .visual-swatch-choice { border-color:#64748b; color:#172033; box-shadow:0 0 0 2px #e2e8f0; }
       .visual-option { display:grid; flex:1 1 8rem; gap:.45rem; min-height:5.25rem; padding:.65rem; border:1px solid #dbe3ee; border-radius:.7rem; color:#64748b; background:#fff; cursor:pointer; font-size:.78rem; font-weight:700; transition:border-color .15s ease, box-shadow .15s ease, background .15s ease; }
       .visual-option-preview { display:block; height:2rem; overflow:hidden; border-radius:.35rem; background:#e8edf3; }.visual-option-preview::before, .visual-option-preview::after { display:block; content:''; }.preview-button-rounded::before, .preview-button-strict::before { width:48%; height:.65rem; margin:.68rem auto; background:#475569; }.preview-button-rounded::before { border-radius:999px; }.preview-button-strict::before { border-radius:.08rem; }.preview-hero-split { background:linear-gradient(90deg,#dce4ee 46%,#64748b 46%); }.preview-hero-background { background:linear-gradient(90deg,rgba(23,32,51,.72),rgba(23,32,51,.12)),#64748b; }.preview-gallery-large { background:linear-gradient(90deg,#64748b 72%,#dce4ee 72%); }.preview-gallery-grid { background:linear-gradient(90deg,#64748b 49%,transparent 49% 52%,#b6c1cf 52%),linear-gradient(#64748b 49%,transparent 49% 52%,#b6c1cf 52%); background-size:100% 100%,50% 100%; }
-      .visual-radio-input:checked + .visual-option, .visual-radio-input:focus-visible + .visual-option { border-color:#64748b; color:#172033; background:#f8fafc; box-shadow:0 0 0 2px #e2e8f0; }
       .mobile-records { display:none; }
       @media (max-width: 991.98px) {
         .desktop-records { display:none; }

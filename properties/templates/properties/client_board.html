@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Отношения с клиентами{% endblock %}
 {% block content %}
 <header class="ui-page-header">
@@ -6,19 +7,31 @@
   <div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Список клиентов</a><a href="{% url 'deal_board' %}" class="btn btn-primary">Воронка сделок</a></div>
 </header>
 
-<div class="client-board" aria-label="Состояния отношений с клиентами">
+<div class="board-desktop-hint board-onboarding-hint" data-board-hint="clients" hidden><span>Перетащите карточку, чтобы изменить отношения. Это также можно сделать в карточке клиента.</span><button class="btn btn-text btn-sm" type="button" data-board-hint-dismiss>Понятно</button></div>
+<div class="alert alert-danger d-none mb-3" role="alert" data-client-board-error></div>
+<p class="visually-hidden" role="status" aria-live="polite" data-client-board-status></p>
+<form class="d-none" data-client-board-csrf>{% csrf_token %}</form>
+<div class="board-mobile-picker" data-board-mobile-picker>
+  <label class="form-label" for="client-mobile-stage">Отношения</label>
+  <select class="form-select" id="client-mobile-stage" data-board-stage-picker>
+    {% for column in columns %}<option value="{{ column.key }}">{{ column.label }} · {{ column.count }}</option>{% endfor %}
+  </select>
+</div>
+<div class="client-board" aria-label="Состояния отношений с клиентами" data-client-board data-mobile-board>
   {% for column in columns %}
-    <section class="client-board__column is-{{ column.key }}" aria-labelledby="client-board-{{ column.key }}">
+    <section class="client-board__column is-{{ column.key }}" aria-labelledby="client-board-{{ column.key }}" data-client-status="{{ column.key }}">
       <header class="client-board__heading"><h2 id="client-board-{{ column.key }}">{{ column.label }}</h2><span class="client-board__count" aria-label="Клиентов на этапе: {{ column.count }}">{{ column.count }}</span></header>
       <div class="client-board__items">
         {% for client in column.page %}
-          <a href="{% url 'client_detail' client.pk %}" class="client-board__card">
-            <strong>{{ client.name }}</strong>
-            <span class="client-board__phone">{{ client.phone }}</span>
-            {% if client.preferred_area %}<span class="client-board__area">{{ client.preferred_area }}</span>{% endif %}
-            {% if client.active_deals_count or client.completed_deals_count %}<span class="client-board__deals">{% if client.active_deals_count %}Сделок в работе: {{ client.active_deals_count }}{% endif %}{% if client.completed_deals_count %}{% if client.active_deals_count %} · {% endif %}Успешных: {{ client.completed_deals_count }}{% endif %}</span>{% endif %}
-            <span class="client-board__source">{{ client.get_source_display }}</span>
-          </a>
+          <article class="client-board__card client-board__draggable" draggable="true" data-client-card data-client-status="{{ column.key }}" data-status-url="{% url 'client_board_status_update' client.pk %}">
+            <a href="{% url 'client_detail' client.pk %}" class="client-board__card-link" draggable="false">
+              <strong>{{ client.name }}</strong>
+              <span class="client-board__phone">{{ client.phone }}</span>
+              {% if client.preferred_area %}<span class="client-board__area">{{ client.preferred_area }}</span>{% endif %}
+              {% if client.active_deals_count or client.completed_deals_count %}<span class="client-board__deals">{% if client.active_deals_count %}Сделок в работе: {{ client.active_deals_count }}{% endif %}{% if client.completed_deals_count %}{% if client.active_deals_count %} · {% endif %}Успешных: {{ client.completed_deals_count }}{% endif %}</span>{% endif %}
+              <span class="client-board__source">{{ client.get_source_display }}</span>
+            </a>
+          </article>
         {% empty %}
           <p class="client-board__empty">Пока нет клиентов</p>
         {% endfor %}
@@ -27,4 +40,7 @@
     </section>
   {% endfor %}
 </div>
+{% include "properties/includes/mobile_board_script.html" %}
+<script src="{% static 'js/client-board.js' %}" defer></script>
+{% include "properties/includes/board_hint_script.html" %}
 {% endblock %}

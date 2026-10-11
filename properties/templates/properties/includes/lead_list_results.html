@@ -1,3 +1,4 @@
+{% load crm_display %}
 <div id="leads-results" class="lead-results">
   {% if leads %}
     <div class="lead-table-shell desktop-records">
@@ -13,7 +14,6 @@
               <th scope="col">Ответственный</th>
               <th scope="col">Следующее действие</th>
               <th scope="col">Статус</th>
-              <th scope="col"><span class="visually-hidden">Действия</span></th>
             </tr>
           </thead>
           <tbody>
@@ -30,13 +30,10 @@
                 <td>
                   <span class="lead-table__property">{{ lead.property.title }}</span>
                 </td>
-                <td>{% if lead.assigned_to %}{{ lead.assigned_to.realtor_profile.display_name|default:lead.assigned_to.get_full_name|default:lead.assigned_to.username }}{% else %}Не назначен{% endif %}</td>
+                <td>{% if lead.assigned_to %}{{ lead.assigned_to|staff_name }}{% else %}Не назначен{% endif %}</td>
                 <td>{% if lead.outcome == 'open' and lead.status != 'archived' %}{% include "properties/includes/lead_action_summary.html" %}{% else %}<span class="detail-muted" aria-label="Нет следующего действия">—</span>{% endif %}</td>
                 <td>
                   {% include "properties/includes/lead_status_badge.html" %}
-                </td>
-                <td class="lead-table__actions">
-                  <a class="btn btn-icon btn-sm btn-text lead-table__open" href="{% url 'lead_detail' lead.pk %}" data-tooltip="Открыть заявку" aria-label="Открыть заявку от {{ lead.name }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>
                 </td>
               </tr>
             {% endfor %}
@@ -59,7 +56,7 @@
           <div class="lead-mobile-card__body">
             <p class="lead-mobile-card__object"><strong>{{ lead.property.title }}</strong></p>
             {% if lead.outcome == 'open' and lead.status != 'archived' %}{% include "properties/includes/lead_action_summary.html" %}{% endif %}
-            <p class="lead-mobile-card__meta"><span>{{ lead.get_source_display }} · <time datetime="{{ lead.created_at|date:'c' }}">{{ lead.created_at|date:"d.m · H:i" }}</time></span><span>Отв.: {% if lead.assigned_to %}{{ lead.assigned_to.realtor_profile.display_name|default:lead.assigned_to.get_full_name|default:lead.assigned_to.username }}{% else %}не назначен{% endif %}</span></p>
+            <p class="lead-mobile-card__meta"><span>{{ lead.get_source_display }} · <time datetime="{{ lead.created_at|date:'c' }}">{{ lead.created_at|date:"d.m · H:i" }}</time></span><span>Отв.: {% if lead.assigned_to %}{{ lead.assigned_to|staff_name }}{% else %}не назначен{% endif %}</span></p>
           </div>
         </article>
       {% endfor %}

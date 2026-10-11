@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% load crm_display %}
+{% block title %}Обращение собственника · {{ inquiry.client.name }}{% endblock %}
+{% block content %}
+<header class="ui-page-header detail-page-header">
+  <div>{% url 'owner_inquiry_list' as breadcrumb_href %}{% include "properties/includes/detail_breadcrumb.html" with href=breadcrumb_href parent="Обращения" current="Обращение" %}<h1 class="ui-page-header__title">{{ inquiry.client.name }}</h1><div class="detail-page-header__meta"><span>{{ inquiry.get_deal_type_display }} · {{ inquiry.get_result_display }}</span><a href="{% url 'client_detail' inquiry.client.pk %}">Карточка собственника</a></div></div>
+</header>
+{% if inquiry.property %}
+  <section class="detail-section owner-inquiry-work" aria-labelledby="owner-inquiry-work-title"><div class="detail-section__heading"><div><span class="detail-kicker">Следующий шаг</span><h2 id="owner-inquiry-work-title">Объект создан</h2></div></div><a class="btn btn-primary" href="{% url 'property_detail' inquiry.property.pk %}">{{ inquiry.property.title }}</a></section>
+{% else %}
+  <section class="detail-section owner-inquiry-work" id="owner-inquiry-process" aria-labelledby="owner-inquiry-work-title">
+    <div class="detail-section__heading"><div><span class="detail-kicker">Следующий шаг</span><h2 id="owner-inquiry-work-title">{% if inquiry.first_contacted_at %}Обновить итог{% else %}Записать разговор{% endif %}</h2></div></div>
+    {% if inquiry.result != 'declined' %}<div class="owner-inquiry-work__next"><strong>{% if inquiry.first_contacted_at %}{{ inquiry.next_action }}{% else %}Связаться с собственником{% endif %}</strong><time class="{% if inquiry.is_overdue %}lead-deadline--overdue{% endif %}" datetime="{{ inquiry.attention_due_at|date:'c' }}">{% if not inquiry.first_contacted_at and inquiry.attention_due_at == inquiry.first_response_due_at %}Первый ответ{% else %}Действие{% endif %} {% if inquiry.is_overdue %}просрочено{% else %}до{% endif %} {{ inquiry.attention_due_at|date:"d.m.Y в H:i" }}</time><span>Ответственный: {{ inquiry.assigned_to|staff_name }}</span></div>{% endif %}
+    <div class="owner-inquiry-work__actions"><a class="btn btn-neutral btn-sm" href="tel:{{ inquiry.client.phone }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-phone"></use></svg>Позвонить · {{ inquiry.client.phone }}</a>{% if inquiry.result == 'agreed' %}<a class="btn btn-primary btn-sm" href="{% url 'create_property' %}?owner_inquiry={{ inquiry.pk }}">Создать объект из обращения</a>{% endif %}</div>
+    <form method="post" action="{% url 'owner_inquiry_process' inquiry.pk %}" class="app-form owner-inquiry-work__form" novalidate>{% csrf_token %}
+      {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="app-form-grid"><div class="app-field">{% include "includes/form_field.html" with field=form.result %}</div><div class="app-field is-wide">{% include "includes/form_field.html" with field=form.result_note %}</div><div class="app-field">{% include "includes/form_field.html" with field=form.next_action %}</div><div class="app-field">{% include "includes/form_field.html" with field=form.next_action_due_at %}</div></div>
+      <p class="form-text">При отказе следующий шаг не нужен. В остальных случаях укажите действие и срок.</p><div class="app-form-actions"><button class="btn {% if inquiry.result == 'agreed' %}btn-neutral{% else %}btn-primary{% endif %}" type="submit">Сохранить результат</button></div>
+    </form>
+  </section>
+{% endif %}
+{% if inquiry.property and inquiry.result_note %}<section class="detail-section mt-4"><div class="detail-section__heading"><h2>Итог разговора</h2></div><p class="mb-0">{{ inquiry.result_note|linebreaksbr }}</p></section>{% endif %}
+<details class="detail-section owner-inquiry-about mt-4">
+  <summary class="owner-inquiry-about__toggle"><strong>Об обращении</strong><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
+  <div class="owner-inquiry-about__content app-form-grid">
+    <div><span class="detail-muted">Недвижимость</span><p class="mb-0">{{ inquiry.address|default:inquiry.description }}</p></div>
+    <div><span class="detail-muted">Ожидаемая цена</span><p class="mb-0">{% if inquiry.expected_price != None %}{{ inquiry.expected_price|money:inquiry.currency }}{% else %}Не указана{% endif %}</p></div>
+    {% if inquiry.address and inquiry.description %}<div class="is-wide"><span class="detail-muted">Описание</span><p class="mb-0">{{ inquiry.description|linebreaksbr }}</p></div>{% endif %}
+    <div><span class="detail-muted">Источник · поступило</span><p class="mb-0">{{ inquiry.get_source_display }} · {{ inquiry.created_at|date:"d.m.Y H:i" }}</p></div>
+    <div><span class="detail-muted">Ответственный</span><p class="mb-0">{{ inquiry.assigned_to|staff_name }}</p>{% if assignees and not inquiry.property %}<details class="mt-2"><summary class="btn btn-text btn-sm">Сменить</summary><form method="post" action="{% url 'owner_inquiry_assign' inquiry.pk %}" class="d-flex flex-wrap gap-2 mt-2">{% csrf_token %}<label class="visually-hidden" for="owner-inquiry-assignee">Новый ответственный</label><select class="form-select form-select-sm" id="owner-inquiry-assignee" name="assigned_to">{% for person, label in assignees %}<option value="{{ person.pk }}"{% if person.pk == inquiry.assigned_to_id %} selected{% endif %}>{{ label }}</option>{% endfor %}</select><button class="btn btn-neutral btn-sm" type="submit">Сохранить</button></form></details>{% endif %}</div>
+    {% if inquiry.first_contacted_at %}<div><span class="detail-muted">Первый контакт</span><p class="mb-0">{{ inquiry.first_contacted_at|date:"d.m.Y H:i" }}</p></div>{% endif %}
+    {% if not inquiry.first_contacted_at and inquiry.attention_due_at != inquiry.first_response_due_at %}<div><span class="detail-muted">Срок первого ответа</span><p class="mb-0">{{ inquiry.first_response_due_at|date:"d.m.Y H:i" }}</p></div>{% endif %}
+    {% if inquiry.result == 'declined' and inquiry.result_note %}<div class="is-wide"><span class="detail-muted">Итог разговора</span><p class="mb-0">{{ inquiry.result_note|linebreaksbr }}</p></div>{% endif %}
+  </div>
+</details>
+{% if contact_history %}<section class="detail-section mt-4"><div class="detail-section__heading"><h2>История контакта</h2></div>{% for item in contact_history %}<p class="small mb-2"><span class="text-muted">{{ item.created_at|date:"d.m.Y H:i" }}</span> · {{ item.text }}</p>{% endfor %}</section>{% endif %}
+{% endblock %}

@@ -1,9 +1,10 @@
+{% load crm_display %}
 {% if property.price %}
-  <p class="price mb-1">{{ property.get_currency_display|slice:":1" }} {{ property.price }}{% if property.deal_type == 'rent' %} / мес.{% endif %}</p>
+  <p class="price mb-1">{{ property|property_price }}</p>
   {% if property.is_commercial %}
     <p class="small mb-3" style="opacity:.8">
       {% if property.deal_type == 'rent' %}Аренда всего помещения за месяц{% else %}Полная цена помещения{% endif %}
-      {% if property.calculated_price_per_sqm %}<span class="d-block">Расчётно {{ property.get_currency_display|slice:":1" }} {{ property.calculated_price_per_sqm|floatformat:2 }} / м²{% if property.deal_type == 'rent' %} / мес.{% endif %}</span>{% endif %}
+      {% if property.calculated_price_per_sqm %}<span class="d-block">{{ property|property_rate }}</span>{% endif %}
     </p>
   {% endif %}
 {% endif %}

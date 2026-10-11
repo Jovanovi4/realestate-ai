@@ -9,9 +9,9 @@
 <div class="lead-filter-rail">
 <nav class="lead-status-filter" aria-label="Фильтр заявок по статусу">
   <span class="lead-status-filter__label">Статус</span>
-  <div class="lead-status-filter__options">
+  <div class="lead-status-filter__options ui-switch">
     {% for tab in status_tabs %}
-      <a class="lead-status-filter__option {% if tab.value == selected_status %}is-active{% endif %}"
+      <a class="lead-status-filter__option ui-switch__option {% if tab.value == selected_status %}is-active{% endif %}"
          href="{{ tab.url }}"
          hx-get="{{ tab.url }}"
          hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"
@@ -22,5 +22,5 @@
   </div>
   <span class="htmx-indicator lead-status-filter__loading" role="status">Обновляем…</span>
 </nav>
-{% if nav_agency_membership %}<div class="lead-assignee-filter" role="group" aria-label="Ответственный"><a class="btn btn-sm {% if not selected_assigned %}btn-neutral{% else %}btn-text{% endif %}" href="{{ all_assigned_url }}" hx-get="{{ all_assigned_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true">Все заявки</a><a class="btn btn-sm {% if selected_assigned %}btn-neutral{% else %}btn-text{% endif %}" href="{{ mine_assigned_url }}" hx-get="{{ mine_assigned_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true">Мои заявки</a></div>{% endif %}
+{% if nav_agency_membership %}<div class="lead-assignee-filter"><div class="ui-switch" role="group" aria-label="Ответственный"><a class="ui-switch__option{% if not selected_assigned %} is-active{% endif %}" href="{{ all_assigned_url }}" hx-get="{{ all_assigned_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"{% if not selected_assigned %} aria-current="page"{% endif %}>Все заявки</a><a class="ui-switch__option{% if selected_assigned %} is-active{% endif %}" href="{{ mine_assigned_url }}" hx-get="{{ mine_assigned_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"{% if selected_assigned %} aria-current="page"{% endif %}>Мои заявки</a></div></div>{% endif %}
 </div>

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Заявки{% endblock %}
 {% block content %}
-<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Входящие заявки</h1><p class="ui-page-header__description">Разберите обращения, затем ведите этап сделки в карточке клиента.</p></div><div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Клиенты</a></div></header>
+<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Заявки</h1><p class="ui-page-header__description">Обрабатывайте обращения здесь. Этапы по объектам — в сделках.</p></div></header>
 
 {% if demo_test_completed %}<div class="alert alert-success border-0 shadow-sm"><strong>Готово!</strong> Вы прошли путь от лендинга до обращения клиента. Новая демо-заявка уже в списке ниже.</div>{% elif not has_any_leads %}<div class="contextual-hint mb-4"><span class="contextual-hint-mark">i</span><span>Здесь появляются обращения с опубликованных лендингов. Откройте лендинг объекта и отправьте тестовую заявку, чтобы увидеть весь путь клиента.</span></div>{% endif %}
 

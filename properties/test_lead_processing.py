@@ -585,6 +585,26 @@ class LeadProcessingTests(TestCase):
         self.assertContains(detail, "Первый ответ просрочен")
         self.assertEqual(self.client.get(reverse("workday")).context["nav_overdue_count"], 1)
 
+    def test_detail_shows_one_deadline_when_times_share_a_displayed_minute(self):
+        minute = timezone.localtime(timezone.now()).replace(second=0, microsecond=0) + timedelta(minutes=10)
+        Lead.objects.filter(pk=self.lead.pk).update(
+            created_at=minute - timedelta(minutes=30) + timedelta(seconds=5),
+            next_action_due_at=minute + timedelta(seconds=40),
+        )
+        url = reverse("lead_detail", args=[self.lead.pk])
+        response = self.client.get(url)
+        self.assertTrue(response.context["lead_deadlines_match"])
+        self.assertNotContains(response, 'class="lead-next__secondary-deadline')
+        lead_list = self.client.get(reverse("lead_list"))
+        self.assertContains(lead_list, "Первый ответ до")
+        self.assertNotContains(lead_list, 'class="lead-action-summary__secondary')
+
+        Lead.objects.filter(pk=self.lead.pk).update(next_action_due_at=minute + timedelta(hours=1))
+        response = self.client.get(url)
+        self.assertFalse(response.context["lead_deadlines_match"])
+        self.assertContains(response, 'class="lead-next__secondary-deadline')
+        self.assertContains(self.client.get(reverse("lead_list")), 'class="lead-action-summary__secondary')
+
     def test_today_shows_first_response_even_if_next_action_is_tomorrow(self):
         received_at = timezone.localtime(timezone.now()).replace(hour=12, minute=0, second=0, microsecond=0)
         Lead.objects.filter(pk=self.lead.pk).update(

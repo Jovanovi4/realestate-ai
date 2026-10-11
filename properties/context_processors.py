@@ -1,7 +1,7 @@
 from django.conf import settings
 from django.utils import timezone
 
-from .models import ClientReminder, Lead, RealtorProfile, Showing
+from .models import ClientReminder, Lead, OwnerInquiry, RealtorProfile, Showing
 from .agency_access import membership_for, workspace_queryset
 
 
@@ -19,6 +19,8 @@ def active_navigation_item(request):
         return "properties"
     if "lead" in name:
         return "leads"
+    if name.startswith("owner_inquiry") or name.startswith("owner_agreement") or name.startswith("owner_report"):
+        return "clients"
     if "client" in name:
         return "clients"
     if "deal" in name:
@@ -41,6 +43,11 @@ def realtor_profile(request):
     overdue_count += workspace_queryset(Lead.objects, request.user, prefix="property__").filter(
         Lead.overdue_filter(timezone.now()), assigned_to=request.user,
     ).exclude(status="archived").count()
+    owner_inquiries = workspace_queryset(OwnerInquiry.objects, request.user).filter(
+        assigned_to=request.user, property__isnull=True,
+    ).exclude(result="declined")
+    overdue_count += owner_inquiries.filter(first_contacted_at__isnull=True, first_response_due_at__lt=timezone.now()).count()
+    overdue_count += owner_inquiries.filter(first_contacted_at__isnull=False, next_action_due_at__lt=timezone.now()).count()
     nav_item = active_navigation_item(request)
     nav_section = {
         "properties": "realty", "landings": "realty",

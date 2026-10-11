@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% load crm_display %}
+{% block title %}Обращения собственников{% endblock %}
+{% block content %}
+<header class="ui-page-header">
+  <div><p class="ui-page-header__eyebrow">CRM · собственники</p><h1 class="ui-page-header__title">Обращения собственников</h1><p class="ui-page-header__description">{% if filter_client %}По контакту <a href="{% url 'client_detail' filter_client.pk %}#client-overview">{{ filter_client.name }}</a> · <a href="{% url 'owner_inquiry_list' %}?status=all">Сбросить фильтр</a>{% else %}Продажа и сдача недвижимости до создания объекта.{% endif %}</p></div>
+  <div class="ui-page-header__actions"><a class="btn btn-primary" href="{% url 'owner_inquiry_create' %}{% if filter_client %}?client={{ filter_client.pk }}{% endif %}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Новое обращение</a></div>
+</header>
+{% include "properties/includes/owner_workspace_nav.html" with active="inquiries" %}
+<nav class="nav nav-pills workspace-tabs ui-switch detail-tabs billing-workspace-tabs" aria-label="Состояние обращений">
+  <a class="nav-link ui-switch__option{% if status == 'active' %} active{% endif %}" href="?status=active{% if filter_client %}&amp;client={{ filter_client.pk }}{% endif %}"{% if status == 'active' %} aria-current="page"{% endif %}>В работе</a>
+  <a class="nav-link ui-switch__option{% if status == 'completed' %} active{% endif %}" href="?status=completed{% if filter_client %}&amp;client={{ filter_client.pk }}{% endif %}"{% if status == 'completed' %} aria-current="page"{% endif %}>Завершены</a>
+  <a class="nav-link ui-switch__option{% if status == 'all' %} active{% endif %}" href="?status=all{% if filter_client %}&amp;client={{ filter_client.pk }}{% endif %}"{% if status == 'all' %} aria-current="page"{% endif %}>Все</a>
+</nav>
+<section class="detail-section" aria-label="Список обращений">
+  {% for inquiry in inquiries %}
+    <article class="workday-item owner-inquiry-row">
+      <div class="workday-item__time{% if inquiry.is_overdue %} lead-deadline--overdue{% endif %}"><time datetime="{{ inquiry.attention_due_at|date:'c' }}">{{ inquiry.attention_due_at|date:"d.m · H:i" }}</time></div>
+      <div class="workday-item__body"><a href="{% url 'owner_inquiry_detail' inquiry.pk %}"><strong>{{ inquiry.client.name }} · {% if inquiry.deal_type == 'rent' %}Сдать{% else %}Продать{% endif %}</strong></a><span>{{ inquiry.address|default:inquiry.description|truncatechars:72 }} · {{ inquiry.get_result_display }}{% if inquiry.is_overdue %} · Просрочено{% endif %}</span></div>
+      <span class="small text-muted">{{ inquiry.assigned_to|staff_name }}</span>
+    </article>
+  {% empty %}<p class="detail-muted mb-0">По выбранному состоянию обращений нет.</p>{% endfor %}
+</section>
+{% if page_obj.has_other_pages %}<nav class="mt-3" aria-label="Страницы обращений"><div class="d-flex gap-2 align-items-center">{% if page_obj.has_previous %}<a class="btn btn-sm btn-neutral" href="?status={{ status }}{% if filter_client %}&amp;client={{ filter_client.pk }}{% endif %}&amp;page={{ page_obj.previous_page_number }}">Назад</a>{% endif %}<span class="small text-muted">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>{% if page_obj.has_next %}<a class="btn btn-sm btn-neutral" href="?status={{ status }}{% if filter_client %}&amp;client={{ filter_client.pk }}{% endif %}&amp;page={{ page_obj.next_page_number }}">Далее</a>{% endif %}</div></nav>{% endif %}
+{% endblock %}

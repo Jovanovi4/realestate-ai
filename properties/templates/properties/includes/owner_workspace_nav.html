@@ -1,0 +1,6 @@
+<nav class="nav nav-pills workspace-tabs ui-switch detail-tabs billing-workspace-tabs owner-workspace-nav" aria-label="Навигация по клиентам и собственникам">
+  <a class="nav-link ui-switch__option" href="{% url 'client_list' %}">Клиенты</a>
+  <a class="nav-link ui-switch__option{% if active == 'owners' %} active{% endif %}" href="{% url 'client_list' %}?role=owner"{% if active == 'owners' %} aria-current="page"{% endif %}>Собственники</a>
+  <a class="nav-link ui-switch__option{% if active == 'inquiries' %} active{% endif %}" href="{% url 'owner_inquiry_list' %}"{% if active == 'inquiries' %} aria-current="page"{% endif %}>Обращения</a>
+  <a class="nav-link ui-switch__option{% if active == 'agreements' %} active{% endif %}" href="{% url 'owner_agreement_list' %}"{% if active == 'agreements' %} aria-current="page"{% endif %}>Сроки</a>
+</nav>

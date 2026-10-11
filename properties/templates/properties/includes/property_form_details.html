@@ -3,9 +3,9 @@
   <div class="form-section-body">
     <fieldset class="property-kind-picker">
       <legend class="form-label">Категория недвижимости</legend>
-      <div class="property-kind-switch">
-        <button type="button" :class="{ 'is-active': propertyGroup === 'residential' }" :aria-pressed="propertyGroup === 'residential'" @click="setPropertyGroup('residential')">Жилая</button>
-        <button type="button" :class="{ 'is-active': propertyGroup === 'commercial' }" :aria-pressed="propertyGroup === 'commercial'" @click="setPropertyGroup('commercial')">Коммерческая</button>
+      <div class="property-kind-switch ui-switch">
+        <button class="ui-switch__option" type="button" :class="{ 'is-active': propertyGroup === 'residential' }" :aria-pressed="propertyGroup === 'residential'" @click="setPropertyGroup('residential')">Жилая</button>
+        <button class="ui-switch__option" type="button" :class="{ 'is-active': propertyGroup === 'commercial' }" :aria-pressed="propertyGroup === 'commercial'" @click="setPropertyGroup('commercial')">Коммерческая</button>
       </div>
     </fieldset>
     <div class="row">

@@ -553,7 +553,10 @@ class AccountAndPropertyAccessTests(TestCase):
 
         response = self.client.get(reverse("property_detail", args=[property.pk]))
 
-        self.assertContains(response, "Начните с цены, адреса и главной фотографии")
+        self.assertContains(
+            response,
+            f'Следующий шаг: <a href="{reverse("edit_property", args=[property.pk])}">Укажите цену объекта</a>',
+        )
 
     def test_empty_text_and_landing_sections_show_contextual_hints(self):
         owner = User.objects.create_user("agent", password="password")
@@ -563,7 +566,7 @@ class AccountAndPropertyAccessTests(TestCase):
         response = self.client.get(reverse("edit_property", args=[property.pk]))
 
         self.assertContains(response, "Можно написать текст вручную или получить черновик от ИИ")
-        self.assertContains(response, "После сохранения откройте предпросмотр в карточке объекта")
+        self.assertContains(response, "Проверьте оформление в предпросмотре, затем сохраните объект")
 
     def test_property_editor_uses_light_sections_and_highlights_invalid_fields(self):
         owner = User.objects.create_user("form-owner", password="password")
@@ -1247,6 +1250,8 @@ class AccountAndPropertyAccessTests(TestCase):
 
         self.assertEqual(response.context["readiness_total"], 7)
         self.assertEqual(response.context["readiness_completed"], 0)
+        self.assertContains(response, "Следующий шаг: <a")
+        self.assertNotContains(response, "Начните с цены, адреса и главной фотографии")
         photo_tasks = [task for task in response.context["readiness_tasks"] if "фото" in task["text"]]
         self.assertEqual(photo_tasks, [
             {"text": "Добавьте главное фото", "url": reverse("upload_images", args=[property.pk])},

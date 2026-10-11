@@ -11,6 +11,13 @@ def format_number(value):
     return f"{whole.replace(',', ' ')}{',' + fractional if separator else ''}"
 
 
+def format_money(value, currency=""):
+    if value is None:
+        return ""
+    symbol = {"RUB": "₽", "USD": "$", "EUR": "€"}.get(currency, currency)
+    return f"{format_number(value)} {symbol}".strip()
+
+
 @dataclass(frozen=True)
 class PriceSummary:
     main: str
@@ -21,15 +28,14 @@ class PriceSummary:
 def price_summary(property):
     if property.price is None:
         return None
-    symbol = property.get_currency_display()[:1]
-    main = f"{format_number(property.price)} {symbol}"
+    main = format_money(property.price, property.currency)
     if property.deal_type == "rent":
         main += " / мес."
     if not property.is_commercial:
         return PriceSummary(main=main)
     scope = "Аренда всего помещения за месяц" if property.deal_type == "rent" else "Полная цена помещения"
     rate = property.calculated_price_per_sqm
-    per_sqm = f"Расчётно {format_number(rate)} {symbol} / м²" if rate is not None else ""
+    per_sqm = f"Расчётно {format_money(rate, property.currency)} / м²" if rate is not None else ""
     if per_sqm and property.deal_type == "rent":
         per_sqm += " / мес."
     return PriceSummary(main=main, scope=scope, per_sqm=per_sqm)
@@ -66,7 +72,7 @@ def property_fact_rows(property):
         if property.furnished and not property.is_commercial:
             rows.append(("Мебель", "Есть"))
         if property.rent_deposit:
-            rows.append(("Залог", f"{format_number(property.rent_deposit)} {property.get_currency_display()[:1]}"))
+            rows.append(("Залог", format_money(property.rent_deposit, property.currency)))
         if property.min_lease_months:
             rows.append(("Срок аренды", f"от {property.min_lease_months} мес."))
         if property.available_from:

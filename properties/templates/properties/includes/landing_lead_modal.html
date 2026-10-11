@@ -6,6 +6,7 @@
           <div><p class="eyebrow mb-2">Связаться</p><h2 id="leadModalTitle" class="h3 mb-1">{% if property.landing_contact_title %}{{ property.landing_contact_title }}{% elif property.is_commercial %}Уточнить условия помещения{% else %}Запланировать просмотр{% endif %}</h2><p class="text-muted mb-0">Оставьте контакты — риелтор ответит в ближайшее время.</p></div>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
         </div>
+        {% if preview %}<p class="text-muted mb-0">Это предпросмотр. Форма заявки здесь не отправляется.</p>{% else %}
         {% if turnstile_enabled %}<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{% endif %}
         <form method="post">
           {% csrf_token %}
@@ -19,6 +20,7 @@
           <button class="btn btn-primary w-100 mt-4">Отправить заявку</button>
           <p class="small text-muted text-center mb-0 mt-3">После отправки заявка будет передана риелтору.</p>
         </form>
+        {% endif %}
       </div>
     </div>
   </div>

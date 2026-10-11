@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load crm_display %}
 {% block title %}Команда · RealtorAI{% endblock %}
 {% block content %}
 <header class="ui-page-header">
@@ -15,7 +16,7 @@
 <div class="workday-grid">
   <section class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Команда</span><h2>Сотрудники</h2></div></div>
     <div class="agency-list">
-    {% for member in members %}<div class="agency-row"><div><strong>{% if member.user.realtor_profile.display_name %}{{ member.user.realtor_profile.display_name }}{% else %}{{ member.user.username }}{% endif %}</strong><span class="detail-muted d-block">{{ member.get_role_display }}</span></div>{% if is_owner and member.role != 'owner' %}<div class="d-flex gap-2 flex-wrap"><form method="post" action="{% url 'agency_member_role' member.pk %}">{% csrf_token %}<select name="role" class="form-select form-select-sm" aria-label="Роль сотрудника" onchange="this.form.submit()"><option value="agent" {% if member.role == 'agent' %}selected{% endif %}>Риелтор</option><option value="manager" {% if member.role == 'manager' %}selected{% endif %}>Руководитель</option></select></form><form method="post" action="{% url 'agency_member_remove' member.pk %}" data-confirm="Исключить сотрудника? Его назначения перейдут владельцу агентства.">{% csrf_token %}<button class="btn btn-sm btn-danger" type="submit">Исключить</button></form></div>{% endif %}</div>{% endfor %}
+    {% for member in members %}<div class="agency-row"><div><strong>{{ member.user|staff_name }}</strong><span class="detail-muted d-block">{{ member.get_role_display }}</span></div>{% if is_owner and member.role != 'owner' %}<div class="d-flex gap-2 flex-wrap"><form method="post" action="{% url 'agency_member_role' member.pk %}">{% csrf_token %}<select name="role" class="form-select form-select-sm" aria-label="Роль сотрудника" onchange="this.form.submit()"><option value="agent" {% if member.role == 'agent' %}selected{% endif %}>Риелтор</option><option value="manager" {% if member.role == 'manager' %}selected{% endif %}>Руководитель</option></select></form><form method="post" action="{% url 'agency_member_remove' member.pk %}" data-confirm="Исключить сотрудника? Его назначения перейдут владельцу агентства.">{% csrf_token %}<button class="btn btn-sm btn-danger" type="submit">Исключить</button></form></div>{% endif %}</div>{% endfor %}
     </div>
   </section>
   {% if can_manage %}<section class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Доступ</span><h2>Пригласить сотрудника</h2></div></div>

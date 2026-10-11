@@ -1,3 +1,4 @@
+{% load crm_display %}
 <section class="facts section" style="order:{{ landing_order.facts }}">
   <div class="container">
     <div class="property-facts">
@@ -15,7 +16,7 @@
       {% if property.condition %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">✦</span><span class="fact-label">Состояние</span><strong>{{ property.get_condition_display }}</strong></div>{% endif %}
       {% if property.deal_type == 'rent' and property.furnished and not property.is_commercial %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">▣</span><span class="fact-label">Мебель</span><strong>Есть</strong></div>{% endif %}
       {% if property.deal_type == 'rent' and property.min_lease_months %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">◷</span><span class="fact-label">Срок аренды</span><strong>от {{ property.min_lease_months }} мес.</strong></div>{% endif %}
-      {% if property.deal_type == 'rent' and property.rent_deposit %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">₽</span><span class="fact-label">Залог</span><strong>{{ property.rent_deposit }}</strong></div>{% endif %}
+      {% if property.deal_type == 'rent' and property.rent_deposit %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">₽</span><span class="fact-label">Залог</span><strong>{{ property.rent_deposit|money:property.currency }}</strong></div>{% endif %}
       {% if property.deal_type == 'rent' and property.available_from %}<div class="property-fact"><span class="fact-icon" aria-hidden="true">◉</span><span class="fact-label">Свободен с</span><strong>{{ property.available_from|date:"d.m.Y" }}</strong></div>{% endif %}
     </div>
   </div>

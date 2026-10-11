@@ -171,6 +171,9 @@ class DealCreateView(DealFormMixin, CreateView):
                     form.add_error("lead", "Заявка уже завершена либо не прошла первый контакт и квалификацию.")
                     return self.render_to_response(self.get_context_data(form=form))
             response = super().form_valid(form)
+            if self.object.client.contact_role == "owner":
+                self.object.client.contact_role = "both"
+                self.object.client.save(update_fields=["contact_role", "updated_at"])
             if lead:
                 convert_lead_to_deal(lead, self.object)
             else:
@@ -195,8 +198,17 @@ class DealUpdateView(DealFormMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context["deal_tasks"] = self.object.tasks.filter(is_done=False, cancelled_at__isnull=True).select_related("owner__realtor_profile").order_by(F("due_at").asc(nulls_last=True))[:5]
+        context["owner_links"] = self.object.property.owner_links.select_related("client").all()
+        context["deal_tasks"] = list(self.object.tasks.filter(is_done=False, cancelled_at__isnull=True).select_related("owner__realtor_profile").order_by(F("due_at").asc(nulls_last=True))[:5])
         context["deal_showings"] = self.object.showings.select_related("owner__realtor_profile").order_by("-starts_at")[:5]
+        next_task = context["deal_tasks"][0] if context["deal_tasks"] else None
+        now = timezone.now()
+        next_showing = self.object.showings.filter(status="planned", starts_at__gte=now).order_by("starts_at").first()
+        if next_showing and (not next_task or not next_task.due_at or next_showing.starts_at < next_task.due_at):
+            context["deal_next_showing"] = next_showing
+        else:
+            context["deal_next_task"] = next_task
+            context["deal_next_overdue"] = bool(next_task and next_task.due_at and next_task.due_at < now)
         return context
 
     def form_valid(self, form):

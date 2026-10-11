@@ -67,6 +67,7 @@
     activeCount.dataset.count = String(totalActive);
     activeCount.textContent = `Активных сделок: ${totalActive}`;
     status.textContent = 'Этап сделки сохранён.';
+    document.dispatchEvent(new Event('board-move-saved'));
   };
   const reconcileBoard = async (stage) => {
     const url = new URL(window.location.href);

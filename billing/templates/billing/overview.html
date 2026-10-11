@@ -15,9 +15,9 @@
 
 {% timezone billing_timezone %}
 {% if billing_has_team %}
-<ul class="nav nav-pills workspace-tabs detail-tabs billing-workspace-tabs" id="billing-workspace-tabs" role="tablist" aria-label="Пространство для просмотра тарифа">
-  <li class="nav-item" role="presentation"><button class="nav-link active" id="billing-personal-tab" data-bs-toggle="tab" data-bs-target="#billing-personal-pane" type="button" role="tab" aria-controls="billing-personal-pane" aria-selected="true">Личное пространство</button></li>
-  <li class="nav-item" role="presentation"><button class="nav-link" id="billing-team-tab" data-bs-toggle="tab" data-bs-target="#billing-team-pane" type="button" role="tab" aria-controls="billing-team-pane" aria-selected="false">Команда</button></li>
+<ul class="nav nav-pills workspace-tabs ui-switch detail-tabs billing-workspace-tabs" id="billing-workspace-tabs" role="tablist" aria-label="Пространство для просмотра тарифа">
+  <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option active" id="billing-personal-tab" data-bs-toggle="tab" data-bs-target="#billing-personal-pane" type="button" role="tab" aria-controls="billing-personal-pane" aria-selected="true">Личное пространство</button></li>
+  <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option" id="billing-team-tab" data-bs-toggle="tab" data-bs-target="#billing-team-pane" type="button" role="tab" aria-controls="billing-team-pane" aria-selected="false">Команда</button></li>
 </ul>
 {% endif %}
 <div class="billing-workspaces{% if billing_has_team %} tab-content{% endif %}" id="billing-workspace-content">

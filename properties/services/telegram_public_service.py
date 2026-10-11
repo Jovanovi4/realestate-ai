@@ -282,6 +282,9 @@ def _create_lead(property, subscriber, phone):
         **lookup,
         defaults={"owner": responsible, "name": subscriber.display_name or "Клиент Telegram", "source": "telegram_bot"},
     )
+    if client.contact_role == "owner":
+        client.contact_role = "both"
+        client.save(update_fields=["contact_role", "updated_at"])
     lead = Lead.objects.create(
         property=property, client=client, telegram_subscriber=subscriber,
         assigned_to=responsible, name=subscriber.display_name or client.name,

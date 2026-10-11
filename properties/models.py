@@ -5,7 +5,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.core.validators import MinValueValidator
+from django.core.validators import MinValueValidator, RegexValidator
 from django.db import models, transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -123,6 +123,7 @@ class Property(models.Model):
         ("blue", "Синий"),
         ("emerald", "Изумрудный"),
         ("terracotta", "Терракотовый"),
+        ("custom", "Свой цвет"),
     ]
 
     LANDING_BUTTON_STYLE_CHOICES = [
@@ -350,6 +351,11 @@ class Property(models.Model):
         choices=LANDING_ACCENT_CHOICES,
         default="template",
         verbose_name="Акцентный цвет",
+    )
+    landing_custom_color = models.CharField(
+        max_length=7, blank=True,
+        validators=[RegexValidator(r"^#[0-9A-Fa-f]{6}$", "Укажите цвет в формате #RRGGBB.")],
+        verbose_name="Свой акцентный цвет",
     )
     landing_button_style = models.CharField(
         max_length=20,
@@ -670,6 +676,40 @@ class AgencyMembership(models.Model):
         return f"{self.user} · {self.agency}"
 
 
+class LandingStylePreset(models.Model):
+    """Reusable appearance within one private or shared workspace."""
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE,
+                              related_name="personal_landing_style_presets")
+    agency = models.ForeignKey(Agency, null=True, blank=True, on_delete=models.CASCADE,
+                               related_name="landing_style_presets")
+    name = models.CharField(max_length=60)
+    landing_template = models.CharField(max_length=30, choices=Property.LANDING_TEMPLATES, default="classic")
+    landing_accent = models.CharField(max_length=20, choices=Property.LANDING_ACCENT_CHOICES, default="template")
+    landing_custom_color = models.CharField(
+        max_length=7, blank=True,
+        validators=[RegexValidator(r"^#[0-9A-Fa-f]{6}$", "Укажите цвет в формате #RRGGBB.")],
+    )
+    landing_button_style = models.CharField(max_length=20, choices=Property.LANDING_BUTTON_STYLE_CHOICES, default="template")
+    landing_hero_layout = models.CharField(max_length=20, choices=Property.LANDING_HERO_LAYOUT_CHOICES, default="split")
+    landing_gallery_style = models.CharField(max_length=20, choices=Property.LANDING_GALLERY_STYLE_CHOICES, default="large")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name", "pk"]
+        constraints = [
+            models.CheckConstraint(
+                condition=(Q(owner__isnull=False, agency__isnull=True) | Q(owner__isnull=True, agency__isnull=False)),
+                name="landing_preset_one_workspace",
+            ),
+            models.UniqueConstraint(fields=["owner", "name"], condition=Q(owner__isnull=False), name="landing_preset_personal_name"),
+            models.UniqueConstraint(fields=["agency", "name"], condition=Q(agency__isnull=False), name="landing_preset_agency_name"),
+        ]
+
+    def __str__(self):
+        return self.name
+
+
 class AgencyInvitation(models.Model):
     agency = models.ForeignKey(Agency, on_delete=models.CASCADE, related_name="invitations")
     code = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
@@ -684,6 +724,11 @@ class AgencyInvitation(models.Model):
 
 
 class Client(models.Model):
+    CONTACT_ROLE_CHOICES = [
+        ("seeker", "Клиент"),
+        ("owner", "Собственник"),
+        ("both", "Клиент и собственник"),
+    ]
     STATUS_CHOICES = [
         ("new", "Новый"),
         ("in_progress", "В работе"),
@@ -734,6 +779,7 @@ class Client(models.Model):
     search_currency = models.CharField(max_length=3, choices=Property.CURRENCY_CHOICES, blank=True, verbose_name="Валюта бюджета")
     search_notes = models.TextField(blank=True, verbose_name="Пожелания к объекту")
     source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default="landing", verbose_name="Источник")
+    contact_role = models.CharField(max_length=10, choices=CONTACT_ROLE_CHOICES, default="seeker", db_index=True, verbose_name="Роль контакта")
     notes = models.TextField(blank=True, verbose_name="Комментарий риелтора")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Отношения с клиентом")
     legacy_status = models.CharField(max_length=20, choices=LEGACY_STATUS_CHOICES, blank=True, editable=False, verbose_name="Прежний общий этап")
@@ -755,9 +801,132 @@ class Client(models.Model):
     def __str__(self):
         return f"{self.name} · {self.phone}"
 
+    @property
+    def is_property_owner(self):
+        return self.contact_role in {"owner", "both"}
+
+    @property
+    def is_property_seeker(self):
+        return self.contact_role in {"seeker", "both"}
+
     def save(self, *args, **kwargs):
         if self.agency_id and not AgencyMembership.objects.filter(agency_id=self.agency_id, user_id=self.owner_id).exists():
             raise ValidationError({"owner": "Владелец записи не состоит в агентстве."})
+        super().save(*args, **kwargs)
+
+
+class PropertyOwnerLink(models.Model):
+    ROLE_CHOICES = [
+        ("owner", "Собственник"),
+        ("co_owner", "Совладелец"),
+        ("landlord", "Арендодатель"),
+        ("representative", "Представитель"),
+    ]
+
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="owner_links", verbose_name="Объект")
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="owned_properties", verbose_name="Контакт")
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default="owner", verbose_name="Роль по объекту")
+    agreed_price = models.DecimalField(
+        max_digits=12, decimal_places=2, null=True, blank=True,
+        validators=[MinValueValidator(0)], verbose_name="Согласованная цена",
+    )
+    publication_approved_at = models.DateTimeField(null=True, blank=True, verbose_name="Публикация согласована")
+    agreement_expires_on = models.DateField(null=True, blank=True, db_index=True, verbose_name="Договорённость действует до")
+    showing_instructions = models.CharField(max_length=255, blank=True, verbose_name="Условия показа")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["pk"]
+        constraints = [models.UniqueConstraint(fields=["property", "client"], name="unique_property_owner_contact")]
+        verbose_name = "Контакт собственника по объекту"
+        verbose_name_plural = "Контакты собственников по объектам"
+
+    def clean(self):
+        if self.property_id and self.client_id and not same_workspace(self.property, self.client):
+            raise ValidationError({"client": "Контакт находится в другом рабочем пространстве."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        with transaction.atomic():
+            super().save(*args, **kwargs)
+            Client.objects.filter(pk=self.client_id, contact_role="seeker").update(
+                contact_role="both", updated_at=timezone.now(),
+            )
+
+
+class OwnerInquiry(models.Model):
+    RESULT_CHOICES = [
+        ("pending", "Нужен разговор"),
+        ("follow_up", "Продолжить обсуждение"),
+        ("agreed", "Сотрудничество согласовано"),
+        ("declined", "Отказ"),
+    ]
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="owner_inquiries")
+    agency = models.ForeignKey(Agency, on_delete=models.PROTECT, null=True, blank=True, related_name="owner_inquiries")
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="owner_inquiries", verbose_name="Собственник")
+    assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="assigned_owner_inquiries", verbose_name="Ответственный")
+    deal_type = models.CharField(max_length=10, choices=Property.DEAL_TYPE_CHOICES, verbose_name="Намерение")
+    address = models.CharField(max_length=255, blank=True, verbose_name="Адрес")
+    description = models.TextField(blank=True, verbose_name="Описание недвижимости")
+    expected_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True,
+                                         validators=[MinValueValidator(0)], verbose_name="Ожидаемая цена")
+    currency = models.CharField(max_length=3, choices=Property.CURRENCY_CHOICES, default="RUB", verbose_name="Валюта")
+    source = models.CharField(max_length=30, choices=Client.SOURCE_CHOICES,
+                              default="manual", verbose_name="Источник")
+    first_response_due_at = models.DateTimeField(default=default_lead_next_action_due_at, db_index=True, verbose_name="Срок первого ответа")
+    first_contacted_at = models.DateTimeField(null=True, blank=True, verbose_name="Первый контакт")
+    result = models.CharField(max_length=20, choices=RESULT_CHOICES, default="pending", db_index=True, verbose_name="Результат разговора")
+    result_note = models.TextField(blank=True, verbose_name="Итог разговора")
+    next_action = models.CharField(max_length=255, blank=True, default="Связаться с собственником", verbose_name="Следующее действие")
+    next_action_due_at = models.DateTimeField(default=default_lead_next_action_due_at, db_index=True, verbose_name="Срок следующего действия")
+    property = models.OneToOneField(Property, on_delete=models.PROTECT, null=True, blank=True,
+                                    related_name="owner_inquiry", verbose_name="Созданный объект")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Обращение собственника"
+        verbose_name_plural = "Обращения собственников"
+
+    @builtins.property
+    def attention_due_at(self):
+        if not self.first_contacted_at:
+            return min(self.first_response_due_at, self.next_action_due_at)
+        return self.next_action_due_at
+
+    @builtins.property
+    def is_overdue(self):
+        return self.result != "declined" and not self.property_id and self.attention_due_at < timezone.now()
+
+    def clean(self):
+        errors = {}
+        if self.client_id and self.owner_id and not same_workspace(self, self.client):
+            errors["client"] = "Контакт находится в другом рабочем пространстве."
+        if self.agency_id:
+            if self.owner_id and not AgencyMembership.objects.filter(agency_id=self.agency_id, user_id=self.owner_id).exists():
+                errors["owner"] = "Автор не состоит в команде."
+            if self.assigned_to_id and not AgencyMembership.objects.filter(agency_id=self.agency_id, user_id=self.assigned_to_id).exists():
+                errors["assigned_to"] = "Ответственный не состоит в команде."
+        elif self.owner_id and self.assigned_to_id and self.assigned_to_id != self.owner_id:
+            errors["assigned_to"] = "В личном пространстве ответственным может быть только владелец."
+        if not self.address.strip() and not self.description.strip():
+            errors["address"] = "Укажите адрес или описание недвижимости."
+        if self.result != "declined" and not self.property_id:
+            if not self.next_action.strip():
+                errors["next_action"] = "Укажите следующее действие."
+            if not self.next_action_due_at:
+                errors["next_action_due_at"] = "Укажите срок следующего действия."
+        if self.result != "pending" and not self.first_contacted_at:
+            errors["first_contacted_at"] = "Сначала запишите разговор с собственником."
+        if self.property_id and (self.result != "agreed" or not same_workspace(self, self.property)):
+            errors["property"] = "Объект должен относиться к согласованному обращению в том же пространстве."
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
         super().save(*args, **kwargs)
 
 
@@ -772,6 +941,7 @@ class ClientInteraction(models.Model):
 
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="interactions")
     lead = models.ForeignKey("Lead", on_delete=models.SET_NULL, null=True, blank=True, related_name="interactions")
+    property = models.ForeignKey(Property, on_delete=models.PROTECT, null=True, blank=True, related_name="owner_interactions")
     interaction_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default="note", verbose_name="Тип")
     text = models.TextField(blank=True, verbose_name="Комментарий")
     created_at = models.DateTimeField(auto_now_add=True)
@@ -780,6 +950,15 @@ class ClientInteraction(models.Model):
         ordering = ["-created_at"]
         verbose_name = "Взаимодействие с клиентом"
         verbose_name_plural = "История взаимодействий"
+
+    def clean(self):
+        if self.property_id and self.client_id and not same_workspace(self.client, self.property):
+            raise ValidationError({"property": "Объект находится в другом рабочем пространстве."})
+
+    def save(self, *args, **kwargs):
+        if self.property_id:
+            self.full_clean()
+        super().save(*args, **kwargs)
 
 
 class ClientPropertySuggestion(models.Model):
@@ -823,6 +1002,9 @@ class ClientReminder(models.Model):
     client = models.ForeignKey(Client, on_delete=models.PROTECT, null=True, blank=True, related_name="reminders", verbose_name="Клиент")
     deal = models.ForeignKey("Deal", on_delete=models.PROTECT, null=True, blank=True, related_name="tasks", verbose_name="Сделка")
     lead = models.ForeignKey("Lead", on_delete=models.PROTECT, null=True, blank=True, related_name="action_tasks", verbose_name="Заявка")
+    property = models.ForeignKey(Property, on_delete=models.PROTECT, null=True, blank=True, related_name="contact_tasks", verbose_name="Объект")
+    owner_showing = models.ForeignKey("Showing", on_delete=models.PROTECT, null=True, blank=True,
+                                      related_name="owner_feedback_tasks", verbose_name="Показ для сообщения собственнику")
     text = models.CharField(max_length=255, verbose_name="Задача")
     due_at = models.DateTimeField(null=True, blank=True, verbose_name="Срок выполнения")
     is_done = models.BooleanField(default=False, verbose_name="Выполнено")
@@ -838,6 +1020,8 @@ class ClientReminder(models.Model):
         verbose_name_plural = "Задачи"
         constraints = [
             models.UniqueConstraint(fields=["lead"], condition=Q(lead__isnull=False, is_done=False), name="unique_open_task_per_lead"),
+            models.UniqueConstraint(fields=["owner_showing", "client"], condition=Q(owner_showing__isnull=False),
+                                    name="unique_owner_feedback_task_per_showing"),
         ]
 
     def clean(self):
@@ -851,24 +1035,42 @@ class ClientReminder(models.Model):
                 errors["deal"] = "Сделка находится в другом рабочем пространстве."
             if self.client_id and self.client_id != self.deal.client_id:
                 errors["client"] = "Клиент должен совпадать с клиентом сделки."
+            if self.property_id and self.property_id != self.deal.property_id:
+                errors["property"] = "Объект должен совпадать с объектом сделки."
         if self.lead_id:
             if self.owner_id and not same_workspace(self, self.lead.property):
                 errors["lead"] = "Заявка находится в другом рабочем пространстве."
             if self.client_id and self.lead.client_id and self.client_id != self.lead.client_id:
                 errors["client"] = "Клиент должен совпадать с клиентом заявки."
+            if self.property_id and self.property_id != self.lead.property_id:
+                errors["property"] = "Объект должен совпадать с объектом заявки."
+        if self.property_id:
+            if self.owner_id and not same_workspace(self, self.property):
+                errors["property"] = "Объект находится в другом рабочем пространстве."
+            if self.client_id and not same_workspace(self.client, self.property):
+                errors["client"] = "Контакт находится в другом рабочем пространстве."
+        if self.owner_showing_id:
+            if not self.client_id or not self.property_id or self.property_id != self.owner_showing.deal.property_id:
+                errors["owner_showing"] = "Задача собственнику должна относиться к объекту показа и контакту."
+            if self.deal_id or self.lead_id:
+                errors["owner_showing"] = "Задача собственнику не относится к сделке покупателя."
+            if self.owner_id and not same_workspace(self, self.owner_showing):
+                errors["owner_showing"] = "Показ находится в другом рабочем пространстве."
         if errors:
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
         if self.deal_id and not self.client_id:
             self.client = self.deal.client
-        if not self.agency_id and (self.deal_id or self.client_id):
-            self.agency_id = self.deal.agency_id if self.deal_id else self.client.agency_id
+        if not self.agency_id and (self.deal_id or self.client_id or self.property_id):
+            self.agency_id = self.deal.agency_id if self.deal_id else self.client.agency_id if self.client_id else self.property.agency_id
         if not self.owner_id:
             if self.deal_id:
                 self.owner = self.deal.owner
             elif self.client_id:
                 self.owner = self.client.owner
+            elif self.property_id:
+                self.owner = self.property.owner
         update_fields = kwargs.get("update_fields")
         if self.pk and (update_fields is None or "due_at" in update_fields):
             previous_due_at = type(self).objects.filter(pk=self.pk).values_list("due_at", flat=True).first()

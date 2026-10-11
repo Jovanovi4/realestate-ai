@@ -1,3 +1,5 @@
+import base64
+import copy
 import json
 import csv
 import uuid
@@ -13,7 +15,7 @@ from django.db import transaction
 from django.db.models.deletion import ProtectedError
 from django.db.models import Case, Count, DateTimeField, F, IntegerField, Max, Q, Value, When
 from django.core.paginator import Paginator
-from django.http import HttpResponse, JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -32,12 +34,12 @@ from billing.rules import Operation, PolicyService
 from billing.services import AccountService
 
 from .forms import (
-    ClientDetailsForm, ClientForm, ClientInteractionForm, ClientPropertyReactionForm, ClientPropertySuggestionForm, ClientReminderForm, ClientSearchForm, LeadActionCompleteForm, LeadDeclineForm, LeadForm, LeadProcessingForm,
+    ClientDetailsForm, ClientForm, ClientInteractionForm, ClientPropertyReactionForm, ClientPropertySuggestionForm, ClientReminderForm, ClientSearchForm, LeadActionCompleteForm, LeadDeclineForm, LeadForm, LeadProcessingForm, OwnerContactForm, PropertyOwnerAttachForm, PropertyOwnerDetailsForm,
     PropertyForm, RegistrationForm, RealtorProfileForm,
 )
 from .agency_access import agency_for, deletable_queryset, may_manage_agency, workspace_queryset
 from .board_pagination import paged_board_columns
-from .models import AIContent, Client, ClientInteraction, ClientReminder, Deal, Lead, Property, PropertyImage, RealtorProfile, TelegramFeed, UserLegalAcceptance
+from .models import AIContent, Client, ClientInteraction, ClientReminder, Deal, Lead, OwnerInquiry, Property, PropertyImage, PropertyOwnerLink, RealtorProfile, TelegramFeed, UserLegalAcceptance
 from .services.avito_service import AvitoExportService
 from .services.cian_service import CianExportService
 from .services.demo_data_service import DemoDataService
@@ -50,6 +52,8 @@ from .services.presentation_docx_service import PresentationDocxService
 from .services.image_upload_service import prepare_image_upload
 from .services.csv_security import spreadsheet_safe_cell
 from .services.client_relationship_service import activate_client_relationship, change_client_relationship, relationship_change_error
+from .landing_colors import landing_custom_palette
+from .landing_presets import editor_preset_context
 
 
 class PropertyListView(LoginRequiredMixin, ListView):
@@ -73,6 +77,14 @@ class PropertyListView(LoginRequiredMixin, ListView):
 
     def get_queryset(self):
         queryset = workspace_queryset(Property.objects, self.request.user)
+        owner_client_id = self.request.GET.get("owner_client", "")
+        if owner_client_id and (not owner_client_id.isascii() or not owner_client_id.isdigit()):
+            raise Http404
+        self.owner_filter_client = get_object_or_404(
+            workspace_queryset(Client.objects, self.request.user), pk=owner_client_id,
+        ) if owner_client_id else None
+        if self.owner_filter_client:
+            queryset = queryset.filter(owner_links__client=self.owner_filter_client)
         query = self.request.GET.get("q", "").strip()
         segment = self.request.GET.get("segment")
         property_type = self.request.GET.get("property_type")
@@ -96,7 +108,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
             queryset = queryset.filter(deal_type=deal_type)
         if status in dict(Property.STATUS_CHOICES):
             queryset = queryset.filter(status=status)
-        if status != "archived":
+        if status != "archived" and not self.owner_filter_client:
             queryset = queryset.exclude(status="archived")
         if min_price is not None:
             queryset = queryset.filter(price__gte=min_price)
@@ -113,6 +125,7 @@ class PropertyListView(LoginRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context["owner_filter_client"] = self.owner_filter_client
         context["property_types"] = Property.PROPERTY_TYPES
         context["segment_choices"] = [("residential", "Жилая"), ("commercial", "Коммерческая")]
         context["deal_types"] = Property.DEAL_TYPE_CHOICES
@@ -163,6 +176,15 @@ class PropertyListView(LoginRequiredMixin, ListView):
                 "label": label_for(value),
                 "url": f"{reverse('property_list')}?{query_string}" if query_string else reverse("property_list"),
             })
+        if self.owner_filter_client:
+            remaining = self.request.GET.copy()
+            remaining.pop("owner_client", None)
+            remaining.pop("page", None)
+            query_string = remaining.urlencode()
+            active_filters.insert(0, {
+                "label": f"Собственник: {self.owner_filter_client.name}",
+                "url": f"{reverse('property_list')}?{query_string}" if query_string else reverse("property_list"),
+            })
         context["active_filters"] = active_filters
         params = self.request.GET.copy()
         params.pop("page", None)
@@ -200,10 +222,10 @@ class PropertyListView(LoginRequiredMixin, ListView):
         ]
         has_properties = all_user_properties.exists()
         context["has_any_properties"] = has_properties
-        context["show_welcome"] = not has_properties and not self.request.GET.get("status") and not (profile and profile.onboarding_started)
+        context["show_welcome"] = not has_properties and not self.owner_filter_client and not self.request.GET.get("status") and not (profile and profile.onboarding_started)
         completed_steps = sum(item["done"] for item in onboarding_items)
         context["onboarding"] = {
-            "visible": self.request.GET.get("status") != "archived" and (bool(first_property) or not has_properties) and (not profile or not profile.onboarding_dismissed) and completed_steps < len(onboarding_items),
+            "visible": not self.owner_filter_client and self.request.GET.get("status") != "archived" and (bool(first_property) or not has_properties) and (not profile or not profile.onboarding_dismissed) and completed_steps < len(onboarding_items),
             "items": onboarding_items,
             "completed": completed_steps,
             "total": len(onboarding_items),
@@ -218,17 +240,49 @@ class PropertyCreateView(LoginRequiredMixin, CreateView):
     template_name = "properties/create_property.html"
     success_url = reverse_lazy("property_list")
 
+    def inquiry_for_request(self):
+        inquiry_id = self.request.POST.get("owner_inquiry") if self.request.method == "POST" else self.request.GET.get("owner_inquiry")
+        if not inquiry_id:
+            return None
+        if not inquiry_id.isdigit():
+            raise Http404
+        return get_object_or_404(workspace_queryset(OwnerInquiry.objects, self.request.user), pk=inquiry_id)
+
+    def get(self, request, *args, **kwargs):
+        inquiry = self.inquiry_for_request()
+        if inquiry and (inquiry.result != "agreed" or inquiry.property_id):
+            return redirect("owner_inquiry_detail", pk=inquiry.pk)
+        return super().get(request, *args, **kwargs)
+
+    def get_initial(self):
+        initial = super().get_initial()
+        inquiry = self.inquiry_for_request()
+        if inquiry and inquiry.result == "agreed" and not inquiry.property_id:
+            initial.update({
+                "title": inquiry.address or f"Объект собственника {inquiry.client.name}",
+                "address": inquiry.address, "description": inquiry.description,
+                "price": inquiry.expected_price, "currency": inquiry.currency,
+                "deal_type": inquiry.deal_type, "status": "draft",
+            })
+        return initial
+
     def get_form_kwargs(self):
         return {**super().get_form_kwargs(), "user": self.request.user}
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["resource_request_key"] = self.request.POST.get("request_key") or str(uuid.uuid4())
+        context["owner_inquiry"] = self.inquiry_for_request()
+        context.update(editor_preset_context(self.request.user))
         return context
 
     def form_valid(self, form):
-        form.instance.owner = self.request.user
-        agency = agency_for(self.request.user)
+        inquiry = self.inquiry_for_request()
+        if inquiry and (inquiry.result != "agreed" or inquiry.property_id):
+            form.add_error(None, "Из этого обращения пока нельзя создать объект.")
+            return self.render_to_response(self.get_context_data(form=form), status=409)
+        form.instance.owner = inquiry.assigned_to if inquiry else self.request.user
+        agency = inquiry.agency if inquiry else agency_for(self.request.user)
         form.instance.agency = agency
         account = AccountService.ensure_agency(agency) if agency else AccountService.ensure_personal(self.request.user)
         amounts = {"active_properties": 1, "total_properties": 1}
@@ -240,7 +294,18 @@ class PropertyCreateView(LoginRequiredMixin, CreateView):
         try:
             with reserved_resources(account=account, actor=self.request.user, action=Operation.CREATE_PROPERTY,
                     amounts=amounts, **request_identity(self.request)) as reservation:
+                if inquiry:
+                    inquiry = OwnerInquiry.objects.select_for_update().get(pk=inquiry.pk)
+                    if inquiry.result != "agreed" or inquiry.property_id:
+                        raise ValidationError("Объект из этого обращения уже создан или сотрудничество не согласовано.")
                 response = super().form_valid(form)
+                if inquiry:
+                    PropertyOwnerLink.objects.create(
+                        property=self.object, client=inquiry.client,
+                        role="landlord" if inquiry.deal_type == "rent" else "owner",
+                    )
+                    inquiry.property = self.object
+                    inquiry.save(update_fields=["property", "updated_at"])
                 reservation.result_id = str(self.object.pk)
                 return response
         except DuplicateResourceRequest as duplicate:
@@ -250,8 +315,8 @@ class PropertyCreateView(LoginRequiredMixin, CreateView):
         except TariffDenied as error:
             form.add_error(None, error.message)
             return self.render_to_response(self.get_context_data(form=form), status=403)
-        except ValidationError:
-            form.add_error(None, "Ключ запроса уже использован для других данных. Обновите форму и повторите действие.")
+        except ValidationError as error:
+            form.add_error(None, error.messages[0] if inquiry else "Ключ запроса уже использован для других данных. Обновите форму и повторите действие.")
             return self.render_to_response(self.get_context_data(form=form), status=409)
 
     def get_success_url(self):
@@ -342,6 +407,7 @@ class PropertyUpdateView(LoginRequiredMixin, UpdateView):
         context = super().get_context_data(**kwargs)
         context["show_text_hint"] = not bool(self.object.description or self.object.short_description)
         context["show_landing_hint"] = not self.object.landing_published
+        context.update(editor_preset_context(self.request.user, self.object))
         return context
 
 
@@ -355,6 +421,26 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        owner_links = list(self.object.owner_links.select_related("client").all())
+        today = timezone.localdate()
+        for link in owner_links:
+            link.details_form = PropertyOwnerDetailsForm(instance=link, prefix=f"owner-{link.pk}")
+            link.agreement_expired = bool(link.agreement_expires_on and link.agreement_expires_on < today)
+            link.last_contact = link.client.interactions.filter(property=self.object).order_by("-created_at", "-pk").first()
+            link.next_task = link.client.reminders.filter(
+                property=self.object, is_done=False, cancelled_at__isnull=True,
+            ).order_by("due_at", "pk").first()
+        context["owner_links"] = owner_links
+        context["owner_overdue_links"] = [link for link in owner_links if link.agreement_expired]
+        context["owner_next_agreement"] = min(
+            (link for link in owner_links if link.agreement_expires_on and not link.agreement_expired),
+            key=lambda link: link.agreement_expires_on,
+            default=None,
+        )
+        context["owner_attach_form"] = PropertyOwnerAttachForm(user=self.request.user, property=self.object)
+        context["owner_contact_form"] = OwnerContactForm()
+        context["owner_role_choices"] = PropertyOwnerLink.ROLE_CHOICES
+        context["owner_interaction_form"] = ClientInteractionForm()
         image_count = self.object.images.count()
         has_primary_image = self.object.images.filter(is_primary=True).exists()
         profile = RealtorProfile.objects.filter(user=self.object.owner).first()
@@ -389,7 +475,9 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
         context["image_count"] = image_count
         context["property_setup_hint"] = not (self.object.price and self.object.address and has_primary_image)
         context["can_delete"] = not self.object.agency_id or may_manage_agency(self.request.user)
-        context["property_deals"] = workspace_queryset(Deal.objects.filter(property=self.object), self.request.user).select_related("client")[:5]
+        property_deals = workspace_queryset(Deal.objects.filter(property=self.object), self.request.user).select_related("client")
+        context["property_deals_count"] = property_deals.count()
+        context["property_deals"] = list(property_deals[:5])
         context["telegram_bot_ready"] = public_bot_ready()
         context["telegram_bot_username"] = settings.TELEGRAM_PUBLIC_BOT_USERNAME
         context["telegram_property_url"] = property_link(self.object)
@@ -718,7 +806,13 @@ class ClientListView(LoginRequiredMixin, ListView):
             return None
 
     def get_queryset(self):
-        queryset = workspace_queryset(Client.objects, self.request.user).annotate(lead_count=Count("leads"))
+        queryset = workspace_queryset(Client.objects, self.request.user).annotate(lead_count=Count("leads", distinct=True))
+        if self.request.GET.get("role") == "owner":
+            queryset = queryset.filter(contact_role__in=("owner", "both")).annotate(
+                owner_property_count=Count("owned_properties", distinct=True),
+            ).prefetch_related("owned_properties__property")
+        else:
+            queryset = queryset.filter(contact_role__in=("seeker", "both"))
         query = self.request.GET.get("q", "").strip()
         status = self.request.GET.get("status", "")
         source = self.request.GET.get("source", "")
@@ -742,16 +836,22 @@ class ClientListView(LoginRequiredMixin, ListView):
             "name_asc": "name",
             "name_desc": "-name",
             "leads_desc": "-lead_count",
+            "objects_desc": "-owner_property_count",
         }
+        if sort == "objects_desc" and self.request.GET.get("role") != "owner":
+            sort = "newest"
         return queryset.order_by(ordering.get(sort, ordering["newest"]), "-pk")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context["owner_mode"] = self.request.GET.get("role") == "owner"
+        context["reset_url"] = f"{reverse('client_list')}?role=owner" if context["owner_mode"] else reverse("client_list")
         now = timezone.now()
         start_tomorrow = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
         pending_reminders = workspace_queryset(ClientReminder.objects, self.request.user).filter(
             client__isnull=False, owner=self.request.user, is_done=False, cancelled_at__isnull=True,
         ).select_related("client")
+        pending_reminders = pending_reminders.filter(client__contact_role__in=("owner", "both") if context["owner_mode"] else ("seeker", "both"))
         overdue_reminders = pending_reminders.filter(due_at__lt=now)
         today_reminders = pending_reminders.filter(due_at__gte=now, due_at__lt=start_tomorrow)
         context.update(
@@ -765,7 +865,7 @@ class ClientListView(LoginRequiredMixin, ListView):
                     ("updated", "Недавно обновлённые"),
                     ("name_asc", "Имя: А–Я"),
                     ("name_desc", "Имя: Я–А"),
-                    ("leads_desc", "Больше заявок"),
+                    ("objects_desc", "Больше объектов") if context["owner_mode"] else ("leads_desc", "Больше заявок"),
                 ],
                 "overdue_reminders": overdue_reminders[:5],
                 "today_reminders": today_reminders[:5],
@@ -804,7 +904,7 @@ class ClientListView(LoginRequiredMixin, ListView):
         context["extra_filters_open"] = bool(filters.get("source") or filters.get("date_from") or filters.get("date_to"))
         context["has_any_clients"] = bool(context["page_obj"].paginator.count) or workspace_queryset(
             Client.objects, self.request.user,
-        ).exists()
+        ).filter(contact_role__in=("owner", "both") if context["owner_mode"] else ("seeker", "both")).exists()
         context["can_bulk_delete"] = not agency_for(self.request.user) or may_manage_agency(self.request.user)
         return context
 
@@ -814,9 +914,18 @@ class ClientCreateView(LoginRequiredMixin, CreateView):
     form_class = ClientForm
     template_name = "properties/client_form.html"
 
+    def get_form_class(self):
+        return OwnerContactForm if self.request.GET.get("role") == "owner" else ClientForm
+
+    def get_context_data(self, **kwargs):
+        return {**super().get_context_data(**kwargs), "owner_mode": self.request.GET.get("role") == "owner"}
+
     def form_valid(self, form):
         form.instance.owner = self.request.user
         form.instance.agency = agency_for(self.request.user)
+        if self.request.GET.get("role") == "owner":
+            form.instance.contact_role = "owner"
+            form.instance.source = "manual"
         try:
             require_new_action(self.request.user, Operation.EDIT_CRM, agency=form.instance.agency)
         except TariffDenied as error:
@@ -827,7 +936,7 @@ class ClientCreateView(LoginRequiredMixin, CreateView):
             client_scope = client_scope.filter(owner=self.request.user)
         existing_client = client_scope.filter(phone=form.cleaned_data["phone"]).first()
         if existing_client:
-            form.add_error("phone", f"Клиент с этим номером уже есть в базе: {existing_client.name}.")
+            form.add_error("phone", f"Контакт с этим номером уже есть в базе: {existing_client.name}.")
             return self.form_invalid(form)
         return super().form_valid(form)
 
@@ -844,6 +953,9 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
     def get_queryset(self):
         return workspace_queryset(Client.objects, self.request.user)
 
+    def get_form_class(self):
+        return OwnerContactForm if self.object.contact_role == "owner" else ClientDetailsForm
+
     def form_valid(self, form):
         try:
             require_resource_action(self.request.user, self.object, Operation.EDIT_CRM)
@@ -854,6 +966,16 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        if self.object.is_property_owner:
+            owner_properties = self.object.owned_properties.select_related("property").order_by("-created_at", "-pk")
+            owner_inquiries = self.object.owner_inquiries.select_related("property", "assigned_to").order_by("-created_at", "-pk")
+            context["owner_properties_total"] = owner_properties.count()
+            context["owner_properties"] = owner_properties[:3]
+            context["owner_inquiries_total"] = owner_inquiries.count()
+            context["owner_inquiries"] = owner_inquiries[:3]
+        context["priority_owner_inquiry"] = self.object.owner_inquiries.select_related("assigned_to__realtor_profile").filter(
+            property__isnull=True,
+        ).exclude(result="declined").order_by("next_action_due_at", "pk").first()
         context["search_form"] = ClientSearchForm(instance=self.object)
         context["suggestion_form"] = ClientPropertySuggestionForm(owner=self.request.user, client=self.object)
         suggestions = list(self.object.property_suggestions.select_related("property", "added_by"))
@@ -910,7 +1032,7 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
         ))
         context["interaction_form"] = ClientInteractionForm()
         context["reminder_form"] = ClientReminderForm(initial={"due_at": (timezone.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")})
-        interaction_queryset = self.object.interactions.select_related("lead", "lead__property")
+        interaction_queryset = self.object.interactions.select_related("lead", "lead__property", "property")
         reminder_queryset = self.object.reminders.select_related("owner__realtor_profile", "lead", "deal")
         pending_reminders = reminder_queryset.filter(is_done=False, cancelled_at__isnull=True)
         lead_queryset = self.object.leads.select_related("property", "assigned_to__realtor_profile").order_by("-created_at", "-pk")
@@ -979,10 +1101,12 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
             pending_reminders.filter(due_at__isnull=False).order_by("due_at", "pk").first()
             or pending_reminders.order_by("pk").first()
         )
-        primary_reminder = (
-            pending_reminders.filter(lead=context["priority_lead"]).first()
-            if context["priority_lead"] else context["next_reminder"]
-        )
+        if context["priority_lead"]:
+            primary_reminder = pending_reminders.filter(lead=context["priority_lead"]).first()
+        elif context["priority_owner_inquiry"]:
+            primary_reminder = None
+        else:
+            primary_reminder = context["next_reminder"]
         other_reminders = reminder_queryset.exclude(pk=primary_reminder.pk) if primary_reminder else reminder_queryset
         context["reminders"] = Paginator(other_reminders, 10).get_page(self.request.GET.get("reminders_page", 1))
         context["reminders_total"] = other_reminders.count()
@@ -1033,6 +1157,37 @@ class ClientStatusUpdateView(LoginRequiredMixin, View):
         if request.headers.get("HX-Request") == "true":
             return render(request, "properties/includes/client_status_control.html", {"client": client})
         return redirect("client_detail", pk=client.pk)
+
+
+class ClientBoardStatusUpdateView(LoginRequiredMixin, View):
+    """Move one visible client between relationship columns."""
+
+    def post(self, request, pk):
+        visible = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
+        target = request.POST.get("status", "")
+        expected = request.POST.get("expected_status", "")
+        statuses = {key for key, _ in Client.STATUS_CHOICES}
+        if target not in statuses or expected not in statuses:
+            return JsonResponse({"error": "Выберите состояние отношений заново."}, status=400)
+
+        try:
+            require_resource_action(request.user, visible, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            return JsonResponse({"error": error.message}, status=403)
+
+        with transaction.atomic():
+            client = get_object_or_404(
+                workspace_queryset(Client.objects.select_for_update(), request.user), pk=pk,
+            )
+            if client.status != expected:
+                return JsonResponse({"error": "Отношения с клиентом уже изменились. Обновите страницу и повторите перенос."}, status=409)
+            if target == client.status:
+                return JsonResponse({"status": client.status, "changed": False})
+            error = relationship_change_error(client, target)
+            if error:
+                return JsonResponse({"error": error}, status=409)
+            change_client_relationship(client, target)
+        return JsonResponse({"status": target, "changed": True})
 
 
 class ClientInteractionCreateView(LoginRequiredMixin, View):
@@ -1101,6 +1256,10 @@ class ClientReminderCompleteView(LoginRequiredMixin, View):
         if reminder.lead_id:
             messages.info(request, "Запишите итог и назначьте следующий шаг в карточке заявки.")
             return redirect(f"{reverse('lead_detail', kwargs={'pk': reminder.lead_id})}?complete=1#lead-action")
+        if reminder.owner_showing_id:
+            from .owner_feedback_views import showing_feedback_url
+            messages.info(request, "Запишите, что сообщили собственнику, в карточке показа.")
+            return redirect(showing_feedback_url(reminder.owner_showing_id))
         try:
             require_resource_action(request.user, client, Operation.EDIT_CRM)
         except TariffDenied as error:
@@ -1170,14 +1329,14 @@ class ClientExportView(LoginRequiredMixin, View):
         response.write("\ufeff")
         writer = csv.writer(response, quoting=csv.QUOTE_ALL)
         writer.writerow(["Имя", "Телефон", "Отношения", "Источник", "Бюджет", "Район", "Удобное время", "Создан"])
-        for client in workspace_queryset(Client.objects, request.user).order_by("-created_at"):
+        for client in workspace_queryset(Client.objects, request.user).filter(contact_role__in=("seeker", "both")).order_by("-created_at"):
             writer.writerow([spreadsheet_safe_cell(value) for value in [client.name, client.phone, client.get_status_display(), client.get_source_display(), client.budget or "", client.preferred_area, client.preferred_contact_time, client.created_at.strftime("%d.%m.%Y %H:%M")]])
         return response
 
 
 class ClientBoardView(LoginRequiredMixin, View):
     def get(self, request):
-        clients = workspace_queryset(Client.objects, request.user)
+        clients = workspace_queryset(Client.objects, request.user).filter(contact_role__in=("seeker", "both"))
 
         def hydrate(ids):
             return clients.filter(pk__in=ids).annotate(
@@ -1316,6 +1475,12 @@ class LeadDetailView(LoginRequiredMixin, DetailView):
         context["processing_form"] = kwargs.get("processing_form") or LeadProcessingForm(lead=self.object)
         context["decline_form"] = kwargs.get("decline_form") or LeadDeclineForm()
         context["queue_now"] = timezone.now()
+        first_response_due = self.object.first_response_due_at
+        context["lead_deadlines_match"] = bool(
+            first_response_due and self.object.next_action_due_at
+            and timezone.localtime(first_response_due).replace(second=0, microsecond=0)
+            == timezone.localtime(self.object.next_action_due_at).replace(second=0, microsecond=0)
+        )
         context["current_task"] = self.object.action_tasks.filter(is_done=False).first()
         context["completed_actions"] = self.object.action_tasks.filter(is_done=True).order_by("-completed_at", "-pk")
         last_contact = self.object.interactions.filter(interaction_type__in=("call", "message")).exclude(
@@ -1850,6 +2015,7 @@ class PublicLandingView(View):
             "turnstile_enabled": settings.TURNSTILE_ENABLED,
             "turnstile_site_key": settings.TURNSTILE_SITE_KEY,
             "demo_landing": property.is_demo,
+            "landing_custom_palette": landing_custom_palette(property.landing_custom_color) if property.landing_accent == "custom" else None,
             **extra,
         }
 
@@ -1914,6 +2080,9 @@ class PublicLandingView(View):
                 if not created and not client.name and form.cleaned_data["name"]:
                     client.name = form.cleaned_data["name"]
                     client.save(update_fields=["name", "updated_at"])
+                if client.contact_role == "owner":
+                    client.contact_role = "both"
+                    client.save(update_fields=["contact_role", "updated_at"])
                 lead.client = client
                 lead.save()
                 ClientInteraction.objects.create(
@@ -1948,3 +2117,46 @@ class PropertyLandingPreviewView(LoginRequiredMixin, PublicLandingView):
 
     def post(self, request, pk):
         return self.get(request, pk)
+
+
+@method_decorator(xframe_options_sameorigin, name="dispatch")
+class PropertyLandingDraftPreviewView(LoginRequiredMixin, PublicLandingView):
+    """Render the submitted editor values without saving or publishing them."""
+    http_method_names = ["post", "options"]
+
+    def post(self, request, pk=None):
+        if pk is None:
+            # A temporary key lets the public templates query an empty image set.
+            property = Property(pk=-1, owner=request.user, agency=agency_for(request.user))
+        else:
+            saved = get_object_or_404(
+                workspace_queryset(Property.objects.select_related("owner", "agency").prefetch_related("images"), request.user),
+                pk=pk,
+            )
+            property = copy.copy(saved)
+
+        editor = PropertyForm(request.POST, request.FILES, instance=property, user=request.user)
+        if not editor.is_valid():
+            response = render(request, "properties/landing_preview_invalid.html", {"editor": editor}, status=422)
+        else:
+            property = editor.save(commit=False)
+            uploaded_logo = editor.cleaned_data.get("landing_logo")
+            preview_logo_url = None
+            if uploaded_logo:
+                preview_logo_url = "data:image/png;base64," + base64.b64encode(uploaded_logo.read()).decode("ascii")
+            profile = RealtorProfile.objects.filter(user_id=property.owner_id).first()
+            response = render(
+                request,
+                self.get_template_name(property),
+                self.get_context(
+                    property,
+                    profile,
+                    LeadForm(property=property),
+                    preview=True,
+                    preview_logo_url=preview_logo_url,
+                    turnstile_enabled=False,
+                ),
+            )
+        response["Cache-Control"] = "no-store"
+        response["X-Robots-Tag"] = "noindex, nofollow"
+        return response

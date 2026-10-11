@@ -5,6 +5,12 @@
   <div><p class="ui-page-header__eyebrow">Задачи · показ</p><h1 class="ui-page-header__title">{% if object %}Показ объекта{% else %}Назначить показ{% endif %}</h1></div>
   <div class="ui-page-header__actions"><a href="{{ return_url }}" class="btn btn-neutral">К делам</a>{% if object %}<a href="{% url 'deal_detail' object.deal.pk %}" class="btn btn-neutral">Сделка</a>{% endif %}</div>
 </header>
+{% if show_owner_feedback and owner_feedback_links %}
+<section class="showing-feedback-prompt" id="owner-feedback" aria-label="Следующий шаг после показа">
+  <div><span class="detail-kicker">После показа</span><strong>{% if owner_feedback_pending %}Сообщить собственнику{% else %}Собственник информирован{% endif %}</strong></div>
+  <a class="btn btn-neutral btn-sm" href="#owner-feedback-details">{% if owner_feedback_pending %}Перейти к сообщению{% else %}Посмотреть записи{% endif %}</a>
+</section>
+{% endif %}
 <section class="app-form-panel">
   <div class="app-form-panel__heading"><div class="billing-heading-with-help"><h2>Данные показа</h2>{% include "billing/includes/help.html" with label="Данные показа" text="Для одной сделки можно назначить несколько показов и переносов." only %}</div></div>
   <form method="post" class="app-form" novalidate>{% csrf_token %}<input type="hidden" name="next" value="{{ return_url }}">
@@ -28,6 +34,33 @@
     <div class="detail-form-actions"><button class="btn btn-primary" type="submit">{% if object %}Сохранить показ{% else %}Назначить показ{% endif %}</button></div>
   </form>
 </section>
+{% if show_owner_feedback and owner_feedback_links %}
+<section class="detail-section detail-section--spaced" id="owner-feedback-details" aria-labelledby="owner-feedback-title">
+  <div class="detail-section__heading"><div><span class="detail-kicker">После показа</span><h2 id="owner-feedback-title">Сообщить собственнику</h2></div></div>
+  <p class="detail-muted">Запланируйте сообщение, затем отметьте, что рассказали. Покупателю и собственнику нужны разные следующие шаги.</p>
+  {% for link in owner_feedback_links %}
+    <article class="workday-item owner-feedback-item">
+      <div class="workday-item__body"><strong>{{ link.client.name }}</strong><span>{{ link.get_role_display }}{% if link.feedback_task and not link.feedback_task.cancelled_at %} · {% if link.feedback_task.is_done %}Сообщено {{ link.feedback_task.completed_at|date:"d.m.Y H:i" }}{% else %}Задача до {{ link.feedback_task.due_at|date:"d.m.Y H:i" }}{% endif %}{% endif %}</span></div>
+      {% if link.feedback_task and link.feedback_task.is_done %}
+        <span class="small text-muted">Обратная связь записана</span>
+      {% elif link.feedback_task and not link.feedback_task.cancelled_at %}
+        <details class="client-context__editor"><summary>Записать сообщение</summary>
+          <form method="post" action="{% url 'owner_feedback_complete' object.pk link.feedback_task.pk %}" class="app-form mt-2">{% csrf_token %}
+            <label class="form-label" for="owner-feedback-method-{{ link.pk }}">Способ связи</label><select class="form-select form-select-sm" id="owner-feedback-method-{{ link.pk }}" name="method"><option value="call">Звонок</option><option value="message">Сообщение</option></select>
+            <label class="form-label mt-2" for="owner-feedback-note-{{ link.pk }}">Что сообщили</label><textarea class="form-control" id="owner-feedback-note-{{ link.pk }}" name="feedback_note" rows="2" maxlength="2000" required placeholder="Краткий итог без личных данных покупателя"></textarea>
+            <button class="btn btn-neutral btn-sm mt-2" type="submit">Отметить, что сообщили</button>
+          </form>
+        </details>
+      {% else %}
+        <form method="post" action="{% url 'owner_feedback_plan' object.pk link.pk %}" class="d-flex flex-wrap align-items-end gap-2">{% csrf_token %}
+          <div><label class="form-label" for="owner-feedback-due-{{ link.pk }}">Когда сообщить</label><input class="form-control form-control-sm" id="owner-feedback-due-{{ link.pk }}" type="datetime-local" name="due_at" value="{{ owner_feedback_due }}" required></div>
+          <button class="btn btn-neutral btn-sm" type="submit">Добавить задачу</button>
+        </form>
+      {% endif %}
+    </article>
+  {% endfor %}
+</section>
+{% endif %}
 <script>
   const showingStatus = document.getElementById('{{ form.status.id_for_label }}');
   const showingResult = document.getElementById('showing-result');

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Новое обращение собственника{% endblock %}
+{% block content %}
+<div class="app-form-page app-form-page--narrow">
+  <header class="ui-page-header"><div>{% url 'owner_inquiry_list' as breadcrumb_href %}{% include "properties/includes/detail_breadcrumb.html" with href=breadcrumb_href parent="Обращения" current="Новое обращение" %}<h1 class="ui-page-header__title">Хочу продать / сдать</h1><p class="ui-page-header__description">Запишите обращение сейчас. Объект можно создать после разговора.</p></div></header>
+  <form method="post" class="app-form app-form-panel" novalidate>{% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <h2 class="h6 mb-3">Контакт</h2>
+    <div class="app-form-grid">
+      <div class="app-field is-wide">{% include "includes/form_field.html" with field=form.client %}<p class="form-text">Если контакта ещё нет, заполните имя и телефон ниже.</p></div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.contact_name %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.contact_phone %}</div>
+    </div>
+    <h2 class="h6 mt-4 mb-3">Недвижимость</h2>
+    <div class="app-form-grid">
+      <div class="app-field">{% include "includes/form_field.html" with field=form.deal_type %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.address %}</div>
+      <div class="app-field is-wide">{% include "includes/form_field.html" with field=form.description %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.expected_price %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.currency %}</div>
+    </div>
+    <h2 class="h6 mt-4 mb-3">Обработка</h2>
+    <div class="app-form-grid">
+      <div class="app-field">{% include "includes/form_field.html" with field=form.source %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.assigned_to %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.first_response_due_at %}</div>
+    </div>
+    <div class="app-form-actions"><button class="btn btn-primary" type="submit">Сохранить обращение</button></div>
+  </form>
+</div>
+{% endblock %}

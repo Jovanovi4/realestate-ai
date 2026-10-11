@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load crm_display %}
 {% block title %}{{ property.title }}{% endblock %}
 {% block content %}
 <header class="ui-page-header detail-page-header">
@@ -10,15 +11,15 @@
   <div class="ui-page-header__actions"><a href="{% url 'edit_property' property.pk %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg>Редактировать</a></div>
 </header>
 
-{% if property.status == 'archived' %}<div class="contextual-hint mb-4"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-archive"></use></svg><span>Объект в архиве{% if property.archived_at %} с {{ property.archived_at|date:"d.m.Y" }}{% endif %}. Фотографии и CRM-история сохранены. Лендинг снят с публикации.</span></div>{% elif property_setup_hint %}<div class="contextual-hint mb-4"><span class="contextual-hint-mark">i</span><span>Начните с цены, адреса и главной фотографии — эти данные формируют понятную карточку и первый экран лендинга.</span></div>{% endif %}
+{% if property.status == 'archived' %}<div class="contextual-hint mb-4"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-archive"></use></svg><span>Объект в архиве{% if property.archived_at %} с {{ property.archived_at|date:"d.m.Y" }}{% endif %}. Фотографии и CRM-история сохранены. Лендинг снят с публикации.</span></div>{% elif property_setup_hint %}<div class="contextual-hint mb-4"><span class="contextual-hint-mark">i</span><span>Следующий шаг: <a href="{{ readiness_tasks.0.url }}">{{ readiness_tasks.0.text }}</a>.</span></div>{% endif %}
 
-<ul class="nav nav-pills workspace-tabs detail-tabs" id="property-workspace-tabs" role="tablist">
-  <li class="nav-item" role="presentation"><button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview-pane" type="button" role="tab" aria-controls="overview-pane" aria-selected="true">Обзор</button></li>
-  <li class="nav-item" role="presentation"><button class="nav-link" id="data-tab" data-bs-toggle="tab" data-bs-target="#data-pane" type="button" role="tab" aria-controls="data-pane" aria-selected="false">Данные</button></li>
-  <li class="nav-item" role="presentation"><button class="nav-link" id="photos-tab" data-bs-toggle="tab" data-bs-target="#photos-pane" type="button" role="tab" aria-controls="photos-pane" aria-selected="false">Фото{% if image_count %} · {{ image_count }}{% endif %}</button></li>
-  <li class="nav-item" role="presentation"><button class="nav-link" id="texts-tab" data-bs-toggle="tab" data-bs-target="#texts-pane" type="button" role="tab" aria-controls="texts-pane" aria-selected="false">Тексты</button></li>
-  <li class="nav-item" role="presentation"><button class="nav-link" id="landing-tab" data-bs-toggle="tab" data-bs-target="#landing-pane" type="button" role="tab" aria-controls="landing-pane" aria-selected="false">Лендинг</button></li>
-  <li class="nav-item" role="presentation"><button class="nav-link" id="publication-tab" data-bs-toggle="tab" data-bs-target="#publication-pane" type="button" role="tab" aria-controls="publication-pane" aria-selected="false">Публикация</button></li>
+<ul class="nav nav-pills workspace-tabs ui-switch detail-tabs" id="property-workspace-tabs" role="tablist">
+  <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview-pane" type="button" role="tab" aria-controls="overview-pane" aria-selected="true">Обзор</button></li>
+  <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option" id="data-tab" data-bs-toggle="tab" data-bs-target="#data-pane" type="button" role="tab" aria-controls="data-pane" aria-selected="false">Данные</button></li>
+  <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option" id="photos-tab" data-bs-toggle="tab" data-bs-target="#photos-pane" type="button" role="tab" aria-controls="photos-pane" aria-selected="false">Фото{% if image_count %} · {{ image_count }}{% endif %}</button></li>
+  <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option" id="texts-tab" data-bs-toggle="tab" data-bs-target="#texts-pane" type="button" role="tab" aria-controls="texts-pane" aria-selected="false">Тексты</button></li>
+  <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option" id="landing-tab" data-bs-toggle="tab" data-bs-target="#landing-pane" type="button" role="tab" aria-controls="landing-pane" aria-selected="false">Лендинг</button></li>
+  <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option" id="publication-tab" data-bs-toggle="tab" data-bs-target="#publication-pane" type="button" role="tab" aria-controls="publication-pane" aria-selected="false">Публикация</button></li>
 </ul>
 
 <div class="tab-content detail-tab-content" id="property-tab-content">
@@ -29,7 +30,7 @@
           {% if property.primary_image %}<img class="detail-hero__image" src="{{ property.primary_image.image.url }}" alt="{{ property.title }}">{% else %}<div class="detail-hero__placeholder"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-image"></use></svg><span>Добавьте главное фото</span></div>{% endif %}
           <div class="detail-hero__content">
             <span class="detail-kicker">{% if property.is_commercial %}{% if property.deal_type == 'rent' %}Аренда всего помещения за месяц{% else %}Полная цена помещения{% endif %}{% else %}Цена{% endif %}</span>
-            <strong class="detail-hero__price">{% if property.price %}{{ property.get_currency_display|slice:":1" }} {{ property.price }}{% if property.deal_type == 'rent' %} / мес.{% endif %}{% else %}—{% endif %}</strong>
+            <strong class="detail-hero__price">{% if property.price %}{{ property|property_price }}{% else %}—{% endif %}</strong>
             <dl class="detail-facts">
               <div><dt>Площадь</dt><dd>{% if property.area %}{{ property.area_display }} м²{% else %}—{% endif %}</dd></div>
               {% if property.is_commercial %}<div><dt>Назначение</dt><dd>{{ property.commercial_purpose|default:"—" }}</dd></div>{% else %}<div><dt>Комнаты</dt><dd>{{ property.rooms|default:"—" }}</dd></div>{% endif %}
@@ -41,21 +42,33 @@
         {% if property.short_description or property.description %}<section class="detail-section detail-section--plain"><h2>Кратко об объекте</h2><p class="detail-prose">{{ property.short_description|default:property.description|truncatechars:600|linebreaksbr }}</p></section>{% endif %}
       </div>
       {% if property.status == 'archived' %}<aside class="detail-section detail-next"><span class="detail-kicker">Архив</span><h2>История объекта сохранена</h2><p class="detail-muted">Заявки, сделки, показы и задачи доступны в CRM. Восстановление объекта не меняет их статусы.</p>{% if can_delete %}<form method="post" action="{% url 'restore_property' property.pk %}">{% csrf_token %}<button class="btn btn-neutral" type="submit"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-undo"></use></svg>Восстановить объект</button></form>{% endif %}</aside>{% else %}<aside class="detail-section detail-next" aria-labelledby="property-readiness-title">
-        <div class="detail-section__heading"><div><span class="detail-kicker">Следующие действия</span><h2 id="property-readiness-title">Готовность к публикации</h2></div><span class="detail-count">{{ readiness_completed }} / {{ readiness_total }}</span></div>
+        <div class="detail-section__heading"><h2 id="property-readiness-title">Готовность к публикации</h2><span class="detail-count">{{ readiness_completed }} / {{ readiness_total }}</span></div>
         <div class="detail-progress" role="progressbar" aria-label="Готовность объекта" aria-valuenow="{{ readiness_completed }}" aria-valuemin="0" aria-valuemax="{{ readiness_total }}"><span style="width:{% widthratio readiness_completed readiness_total 100 %}%"></span></div>
-        {% if readiness_tasks %}<p class="detail-next__caption">Начните с первого незавершённого шага:</p><div class="detail-action-list">{% for task in readiness_tasks %}<a href="{{ task.url }}" class="detail-action-list__item {% if forloop.first %}is-next{% endif %}"><span>{{ task.text }}</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endfor %}</div>{% else %}<p class="detail-next__ready">Объект готов к публикации. Можно продвигать его и принимать заявки.</p>{% endif %}
+        {% if readiness_tasks %}<div class="detail-action-list">{% for task in readiness_tasks %}<a href="{{ task.url }}" class="detail-action-list__item {% if forloop.first %}is-next{% endif %}"><span>{{ task.text }}</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endfor %}</div>{% else %}<p class="detail-next__ready">Объект готов к публикации. Можно продвигать его и принимать заявки.</p>{% endif %}
       </aside>{% endif %}
     </div>
-    <section class="detail-section detail-section--spaced" aria-labelledby="property-deals-title"><div class="detail-section__heading"><div><span class="detail-kicker">CRM</span><h2 id="property-deals-title">Сделки по объекту</h2></div><a href="{% url 'deal_create' %}?property={{ property.pk }}" class="btn btn-neutral btn-sm">Новая сделка</a></div>
-      {% if property_deals %}<div class="detail-linked-list">{% for deal in property_deals %}<a class="detail-linked-list__item" href="{% url 'deal_detail' deal.pk %}"><span><strong>{{ deal.client.name }}</strong></span><span class="detail-linked-list__aside">{{ deal.get_stage_display }}</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endfor %}</div>{% else %}<p class="detail-muted mb-0">По объекту пока нет сделок.</p>{% endif %}
+    <section class="detail-section detail-section--spaced property-crm-summary" aria-label="Связи по объекту">
+      {% include "properties/includes/property_owners.html" %}
+      <details class="property-crm-summary__item" id="property-deals">
+        <summary class="property-crm-summary__toggle">
+          <strong class="property-crm-summary__label">Сделки</strong>
+          <span class="property-crm-summary__value">{% if property_deals_count %}{{ property_deals_count }}{% if property_deals_count == 1 %} · {{ property_deals.0.get_stage_display }}{% endif %}{% else %}Нет сделок{% endif %}</span>
+          <svg class="ui-icon property-crm-summary__chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg>
+        </summary>
+        <div class="property-crm-summary__content">
+          <a href="{% url 'deal_create' %}?property={{ property.pk }}" class="btn btn-neutral btn-sm">Новая сделка</a>
+          {% if property_deals %}<div class="detail-linked-list">{% for deal in property_deals %}<a class="detail-linked-list__item" href="{% url 'deal_detail' deal.pk %}"><span><strong>{{ deal.client.name }}</strong></span><span class="detail-linked-list__aside">{{ deal.get_stage_display }}</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endfor %}</div>{% endif %}
+          {% if property_deals_count > 5 %}<p class="detail-muted property-crm-summary__more">Показаны последние 5 сделок.</p>{% endif %}
+        </div>
+      </details>
     </section>
   </section>
 
   <section class="tab-pane fade" id="data-pane" role="tabpanel" aria-labelledby="data-tab" tabindex="0">
-    <div class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Характеристики</span><h2>Данные объекта</h2></div><a href="{% url 'edit_property' property.pk %}" class="btn btn-icon btn-sm btn-neutral" data-tooltip="Редактировать данные объекта" aria-label="Редактировать данные объекта"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></a></div>
+    <div class="detail-section"><div class="detail-section__heading"><h2>Данные объекта</h2><a href="{% url 'edit_property' property.pk %}" class="btn btn-icon btn-sm btn-neutral" data-tooltip="Редактировать данные объекта" aria-label="Редактировать данные объекта"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></a></div>
       <dl class="detail-data-grid">
-        <div><dt>Тип</dt><dd>{{ property.get_property_type_display }}</dd></div><div><dt>{% if property.is_commercial %}{% if property.deal_type == 'rent' %}Аренда за месяц{% else %}Полная цена{% endif %}{% else %}Цена{% endif %}</dt><dd>{% if property.price %}{{ property.get_currency_display|slice:":1" }} {{ property.price }}{% else %}—{% endif %}</dd></div>
-        {% if property.calculated_price_per_sqm %}<div><dt>Расчётно за м²{% if property.deal_type == 'rent' %} в месяц{% endif %}</dt><dd>{{ property.get_currency_display|slice:":1" }} {{ property.calculated_price_per_sqm|floatformat:2 }}</dd></div>{% endif %}
+        <div><dt>Тип</dt><dd>{{ property.get_property_type_display }}</dd></div><div><dt>{% if property.is_commercial %}{% if property.deal_type == 'rent' %}Аренда за месяц{% else %}Полная цена{% endif %}{% else %}Цена{% endif %}</dt><dd>{% if property.price %}{{ property.price|money:property.currency }}{% else %}—{% endif %}</dd></div>
+        {% if property.calculated_price_per_sqm %}<div><dt>Расчётно за м²{% if property.deal_type == 'rent' %} в месяц{% endif %}</dt><dd>{{ property.calculated_price_per_sqm|money:property.currency }}</dd></div>{% endif %}
         <div><dt>Адрес</dt><dd>{{ property.address|default:"—" }}</dd></div><div><dt>Площадь</dt><dd>{% if property.area %}{{ property.area_display }} м²{% else %}—{% endif %}</dd></div>
         {% if property.is_commercial %}
         <div><dt>Назначение</dt><dd>{{ property.commercial_purpose|default:"—" }}</dd></div>
@@ -78,7 +91,7 @@
   <section class="tab-pane fade" id="photos-pane" role="tabpanel" aria-labelledby="photos-tab" tabindex="0">{% include "properties/includes/property_gallery_card.html" %}</section>
 
   <section class="tab-pane fade" id="texts-pane" role="tabpanel" aria-labelledby="texts-tab" tabindex="0">
-    <div class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Контент</span><h2>Тексты объекта</h2><p>Объявление, лендинг и SEO редактируются в одном месте.</p></div><a href="{% url 'edit_property' property.pk %}#texts-pane" class="btn btn-neutral">Редактировать тексты</a></div>
+    <div class="detail-section"><div class="detail-section__heading"><h2>Тексты объекта</h2><a href="{% url 'edit_property' property.pk %}#texts-pane" class="btn btn-icon btn-sm btn-neutral" data-tooltip="Редактировать тексты" aria-label="Редактировать тексты объекта"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></a></div>
       {% if property.marketing_headline %}<div class="detail-text-block"><span class="detail-kicker">Заголовок объявления</span><strong>{{ property.marketing_headline }}</strong></div>{% endif %}
       {% if property.short_description %}<p class="detail-prose detail-prose--lead">{{ property.short_description|linebreaksbr }}</p>{% endif %}
       {% if property.description %}<div class="detail-prose">{{ property.description|linebreaks }}</div>{% else %}<p class="detail-muted">Описание пока не добавлено.</p>{% endif %}
@@ -86,11 +99,26 @@
   </section>
 
   <section class="tab-pane fade" id="landing-pane" role="tabpanel" aria-labelledby="landing-tab" tabindex="0">
-    <div class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Публичная страница</span><h2>Лендинг объекта</h2><p>Шаблон: {{ property.get_landing_template_display }}</p></div>{% if property.landing_published %}<span class="badge text-bg-success">Опубликован</span>{% else %}<span class="badge text-bg-light border text-secondary">Черновик</span>{% endif %}</div>
+    <div class="detail-section"><div class="detail-section__heading"><div><h2>Лендинг объекта</h2><p>Шаблон: {{ property.get_landing_template_display }}</p></div>{% if property.landing_published %}<span class="badge text-bg-success">Опубликован</span>{% else %}<span class="badge text-bg-light border text-secondary">Черновик</span>{% endif %}</div>
       {% if property.landing_published %}{% url 'public_landing' property.landing_slug as public_url %}<div class="detail-link"><span>Публичная ссылка</span><a href="{{ public_url }}" target="_blank" rel="noopener noreferrer">{{ request.scheme }}://{{ request.get_host }}{{ public_url }}</a></div>{% else %}<p class="detail-muted">Лендинг ещё не опубликован. Настройте тексты, блоки и шаблон, затем включите публикацию.</p>{% endif %}
-      <div class="detail-actions">{% if property.landing_published %}<a href="{{ public_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-neutral"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-external-link"></use></svg>Открыть лендинг</a><a href="{% url 'landing_list' %}" class="btn btn-text">Все лендинги</a>{% endif %}<a href="{% url 'edit_property' property.pk %}#landing-pane" class="btn btn-neutral"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg>Настроить</a></div>
+      <div class="detail-actions">
+        {% if property.landing_published %}
+          <a href="{{ public_url }}" target="_blank" rel="noopener noreferrer"
+             class="btn btn-icon btn-sm btn-neutral" data-tooltip="Открыть лендинг" aria-label="Открыть лендинг в новой вкладке">
+            <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-external-link"></use></svg>
+          </a>
+          <a href="{% url 'landing_list' %}" class="btn btn-icon btn-sm btn-neutral"
+             data-tooltip="Все лендинги" aria-label="Перейти ко всем лендингам">
+            <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-layout"></use></svg>
+          </a>
+        {% endif %}
+        <a href="{% url 'edit_property' property.pk %}#landing-pane" class="btn btn-icon btn-sm btn-neutral"
+           data-tooltip="Настроить лендинг" aria-label="Настроить лендинг">
+          <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg>
+        </a>
+      </div>
     </div>
-    <div class="detail-section detail-section--spaced"><div class="detail-section__heading"><div><span class="detail-kicker">Проверка</span><h2>Предпросмотр лендинга</h2><p>Посмотрите сохранённую версию для разных устройств.</p></div><div class="detail-device-switch" role="group" aria-label="Размер предпросмотра"><button class="is-active" type="button" data-preview-device="desktop" aria-pressed="true">ПК</button><button type="button" data-preview-device="tablet" aria-pressed="false">Планшет</button><button type="button" data-preview-device="phone" aria-pressed="false">Телефон</button></div></div><div class="detail-preview-frame" data-preview-frame><iframe title="Предпросмотр лендинга" src="{% url 'property_landing_preview' property.pk %}" loading="lazy"></iframe></div></div>
+    <div class="detail-section detail-section--spaced"><div class="detail-section__heading"><div><span class="detail-kicker">Проверка</span><h2>Предпросмотр лендинга</h2><p>Посмотрите сохранённую версию для разных устройств.</p></div><div class="detail-device-switch ui-switch" role="group" aria-label="Размер предпросмотра"><button class="ui-switch__option is-active" type="button" data-preview-device="desktop" aria-pressed="true">ПК</button><button class="ui-switch__option" type="button" data-preview-device="tablet" aria-pressed="false">Планшет</button><button class="ui-switch__option" type="button" data-preview-device="phone" aria-pressed="false">Телефон</button></div></div><div class="detail-preview-frame" data-preview-frame><iframe title="Предпросмотр лендинга" src="{% url 'property_landing_preview' property.pk %}" loading="lazy"></iframe></div></div>
   </section>
 
   <section class="tab-pane fade" id="publication-pane" role="tabpanel" aria-labelledby="publication-tab" tabindex="0">
@@ -102,7 +130,7 @@
           {% if telegram_feed_url %}<div class="detail-link"><span>Постоянная ссылка на ленту {% if property.agency_id %}команды{% else %}риелтора{% endif %}</span><a href="{{ telegram_feed_url }}" target="_blank" rel="noopener noreferrer">{{ telegram_feed_url }}</a></div>{% endif %}
           <form method="post" action="{% url 'telegram_publish' property.pk %}" class="detail-actions">{% csrf_token %}{% if property.telegram_published %}<button class="btn btn-neutral" type="submit" name="action" value="unpublish">Снять с публикации</button>{% else %}<button class="btn btn-neutral" type="submit" name="action" value="publish" {% if not telegram_bot_ready or telegram_publish_denial or property.status == 'archived' or property.is_demo %}disabled{% endif %}><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-upload"></use></svg>Опубликовать в боте</button>{% endif %}</form>
         </section>
-        <section class="detail-section detail-section--spaced"><div class="detail-section__heading"><div><span class="detail-kicker">Площадки</span><h2>Экспорт XML</h2>{% if property.is_commercial %}<p>Коммерческая выгрузка в Avito и ЦИАН пока недоступна.</p>{% else %}<p>Avito — {% if property.avito_export %}включён{% else %}выключен{% endif %} · ЦИАН — {% if property.cian_export %}включён{% else %}выключен{% endif %}</p>{% endif %}</div></div>{% if not property.is_commercial %}<div class="detail-actions"><div class="dropdown action-menu"><button class="btn btn-neutral dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">Скачать XML</button><ul class="dropdown-menu"><li><a class="dropdown-item" href="{% url 'avito_export' %}">Avito</a></li><li><a class="dropdown-item" href="{% url 'cian_export' %}">ЦИАН</a></li></ul></div><a href="{% url 'edit_property' property.pk %}" class="btn btn-text">Настроить выгрузку</a></div>{% endif %}</section>
+        <section class="detail-section detail-section--spaced"><div class="detail-section__heading"><div><span class="detail-kicker">Площадки</span><h2>Экспорт XML</h2>{% if property.is_commercial %}<p>Коммерческая выгрузка в Avito и ЦИАН пока недоступна.</p>{% else %}<p>Avito — {% if property.avito_export %}включён{% else %}выключен{% endif %} · ЦИАН — {% if property.cian_export %}включён{% else %}выключен{% endif %}</p>{% endif %}</div></div>{% if not property.is_commercial %}<div class="detail-actions"><div class="dropdown action-menu"><button class="btn btn-icon btn-sm btn-neutral dropdown-toggle has-icon" type="button" data-bs-toggle="dropdown" aria-expanded="false" data-tooltip="Скачать XML" aria-label="Скачать XML"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-download"></use></svg></button><ul class="dropdown-menu"><li><a class="dropdown-item" href="{% url 'avito_export' %}">Avito</a></li><li><a class="dropdown-item" href="{% url 'cian_export' %}">ЦИАН</a></li></ul></div><a href="{% url 'edit_property' property.pk %}" class="btn btn-icon btn-sm btn-text" data-tooltip="Настроить выгрузку" aria-label="Настроить выгрузку"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></a></div>{% endif %}</section>
         <section class="detail-section detail-section--spaced"><div class="detail-section__heading"><div><span class="detail-kicker">Материалы</span><h2>Презентация объекта</h2><p>Выберите состав и скачайте готовый файл.</p></div></div><form action="{% url 'property_presentation_pdf' property.pk %}" method="get" class="detail-presentation-form"><div><label class="form-label" for="presentation-template">Оформление</label><select id="presentation-template" name="template" class="form-select"><option value="classic">Светлое</option><option value="premium">Премиальное</option></select></div><fieldset><legend>Включить в презентацию</legend><div class="detail-check-grid"><label class="form-check"><input type="hidden" name="facts" value="0"><input class="form-check-input" type="checkbox" name="facts" value="1" checked> <span class="form-check-label">Характеристики</span></label><label class="form-check"><input type="hidden" name="description" value="0"><input class="form-check-input" type="checkbox" name="description" value="1" checked> <span class="form-check-label">Описание</span></label><label class="form-check"><input type="hidden" name="benefits" value="0"><input class="form-check-input" type="checkbox" name="benefits" value="1" checked> <span class="form-check-label">Преимущества</span></label><label class="form-check"><input type="hidden" name="contacts" value="0"><input class="form-check-input" type="checkbox" name="contacts" value="1" checked> <span class="form-check-label">Контакты</span></label></div></fieldset><div class="detail-actions"><label class="detail-photo-limit" for="presentation-photo-limit">Фото <select id="presentation-photo-limit" name="photos" class="form-select form-select-sm"><option value="4">до 4</option><option value="6" selected>до 6</option><option value="8">до 8</option></select></label><button class="btn btn-neutral" type="submit">Скачать PDF</button><button class="btn btn-text" type="submit" formaction="{% url 'property_presentation_docx' property.pk %}">Скачать DOCX</button></div></form></section>
       </div>
       {% if can_delete %}
@@ -128,6 +156,19 @@
     const tabs = document.getElementById('property-workspace-tabs');
     const validTargets = new Set(['#overview-pane', '#data-pane', '#photos-pane', '#texts-pane', '#landing-pane', '#publication-pane']);
     const showTabFromHash = () => {
+      if (window.location.hash === '#property-owners' || window.location.hash === '#property-deals') {
+        const disclosure = document.querySelector(window.location.hash);
+        if (disclosure) disclosure.open = true;
+        const overview = document.getElementById('overview-tab');
+        const revealDisclosure = () => requestAnimationFrame(() => disclosure?.scrollIntoView({ block: 'start' }));
+        if (overview && !overview.classList.contains('active')) {
+          overview.addEventListener('shown.bs.tab', revealDisclosure, { once: true });
+          bootstrap.Tab.getOrCreateInstance(overview).show();
+        } else {
+          revealDisclosure();
+        }
+        return;
+      }
       if (!validTargets.has(window.location.hash)) return;
       const selected = tabs?.querySelector(`[data-bs-target="${window.location.hash}"]`);
       if (selected) bootstrap.Tab.getOrCreateInstance(selected).show();
@@ -143,6 +184,7 @@
     tabs?.addEventListener('shown.bs.tab', (event) => {
       const target = event.target.dataset.bsTarget;
       if (target === '#publication-pane' && new URLSearchParams(window.location.search).get('tab') === 'publication') return;
+      if (target === '#overview-pane' && ['#property-owners', '#property-deals'].includes(window.location.hash)) return;
       if (target) history.replaceState(null, '', target);
     });
 

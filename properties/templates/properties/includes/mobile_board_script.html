@@ -1,0 +1,69 @@
+<script>
+(() => {
+  const board = document.querySelector('[data-mobile-board]');
+  const picker = document.querySelector('[data-board-mobile-picker]');
+  const select = picker?.querySelector('[data-board-stage-picker]');
+  if (!board || !select) return;
+
+  const mobile = window.matchMedia('(max-width: 767.98px)');
+  const isDealBoard = board.hasAttribute('data-deal-board');
+  const stageFor = (column) => isDealBoard ? column?.dataset?.dealStage : column?.dataset?.clientStatus;
+  const columns = () => [...board.querySelectorAll('.client-board__column')];
+  const countFor = (column) => Number(column.querySelector('.client-board__count')?.textContent.trim() || 0);
+  const stageFromHash = () => {
+    const id = window.location.hash.slice(1);
+    return stageFor(columns().find((column) => column.querySelector('.client-board__heading h2')?.id === id));
+  };
+  const firstStage = () => stageFor(columns().find((column) => countFor(column) > 0) || columns()[0]);
+  let selectedStage = stageFromHash() || firstStage();
+
+  const render = () => {
+    const currentColumns = columns();
+    if (!currentColumns.some((column) => stageFor(column) === selectedStage)) selectedStage = firstStage();
+    select.value = selectedStage;
+    picker.classList.toggle('is-ready', mobile.matches);
+    board.classList.toggle('is-mobile-ready', mobile.matches);
+    currentColumns.forEach((column) => {
+      column.classList.toggle('is-mobile-active', stageFor(column) === selectedStage);
+    });
+    board.querySelectorAll('[data-deal-card], [data-client-card]').forEach((card) => {
+      card.draggable = !mobile.matches;
+    });
+  };
+  const syncCounts = () => {
+    columns().forEach((column) => {
+      const option = [...select.options].find((item) => item.value === stageFor(column));
+      if (!option) return;
+      const label = column.querySelector('.client-board__heading h2')?.textContent.trim() || '';
+      option.textContent = `${label} · ${countFor(column)}`;
+    });
+    render();
+  };
+
+  select.addEventListener('change', () => {
+    selectedStage = select.value;
+    render();
+    const column = columns().find((item) => stageFor(item) === selectedStage);
+    const id = column?.querySelector('.client-board__heading h2')?.id;
+    if (id) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${id}`);
+  });
+  window.addEventListener('hashchange', () => {
+    const requestedStage = stageFromHash();
+    if (requestedStage) {
+      selectedStage = requestedStage;
+      render();
+    }
+  });
+  mobile.addEventListener('change', render);
+
+  let refreshFrame = 0;
+  new MutationObserver(() => {
+    if (refreshFrame) return;
+    refreshFrame = requestAnimationFrame(() => {
+      refreshFrame = 0;
+      syncCounts();
+    });
+  }).observe(board, { childList: true, characterData: true, subtree: true });
+  syncCounts();
+})();
+</script>

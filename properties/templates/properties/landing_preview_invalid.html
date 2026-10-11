@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Не удалось показать лендинг</title>
+  <style>
+    body { max-width: 38rem; padding: 2rem; margin: 0 auto; color: #1d2939; background: #f7f8fa; font: 16px/1.5 system-ui, sans-serif; }
+    main { padding: 1.5rem; border: 1px solid #eaecf0; border-radius: .75rem; background: #fff; }
+    h1 { margin: 0 0 .5rem; font-size: 1.35rem; }
+    p { margin: 0 0 1rem; color: #667085; }
+    ul { padding-left: 1.3rem; margin-bottom: 0; }
+    li + li { margin-top: .5rem; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Предпросмотр пока недоступен</h1>
+    <p>Вернитесь в редактор и исправьте поля:</p>
+    <ul>
+      {% for field in editor %}{% for error in field.errors %}<li><strong>{{ field.label }}:</strong> {{ error }}</li>{% endfor %}{% endfor %}
+      {% for error in editor.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+    </ul>
+  </main>
+</body>
+</html>
