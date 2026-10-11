@@ -7,7 +7,7 @@
   const colorPicker = editor.querySelector('[data-custom-color-picker]');
   const colorControl = editor.querySelector('[data-custom-color-control]');
   const customRadio = editor.querySelector('[name="landing_accent"][value="custom"]');
-  const select = panel.querySelector('[data-preset-select]');
+  const choices = panel.querySelector('[data-preset-choices]');
   const applyButton = panel.querySelector('[data-preset-apply]');
   const deleteButton = panel.querySelector('[data-preset-delete]');
   const saveButton = panel.querySelector('[data-preset-save]');
@@ -20,6 +20,10 @@
   const validColor = (value) => /^#[0-9a-f]{6}$/i.test(value);
   const selectedRadio = (name) => editor.querySelector(`[name="${name}"]:checked`);
   const csrf = editor.querySelector('[name="csrfmiddlewaretoken"]')?.value;
+  const templateNames = { classic: 'Классический', modern: 'Современный', premium: 'Премиальный' };
+  const accentColors = { graphite: '#344054', blue: '#2563eb', emerald: '#008b78', terracotta: '#b95f46' };
+  const templateColors = { classic: '#344054', modern: '#2563eb', premium: '#c1a16a' };
+  let selectedPresetId = '';
 
   function updateColor() {
     const custom = Boolean(customRadio?.checked);
@@ -43,17 +47,54 @@
     message.classList.toggle('is-error', error);
   }
 
-  function renderOptions(chosen = '') {
-    select.replaceChildren(new Option('Выберите пресет', ''));
-    presets.forEach((preset) => select.add(new Option(preset.name, String(preset.id))));
-    select.value = chosen;
-    applyButton.disabled = !select.value;
-    if (deleteButton) deleteButton.disabled = !select.value;
+  function selectPreset(id) {
+    selectedPresetId = presets.some((preset) => String(preset.id) === id) ? id : '';
+    choices.querySelectorAll('[data-preset-id]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(button.dataset.presetId === selectedPresetId));
+    });
+    applyButton.disabled = !selectedPresetId;
+    if (deleteButton) deleteButton.disabled = !selectedPresetId;
   }
 
-  select.addEventListener('change', () => renderOptions(select.value));
+  function renderOptions(chosen = '') {
+    choices.replaceChildren();
+    if (!presets.length) {
+      const empty = document.createElement('p');
+      empty.className = 'landing-presets__empty';
+      empty.textContent = 'Сохранённых пресетов пока нет.';
+      choices.append(empty);
+    }
+    presets.forEach((preset) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'landing-presets__choice ui-choice-tile';
+      button.dataset.presetId = String(preset.id);
+      const color = preset.landing_accent === 'custom' && validColor(preset.landing_custom_color)
+        ? preset.landing_custom_color
+        : accentColors[preset.landing_accent] || templateColors[preset.landing_template] || templateColors.classic;
+      button.style.setProperty('--preset-color', color);
+      const swatch = document.createElement('span');
+      swatch.className = 'landing-presets__swatch';
+      swatch.setAttribute('aria-hidden', 'true');
+      const caption = document.createElement('span');
+      caption.className = 'landing-presets__caption';
+      const name = document.createElement('strong');
+      name.textContent = preset.name;
+      const template = document.createElement('small');
+      template.textContent = templateNames[preset.landing_template] || 'Лендинг';
+      caption.append(name, template);
+      button.append(swatch, caption);
+      choices.append(button);
+    });
+    selectPreset(chosen);
+  }
+
+  choices.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-preset-id]');
+    if (button && choices.contains(button)) selectPreset(button.dataset.presetId);
+  });
   applyButton.addEventListener('click', () => {
-    const preset = presets.find((item) => String(item.id) === select.value);
+    const preset = presets.find((item) => String(item.id) === selectedPresetId);
     if (!preset) return;
     fields.forEach((field) => {
       if (field === 'landing_custom_color') {
@@ -100,7 +141,7 @@
   });
 
   deleteButton?.addEventListener('click', async () => {
-    const preset = presets.find((item) => String(item.id) === select.value);
+    const preset = presets.find((item) => String(item.id) === selectedPresetId);
     if (!preset || !window.confirm(`Удалить пресет «${preset.name}»? Оформление объектов останется прежним.`)) return;
     deleteButton.disabled = true;
     try {

@@ -128,9 +128,8 @@
         <div class="landing-presets__body">
         <p class="landing-presets__hint">Сохранённые варианты {{ landing_preset_scope_label }}. Применение изменит только оформление этой формы.</p>
         {{ landing_style_presets|json_script:"landing-style-presets-data" }}
+        <div class="landing-presets__choices" role="group" aria-label="Сохранённые стилевые пресеты" data-preset-choices></div>
         <div class="landing-presets__controls">
-          <label class="visually-hidden" for="landing-preset-select">Выбрать стилевой пресет</label>
-          <select class="form-select" id="landing-preset-select" data-preset-select><option value="">Выберите пресет</option></select>
           <button type="button" class="btn btn-neutral" data-preset-apply disabled>Применить</button>
           {% if landing_preset_can_manage %}<button type="button" class="btn btn-outline-secondary" data-preset-delete disabled>Удалить</button>{% endif %}
         </div>

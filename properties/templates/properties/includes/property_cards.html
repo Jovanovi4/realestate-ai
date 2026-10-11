@@ -3,7 +3,7 @@
 {% if properties %}
   <div class="row g-3 catalog-card-grid">
     {% for property in properties %}
-      <div class="col-md-6 col-xl-4 catalog-card-grid__item"><article class="property-card h-100">
+      <div class="col-md-6 col-xl-4 catalog-card-grid__item"><article class="property-card h-100" data-catalog-card-open>
         <div class="property-card__media">{% if property.primary_image %}<img src="{{ property.primary_image.image.url }}" alt="{{ property.title }}" loading="lazy">{% else %}<div class="property-card__placeholder"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-image"></use></svg><span>Фото не добавлено</span></div>{% endif %}</div>
         <div class="property-card__body"><div class="property-card__top"><span class="property-card__kind">{{ property.get_property_type_display }} · {{ property.get_deal_type_display }}{% if property.is_demo %} · Демо{% endif %}</span><span class="badge text-bg-{% if property.status == 'published' or property.status == 'available' %}success{% elif property.status == 'showing' %}info{% elif property.status == 'reserved' %}warning{% elif property.status == 'sold' or property.status == 'rented' %}secondary{% else %}light{% endif %}">{{ property.get_status_display }}</span></div>
           <h2 class="property-card__title"><a href="{% url 'property_detail' property.pk %}">{{ property.marketing_headline|default:property.title }}</a></h2><p class="property-card__address">{{ property.address|default:"Адрес не указан" }}</p>

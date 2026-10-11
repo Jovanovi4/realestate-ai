@@ -3,7 +3,7 @@
 {% block title %}{{ client.name }} — {% if client.contact_role == 'owner' %}собственник{% else %}клиент{% endif %}{% endblock %}
 {% block content %}
 <header class="ui-page-header detail-page-header client-detail-header">
-  <div><p class="ui-page-header__eyebrow">CRM · {% if client.contact_role == 'owner' %}собственник{% else %}клиент{% endif %}</p><h1 class="ui-page-header__title">{{ client.name }}</h1><div class="detail-page-header__meta"><a href="tel:{{ client.phone }}">{{ client.phone }}</a><span>{% if client.contact_role == 'both' %}Клиент и собственник · {% endif %}Источник: {{ client.get_source_display }}</span></div></div>
+  <div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="briefcase" %}CRM · {% if client.contact_role == 'owner' %}собственник{% else %}клиент{% endif %}</p><h1 class="ui-page-header__title">{{ client.name }}</h1><div class="detail-page-header__meta"><a href="tel:{{ client.phone }}">{{ client.phone }}</a><span>{% if client.contact_role == 'both' %}Клиент и собственник · {% endif %}Источник: {{ client.get_source_display }}</span></div></div>
   <div class="ui-page-header__actions"><a href="{% url 'client_list' %}{% if client.contact_role == 'owner' %}?role=owner{% endif %}" class="btn btn-neutral">Все контакты</a>{% if client.is_property_seeker %}<a href="{% url 'deal_create' %}?client={{ client.pk }}" class="btn {% if priority_lead %}btn-neutral{% else %}btn-primary{% endif %}">Новая сделка</a>{% endif %}</div>
 </header>
 
@@ -14,9 +14,11 @@
 
 <div class="client-tabs-shell">
 <button class="client-tabs-arrow client-tabs-arrow--prev" type="button" aria-label="Показать предыдущие вкладки" aria-controls="client-tabs" hidden><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-left"></use></svg></button>
-<ul class="nav nav-pills workspace-tabs ui-switch detail-tabs" id="client-tabs" role="tablist">
+<ul class="nav nav-pills workspace-tabs ui-switch detail-tabs" id="client-tabs" role="tablist" aria-label="Разделы контакта">
   <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option{% if not open_client_leads_tab %} active{% endif %}" id="client-overview-tab" data-bs-toggle="tab" data-bs-target="#client-overview" type="button" role="tab" aria-controls="client-overview" aria-selected="{% if open_client_leads_tab %}false{% else %}true{% endif %}">Обзор</button></li>
   <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option" id="client-history-tab" data-bs-toggle="tab" data-bs-target="#client-history" type="button" role="tab" aria-controls="client-history" aria-selected="false">История{% if interactions_total %} · {{ interactions_total }}{% endif %}</button></li>
+  {% if client.is_property_owner %}<li class="nav-item" role="presentation"><button class="nav-link ui-switch__option" id="client-owner-inquiries-tab" data-bs-toggle="tab" data-bs-target="#client-owner-inquiries" type="button" role="tab" aria-controls="client-owner-inquiries" aria-selected="false">Обращения{% if owner_inquiries_total %} · {{ owner_inquiries_total }}{% endif %}</button></li>
+  <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option" id="client-owner-properties-tab" data-bs-toggle="tab" data-bs-target="#client-owner-properties" type="button" role="tab" aria-controls="client-owner-properties" aria-selected="false">Собственность{% if owner_properties_total %} · {{ owner_properties_total }}{% endif %}</button></li>{% endif %}
   {% if client.is_property_seeker %}<li class="nav-item" role="presentation"><button class="nav-link ui-switch__option" id="client-matching-tab" data-bs-toggle="tab" data-bs-target="#client-matching" type="button" role="tab" aria-controls="client-matching" aria-selected="false">Подбор{% if suggestions %} · {{ suggestions|length }}{% endif %}</button></li>
   <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option{% if open_client_leads_tab %} active{% endif %}" id="client-leads-tab" data-bs-toggle="tab" data-bs-target="#client-leads" type="button" role="tab" aria-controls="client-leads" aria-selected="{% if open_client_leads_tab %}true{% else %}false{% endif %}">Заявки{% if client_leads_total %} · {{ client_leads_total }}{% endif %}</button></li>
   <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option" id="client-deals-tab" data-bs-toggle="tab" data-bs-target="#client-deals" type="button" role="tab" aria-controls="client-deals" aria-selected="false">Сделки{% if client_deals_total %} · {{ client_deals_total }}{% endif %}</button></li>{% endif %}
@@ -39,21 +41,27 @@
         {% else %}<p class="detail-muted detail-aside__empty">{% if priority_lead or priority_owner_inquiry or next_reminder %}Других задач нет.{% else %}Задач пока нет.{% endif %}</p>{% endif %}
       </aside>
     </div>
-    {% include "properties/includes/client_owner_properties.html" %}
   </section>
 
   {% if client.is_property_seeker %}<section class="tab-pane fade" id="client-matching" role="tabpanel" aria-labelledby="client-matching-tab" tabindex="0">
     {% include "properties/includes/client_matching.html" %}
   </section>{% endif %}
 
-  <section class="tab-pane fade" id="client-history" role="tabpanel" aria-labelledby="client-history-tab" tabindex="0"><div class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Общение</span><h2>История взаимодействий</h2><p>{% if has_uncontacted_leads %}Заметки и показы по клиенту.{% else %}Звонки, сообщения и заметки по контакту.{% endif %}</p></div></div>
+  <section class="tab-pane fade" id="client-history" role="tabpanel" aria-labelledby="client-history-tab" tabindex="0"><div class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Общение</span><h2>{% if client.is_property_owner %}Контакты с собственником{% else %}История взаимодействий{% endif %}</h2><p>{% if has_uncontacted_leads %}Заметки и показы по клиенту.{% elif client.is_property_owner %}Звонки, сообщения и договорённости. При необходимости выберите объект.{% else %}Звонки, сообщения и заметки по контакту.{% endif %}</p></div></div>
       {% if client.legacy_status %}<p class="client-legacy-note">Прежний общий этап: {{ client.get_legacy_status_display }}{% if client.outcome_reason %} · {{ client.outcome_reason }}{% endif %}. Этапы по конкретным объектам смотрите в сделках.</p>{% endif %}
       {% if has_uncontacted_leads %}<div class="client-first-contact-guide"><div><strong>Звонок или сообщение по новой заявке?</strong><span>Уже набранный текст перенесётся к выбранному объекту.</span></div><button class="btn btn-neutral btn-sm" type="submit" form="client-history-form" name="intent" value="first_contact">Записать первый контакт</button></div>{% endif %}
-      <form id="client-history-form" method="post" action="{% url 'client_interaction_create' client.pk %}" class="detail-compose">{% csrf_token %}<div class="detail-compose__fields"><div><label class="visually-hidden" for="{{ interaction_form.interaction_type.id_for_label }}">Тип взаимодействия</label>{{ interaction_form.interaction_type }}</div><div><label class="visually-hidden" for="{{ interaction_form.text.id_for_label }}">Что произошло</label>{{ interaction_form.text }}</div></div><button class="btn btn-neutral" type="submit">Добавить запись</button></form>
+      <form id="client-history-form" method="post" action="{% url 'client_interaction_create' client.pk %}" class="detail-compose">{% csrf_token %}<div class="detail-compose__fields">{% if client.is_property_owner and owner_properties_total %}<div class="app-field is-wide"><label class="form-label" for="{{ interaction_form.property.id_for_label }}">Объект</label>{{ interaction_form.property }}</div>{% endif %}<div><label class="visually-hidden" for="{{ interaction_form.interaction_type.id_for_label }}">Тип взаимодействия</label>{{ interaction_form.interaction_type }}</div><div><label class="visually-hidden" for="{{ interaction_form.text.id_for_label }}">Что произошло</label>{{ interaction_form.text }}</div></div><button class="btn btn-neutral" type="submit">{% if client.is_property_owner %}Записать контакт{% else %}Добавить запись{% endif %}</button></form>
       {% if interactions %}<div class="detail-timeline">{% for interaction in interactions %}<article class="detail-timeline__item"><div class="detail-timeline__head"><strong>{{ interaction.get_interaction_type_display }}</strong><time datetime="{{ interaction.created_at|date:'c' }}">{{ interaction.created_at|date:"d.m.Y · H:i" }}</time></div>{% if interaction.lead %}<span class="detail-timeline__context">{{ interaction.lead.property.title }}</span>{% elif interaction.property %}<span class="detail-timeline__context">{{ interaction.property.title }}</span>{% endif %}{% if interaction.text %}<p>{{ interaction.text|linebreaksbr }}</p>{% endif %}</article>{% endfor %}</div>
         {% if interactions.has_other_pages %}<nav class="mt-3" aria-label="Страницы истории"><ul class="pagination pagination-sm">{% if interactions.has_previous %}<li class="page-item"><a class="page-link" href="?{{ history_page_query }}{% if history_page_query %}&amp;{% endif %}history_page={{ interactions.previous_page_number }}#client-history">‹</a></li>{% endif %}<li class="page-item active"><span class="page-link">{{ interactions.number }} / {{ interactions.paginator.num_pages }}</span></li>{% if interactions.has_next %}<li class="page-item"><a class="page-link" href="?{{ history_page_query }}{% if history_page_query %}&amp;{% endif %}history_page={{ interactions.next_page_number }}#client-history">›</a></li>{% endif %}</ul></nav>{% endif %}
       {% else %}<p class="detail-muted detail-aside__empty">История пока пуста.</p>{% endif %}
     </div></section>
+
+  {% if client.is_property_owner %}<section class="tab-pane fade" id="client-owner-inquiries" role="tabpanel" aria-labelledby="client-owner-inquiries-tab" tabindex="0">
+    {% include "properties/includes/client_owner_inquiries.html" %}
+  </section>
+  <section class="tab-pane fade" id="client-owner-properties" role="tabpanel" aria-labelledby="client-owner-properties-tab" tabindex="0">
+    {% include "properties/includes/client_owner_properties.html" %}
+  </section>{% endif %}
 
   {% if client.is_property_seeker %}<section class="tab-pane fade{% if open_client_leads_tab %} show active{% endif %}" id="client-leads" role="tabpanel" aria-labelledby="client-leads-tab" tabindex="0"><div class="detail-section"><div class="detail-section__heading"><h2>Заявки клиента</h2></div>
       {% if contact_draft %}<p class="client-contact-draft" role="status">Текст и способ связи перенесены. Выберите нужную заявку, затем укажите результат и следующий шаг.</p>{% endif %}
@@ -98,7 +106,7 @@
     nextTabs?.addEventListener('click', () => tabs.scrollBy({ left: tabs.clientWidth * .7, behavior: scrollBehavior }));
     tabs?.addEventListener('scroll', updateTabArrows, { passive: true });
     window.addEventListener('resize', () => { updateTabArrows(); scrollToActiveTab(); });
-    const validTargets = new Set(['#client-overview', '#client-matching', '#client-history', '#client-leads', '#client-deals']);
+    const validTargets = new Set(['#client-overview', '#client-matching', '#client-history', '#client-owner-inquiries', '#client-owner-properties', '#client-leads', '#client-deals']);
     if (validTargets.has(window.location.hash)) {
       const selected = tabs?.querySelector(`[data-bs-target="${window.location.hash}"]`);
       if (selected) bootstrap.Tab.getOrCreateInstance(selected).show();

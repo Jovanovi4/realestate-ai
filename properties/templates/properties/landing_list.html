@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Лендинги{% endblock %}
 {% block content %}
-<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Недвижимость</p><h1 class="ui-page-header__title">Лендинги</h1><p class="ui-page-header__description">Страницы объектов: настройка, публикация и публичные ссылки.</p></div><div class="ui-page-header__actions"><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></header>
+<header class="ui-page-header"><div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="home" %}Недвижимость</p><h1 class="ui-page-header__title">Лендинги</h1><p class="ui-page-header__description">Страницы объектов: настройка, публикация и публичные ссылки.</p></div><div class="ui-page-header__actions"><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></header>
 <nav class="lead-status-filter landing-status-filter" aria-label="Фильтр лендингов по статусу">
   <span class="lead-status-filter__label">Статус</span>
   <div class="lead-status-filter__options ui-switch">
@@ -17,7 +17,7 @@
 <div class="row g-3 catalog-card-grid">
   {% for property in properties %}
   <div class="col-md-6 col-xl-4 catalog-card-grid__item">
-    <article class="property-card landing-card h-100">
+    <article class="property-card landing-card h-100" data-catalog-card-open>
       <div class="property-card__media">
         {% if property.primary_image %}<img src="{{ property.primary_image.image.url }}" alt="{{ property.title }}" loading="lazy">
         {% else %}<div class="property-card__placeholder"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-image"></use></svg><span>Фото не добавлено</span></div>{% endif %}

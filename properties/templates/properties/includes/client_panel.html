@@ -1,0 +1,88 @@
+{% load crm_display %}
+<aside class="lead-panel client-panel" id="client-panel" role="dialog" aria-labelledby="client-panel-title" tabindex="-1" hx-history="false">
+  <header class="lead-panel__header">
+    <div class="lead-panel__heading"><span class="detail-kicker">{% if selected_client.contact_role == 'owner' %}Собственник{% else %}Клиент{% endif %}</span><h2 id="client-panel-title">{{ selected_client.name }}</h2></div>
+    <div class="lead-panel__header-actions">
+      {% if next_client_id %}<a class="btn btn-icon btn-sm btn-neutral" href="?{{ client_panel_query }}&amp;client={{ next_client_id }}" hx-get="?{{ client_panel_query }}&amp;client={{ next_client_id }}" hx-target="#client-workspace" hx-swap="outerHTML" hx-push-url="true" data-client-panel-open="{{ next_client_id }}" aria-label="Открыть следующий контакт" data-tooltip="Следующий контакт"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endif %}
+      <a class="btn btn-icon btn-sm btn-neutral" href="{% url 'client_detail' selected_client.pk %}" aria-label="Открыть полную карточку контакта" data-tooltip="Полная карточка"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-external-link"></use></svg></a>
+      <a class="btn btn-icon btn-sm btn-neutral" href="?{{ client_panel_query }}" hx-get="?{{ client_panel_query }}" hx-target="#client-workspace" hx-swap="outerHTML" hx-push-url="true" data-client-panel-close aria-label="Закрыть карточку контакта" aria-keyshortcuts="Escape" data-tooltip="Закрыть"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></a>
+    </div>
+  </header>
+  <div class="lead-panel__discard" id="client-panel-discard" role="alertdialog" aria-labelledby="client-panel-discard-title" aria-describedby="client-panel-discard-text" hidden>
+    <strong id="client-panel-discard-title">Есть несохранённые изменения</strong><p id="client-panel-discard-text">Сохраните запись или выйдите без изменений.</p>
+    <div class="lead-panel__discard-actions"><button class="btn btn-neutral btn-sm" type="button" data-client-discard-stay>Продолжить редактирование</button><button class="btn btn-text btn-sm" type="button" data-client-discard-leave>Выйти без сохранения</button></div>
+  </div>
+  <div class="lead-panel__body">
+    <div class="lead-panel__identity">
+      <a class="lead-panel__phone" href="tel:{{ selected_client.phone }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-phone"></use></svg>{{ selected_client.phone }}</a>
+      <div class="lead-panel__meta"><span>Источник: <strong>{{ selected_client.get_source_display }}</strong></span>{% if selected_client.contact_role == 'both' %}<span>Клиент и собственник</span>{% endif %}</div>
+    </div>
+
+    <section class="client-panel__section" aria-label="Отношения с контактом">
+      <div class="client-panel__section-head"><span class="detail-kicker">Отношения</span></div>
+      <div class="detail-status-control">
+        <details class="detail-status-control__editor"{% if panel_status_open or panel_status_error %} open{% endif %}>
+          <summary aria-label="Изменить отношения с клиентом: {{ selected_client.get_status_display }}"><span class="detail-status-control__current">{% include "properties/includes/client_status_badge.html" with client=selected_client %}</span><span class="detail-status-control__edit-label">Изменить статус</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></summary>
+          <form method="post" action="{% url 'client_status_update' selected_client.pk %}" hx-post="{% url 'client_status_update' selected_client.pk %}" hx-target="#client-panel" hx-swap="outerHTML" class="detail-status-control__form" data-client-panel-status-form data-initial-status="{{ selected_client.status }}"{% if panel_status_error %} data-unsaved="true"{% endif %}>
+            {% csrf_token %}<input type="hidden" name="panel_context" value="client_list"><input type="hidden" name="panel_list_query" value="{{ client_panel_query }}">
+            {% if panel_status_error %}<p class="client-panel__error" role="alert">{{ panel_status_error }}</p>{% endif %}
+            <label class="visually-hidden" for="client-panel-status">Отношения с клиентом</label><select id="client-panel-status" name="status" class="form-select form-select-sm">{% for value, label in selected_client.STATUS_CHOICES %}<option value="{{ value }}"{% if panel_status_value == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+            <button class="btn btn-sm btn-neutral detail-status-control__save" type="submit" data-panel-status-save>Сохранить</button>
+          </form>
+        </details>
+      </div>
+    </section>
+
+    <section class="lead-panel__focus{% if panel_priority_lead or not panel_priority_owner_inquiry and panel_next_reminder.lead_id %} client-panel__focus-card{% endif %}" aria-label="Ближайшее действие">
+      <span class="detail-kicker">Ближайшее действие</span>
+      {% if panel_priority_lead %}
+        <strong><a class="client-panel__focus-link" href="{% url 'lead_detail' panel_priority_lead.pk %}?contact=1#lead-edit">Записать первый контакт</a></strong><span class="lead-panel__property">{{ panel_priority_lead.property.title }}</span>
+        <p class="lead-panel__deadline{% if panel_priority_lead.first_response_overdue %} is-overdue{% endif %}">Первый ответ {% if panel_priority_lead.first_response_overdue %}просрочен{% else %}до{% endif %} <time datetime="{{ panel_priority_lead.first_response_due_at|date:'c' }}">{{ panel_priority_lead.first_response_due_at|date:"d.m.Y · H:i" }}</time></p>
+      {% elif panel_priority_owner_inquiry %}
+        <strong>{% if panel_priority_owner_inquiry.first_contacted_at %}{{ panel_priority_owner_inquiry.next_action }}{% else %}Ответить собственнику{% endif %}</strong>
+        <p class="lead-panel__deadline{% if panel_priority_owner_inquiry.is_overdue %} is-overdue{% endif %}">До <time datetime="{{ panel_priority_owner_inquiry.attention_due_at|date:'c' }}">{{ panel_priority_owner_inquiry.attention_due_at|date:"d.m.Y · H:i" }}</time>{% if panel_priority_owner_inquiry.is_overdue %} · просрочено{% endif %}</p>
+        <a class="btn btn-primary btn-sm client-panel__task-link" href="{% url 'owner_inquiry_detail' panel_priority_owner_inquiry.pk %}">К обращению</a>
+      {% elif panel_next_reminder %}
+        <strong>{% if panel_next_reminder.lead_id %}<a class="client-panel__focus-link" href="{% url 'lead_detail' panel_next_reminder.lead_id %}?complete=1#lead-action">{{ panel_next_reminder.text }}</a>{% else %}{{ panel_next_reminder.text }}{% endif %}</strong>
+        <p class="lead-panel__deadline{% if panel_next_reminder.due_at and panel_next_reminder.due_at < panel_now %} is-overdue{% endif %}">{% if panel_next_reminder.due_at %}До <time datetime="{{ panel_next_reminder.due_at|date:'c' }}">{{ panel_next_reminder.due_at|date:"d.m.Y · H:i" }}</time>{% if panel_next_reminder.due_at < panel_now %} · просрочено{% endif %}{% else %}Без срока{% endif %}</p>
+        <div class="lead-panel__meta"><span>Ответственный: <strong>{{ panel_next_reminder.owner|staff_name }}</strong></span></div>
+        {% if panel_reminder_editable %}
+          <details class="lead-panel__action" {% if panel_task_open or panel_task_error %}open{% endif %}>
+            <summary class="lead-overview__outcome-action"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></span><span>Изменить задачу</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
+            <form method="post" action="{% url 'client_panel_task_update' selected_client.pk panel_next_reminder.pk %}" hx-post="{% url 'client_panel_task_update' selected_client.pk panel_next_reminder.pk %}" hx-target="#client-panel" hx-swap="outerHTML" class="lead-panel__form"{% if panel_task_form.is_bound %} data-unsaved="true"{% endif %}>
+              {% csrf_token %}<input type="hidden" name="panel_context" value="client_list"><input type="hidden" name="panel_list_query" value="{{ client_panel_query }}">
+              {% if panel_task_error or panel_task_form.non_field_errors %}<p class="client-panel__error" role="alert">{{ panel_task_error }} {{ panel_task_form.non_field_errors }}</p>{% endif %}
+              <div><label class="form-label" for="{{ panel_task_form.text.id_for_label }}">Задача</label>{{ panel_task_form.text }}{{ panel_task_form.text.errors }}</div>
+              <div><label class="form-label" for="{{ panel_task_form.due_at.id_for_label }}">Срок</label>{{ panel_task_form.due_at }}{{ panel_task_form.due_at.errors }}</div>
+              <button class="btn btn-primary" type="submit">Сохранить задачу</button>
+            </form>
+          </details>
+          <form method="post" action="{% url 'client_reminder_complete' selected_client.pk panel_next_reminder.pk %}" hx-post="{% url 'client_reminder_complete' selected_client.pk panel_next_reminder.pk %}" hx-target="#client-panel" hx-swap="outerHTML" class="client-panel__complete">
+            {% csrf_token %}<input type="hidden" name="panel_context" value="client_list"><input type="hidden" name="panel_list_query" value="{{ client_panel_query }}">
+            <button class="btn btn-neutral btn-sm" type="submit"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-check"></use></svg>Выполнено</button>
+          </form>
+        {% elif panel_next_reminder.owner_showing_id %}<a class="btn btn-neutral btn-sm client-panel__task-link" href="{% url 'client_detail' selected_client.pk %}#client-overview">К задаче в полной карточке</a>
+        {% endif %}
+      {% else %}
+        <strong>Запланируйте контакт</strong><span class="lead-panel__property">Добавьте задачу и срок.</span>
+        <details class="lead-panel__action" {% if panel_task_open or panel_task_error %}open{% endif %}>
+          <summary class="lead-overview__outcome-action"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg></span><span>Добавить задачу</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
+          <form method="post" action="{% url 'client_reminder_create' selected_client.pk %}" hx-post="{% url 'client_reminder_create' selected_client.pk %}" hx-target="#client-panel" hx-swap="outerHTML" class="lead-panel__form"{% if panel_task_form.is_bound %} data-unsaved="true"{% endif %}>
+            {% csrf_token %}<input type="hidden" name="panel_context" value="client_list"><input type="hidden" name="panel_list_query" value="{{ client_panel_query }}">
+            {% if panel_task_error or panel_task_form.non_field_errors %}<p class="client-panel__error" role="alert">{{ panel_task_error }} {{ panel_task_form.non_field_errors }}</p>{% endif %}
+            <div><label class="form-label" for="{{ panel_task_form.text.id_for_label }}">Задача</label>{{ panel_task_form.text }}{{ panel_task_form.text.errors }}</div>
+            <div><label class="form-label" for="{{ panel_task_form.due_at.id_for_label }}">Срок</label>{{ panel_task_form.due_at }}{{ panel_task_form.due_at.errors }}</div>
+            <button class="btn btn-primary" type="submit">Добавить задачу</button>
+          </form>
+        </details>
+      {% endif %}
+    </section>
+
+    <details class="client-panel__overview"><summary>{% if selected_client.contact_role == 'owner' %}О собственнике{% else %}О клиенте{% endif %} и история<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
+      <div class="client-panel__overview-body">
+        <dl>{% if selected_client.preferred_contact_time %}<div><dt>Удобно связаться</dt><dd>{{ selected_client.preferred_contact_time }}</dd></div>{% endif %}{% if selected_client.preferred_area %}<div><dt>Район</dt><dd>{{ selected_client.preferred_area }}</dd></div>{% endif %}{% if selected_client.budget %}<div><dt>Бюджет</dt><dd>{{ selected_client.budget|money:selected_client.search_currency }}</dd></div>{% endif %}<div><dt>Заявки</dt><dd>{{ panel_leads_count }}</dd></div><div><dt>Сделки</dt><dd>{{ panel_deals_count }}</dd></div>{% if selected_client.is_property_owner %}<div><dt>Объекты</dt><dd>{{ panel_owned_properties_count }}</dd></div>{% endif %}</dl>
+        {% if panel_latest_discussion %}<div class="client-panel__discussion"><span class="detail-kicker">Последнее обсуждение · {{ panel_latest_discussion.kind }}</span><time datetime="{{ panel_latest_discussion.at|date:'c' }}">{{ panel_latest_discussion.at|date:"d.m.Y · H:i" }}</time><p>{{ panel_latest_discussion.text|truncatechars:180 }}</p></div>{% elif selected_client.notes %}<p>{{ selected_client.notes|truncatechars:180 }}</p>{% else %}<p class="detail-muted">Записей об обсуждении пока нет.</p>{% endif %}
+      </div>
+    </details>
+  </div>
+</aside>

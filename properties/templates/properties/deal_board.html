@@ -3,30 +3,34 @@
 {% load static %}
 {% block title %}Сделки{% endblock %}
 {% block content %}
-<header class="ui-page-header">
-  <div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Сделки</h1></div>
+<header class="ui-page-header deal-board-page-header">
+  <div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="briefcase" %}CRM</p><h1 class="ui-page-header__title">Сделки</h1></div>
   <div class="ui-page-header__actions"><a href="{% url 'deal_create' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Новая сделка</a></div>
 </header>
 
-<p class="detail-muted mb-2" data-deal-active-count data-count="{{ active_count }}">Активных сделок: {{ active_count }}</p>
+<div id="deal-workspace" class="lead-workspace deal-workspace{% if selected_deal %} deal-workspace--open{% endif %}">
+  <div class="lead-workspace__layout deal-workspace__layout">
+    <div class="lead-workspace__list deal-workspace__list">
+{% if analytics_board_filtered %}<div class="analytics-drilldown"><span>Аналитика · {{ analytics_scope_label }}{% if analytics_stage_filter %} · этап «{{ analytics_stage_label }}»{% endif %}</span><a href="{% url 'deal_board' %}">Сбросить фильтр</a></div>{% endif %}
+<p class="detail-muted mb-2" data-deal-active-count data-count="{{ active_count }}">{% if analytics_stage_filter %}Сделок на этапе: {{ active_count }}{% else %}Активных сделок: {{ active_count }}{% endif %}</p>
 <div class="board-desktop-hint board-onboarding-hint" data-board-hint="deals" hidden><span>Перетащите карточку, чтобы изменить этап. Это также можно сделать в самой сделке.</span><button class="btn btn-text btn-sm" type="button" data-board-hint-dismiss>Понятно</button></div>
 <div class="alert alert-danger d-none mb-3" role="alert" data-deal-board-error></div>
 <p class="visually-hidden" role="status" aria-live="polite" data-deal-board-status></p>
 <form class="d-none" data-deal-board-csrf>{% csrf_token %}</form>
-<div class="board-mobile-picker" data-board-mobile-picker>
+<div class="board-mobile-picker{% if analytics_stage_filter %} d-none{% endif %}" data-board-mobile-picker>
   <label class="form-label" for="deal-mobile-stage">Этап сделки</label>
   <select class="form-select" id="deal-mobile-stage" data-board-stage-picker>
     {% for column in columns %}<option value="{{ column.key }}">{{ column.label }} · {{ column.count }}</option>{% endfor %}
   </select>
 </div>
-<div class="client-board deal-board" aria-label="Воронка сделок" data-deal-board data-mobile-board>
+<div class="client-board deal-board{% if analytics_stage_filter %} deal-board--analytics-filtered{% endif %}" aria-label="Воронка сделок" data-deal-board data-mobile-board>
   {% for column in columns %}
-    <section class="client-board__column deal-board__column is-{{ column.key }}" aria-labelledby="deal-board-{{ column.key }}" data-deal-stage="{{ column.key }}" data-active-stage="{% if column.key in active_stages %}true{% else %}false{% endif %}">
+    <section class="client-board__column deal-board__column is-{{ column.key }}" aria-labelledby="deal-board-{{ column.key }}" data-deal-stage="{{ column.key }}" data-active-stage="{% if column.key in active_stages %}true{% else %}false{% endif %}"{% if analytics_stage_filter and analytics_stage_filter != column.key %} hidden{% endif %}>
       <header class="client-board__heading"><h2 id="deal-board-{{ column.key }}">{{ column.label }}</h2><span class="client-board__count" aria-label="Сделок на этапе: {{ column.count }}">{{ column.count }}</span></header>
       <div class="client-board__items">
         {% for deal in column.page %}
-          <article class="client-board__card deal-board__card" draggable="true" data-deal-card data-deal-stage="{{ column.key }}" data-stage-url="{% url 'deal_stage_update' deal.pk %}">
-            <a class="deal-board__card-link" href="{% url 'deal_detail' deal.pk %}" draggable="false">
+          <article class="client-board__card deal-board__card{% if selected_deal.pk == deal.pk %} is-open{% endif %}" draggable="true" data-deal-card data-deal-id="{{ deal.pk }}" data-deal-stage="{{ column.key }}" data-stage-url="{% url 'deal_stage_update' deal.pk %}">
+            <a class="deal-board__card-link" href="?{{ deal_panel_query }}{% if deal_panel_query %}&amp;{% endif %}deal={{ deal.pk }}#deal-board-{{ column.key }}" data-deal-panel-open="{{ deal.pk }}"{% if selected_deal.pk == deal.pk %} aria-current="true"{% endif %} draggable="false">
               <strong>{{ deal.client.name }}{% if deal.is_demo %} · демо{% endif %}</strong>
               <span class="client-board__area">{{ deal.property.title }}</span>
               <span class="client-board__source">Ответственный: {% if deal.responsible %}{{ deal.responsible|staff_name }}{% else %}Не назначен{% endif %}</span>
@@ -40,6 +44,10 @@
     </section>
   {% endfor %}
 </div>
+    </div>
+    {% include "properties/includes/deal_panel_slot.html" %}
+  </div>
+</div>
 <div class="modal fade" id="deal-loss-modal" tabindex="-1" aria-labelledby="deal-loss-title" aria-hidden="true">
   <div class="modal-dialog modal-dialog-centered"><div class="modal-content">
     <div class="modal-header"><h2 class="modal-title h5" id="deal-loss-title">Причина отказа</h2><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button></div>
@@ -49,5 +57,6 @@
 </div>
 {% include "properties/includes/mobile_board_script.html" %}
 <script src="{% static 'js/deal-board.js' %}" defer></script>
+<script src="{% static 'js/deal-panel.js' %}" defer></script>
 {% include "properties/includes/board_hint_script.html" %}
 {% endblock %}

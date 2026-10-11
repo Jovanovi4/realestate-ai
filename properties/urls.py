@@ -9,7 +9,7 @@ from .deal_views import DealBoardView, DealCreateView, DealStageUpdateView, Deal
 from .client_import_views import ClientImportView
 from .property_owner_views import (
     PropertyOwnerAttachView, PropertyOwnerCreateView, PropertyOwnerInteractionView,
-    PropertyOwnerRemoveView, PropertyOwnerUpdateView,
+    PropertyOwnerRemoveView, PropertyOwnerSettingsView, PropertyOwnerUpdateView,
 )
 from .owner_inquiry_views import OwnerInquiryAssignView, OwnerInquiryCreateView, OwnerInquiryDetailView, OwnerInquiryListView, OwnerInquiryProcessView
 from .owner_feedback_views import OwnerFeedbackCompleteView, OwnerFeedbackPlanView
@@ -21,6 +21,7 @@ from .client_matching_views import (
 )
 from .telegram_views import TelegramPublishView, telegram_public_webhook
 from .integration_views import TelegramIntegrationView
+from .analytics_views import AnalyticsView
 from .agency_views import (
     AgencyCreateView, AgencyDashboardView, AgencyInviteView, AgencyInviteRevokeView, AgencyJoinView,
     AgencyMemberRemoveView, AgencyMemberRoleView, LeadAssignView,
@@ -61,6 +62,7 @@ from .views import (
     ClientBoardStatusUpdateView,
     ClientInteractionCreateView,
     ClientReminderCreateView,
+    ClientPanelTaskUpdateView,
     ClientReminderCompleteView,
     ClientBulkActionView,
     ClientExportView,
@@ -75,6 +77,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("analytics/", AnalyticsView.as_view(), name="analytics"),
     path("telegram/public/webhook/", telegram_public_webhook, name="telegram_public_webhook"),
     path("integrations/telegram/", TelegramIntegrationView.as_view(), name="integration_telegram"),
     path("legal/privacy-policy/", privacy_policy, name="privacy_policy"),
@@ -152,6 +155,7 @@ urlpatterns = [
     path("clients/<int:pk>/board-status/", ClientBoardStatusUpdateView.as_view(), name="client_board_status_update"),
     path("clients/<int:pk>/interactions/", ClientInteractionCreateView.as_view(), name="client_interaction_create"),
     path("clients/<int:pk>/reminders/", ClientReminderCreateView.as_view(), name="client_reminder_create"),
+    path("clients/<int:pk>/reminders/<int:reminder_pk>/edit/", ClientPanelTaskUpdateView.as_view(), name="client_panel_task_update"),
     path("clients/<int:pk>/reminders/<int:reminder_pk>/complete/", ClientReminderCompleteView.as_view(), name="client_reminder_complete"),
     path("deals/", DealBoardView.as_view(), name="deal_board"),
     path("deals/new/", DealCreateView.as_view(), name="deal_create"),
@@ -175,6 +179,7 @@ urlpatterns = [
     path("create/", PropertyCreateView.as_view(), name="create_property"),
     path("create/landing-preview/", PropertyLandingDraftPreviewView.as_view(), name="create_landing_draft_preview"),
     path("<int:pk>/edit/", PropertyUpdateView.as_view(), name="edit_property"),
+    path("<int:pk>/owners/", PropertyOwnerSettingsView.as_view(), name="property_owner_settings"),
     path("<int:pk>/owners/attach/", PropertyOwnerAttachView.as_view(), name="property_owner_attach"),
     path("<int:pk>/owners/create/", PropertyOwnerCreateView.as_view(), name="property_owner_create"),
     path("<int:pk>/owners/<int:link_pk>/", PropertyOwnerUpdateView.as_view(), name="property_owner_update"),

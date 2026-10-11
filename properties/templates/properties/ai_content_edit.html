@@ -3,5 +3,5 @@
 {% block title %}Проверка текста — {{ ai_content.property.title }}{% endblock %}
 
 {% block content %}
-<div class="app-form-page app-form-page--narrow"><header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Объект · ИИ</p><h1 class="ui-page-header__title">Проверка ИИ-текста</h1><p class="ui-page-header__description">{{ ai_content.get_content_type_display }} · {{ ai_content.get_tone_display }} · {{ ai_content.property.title }}</p></div><div class="ui-page-header__actions"><a href="{% url 'ai_assistant' ai_content.property.pk %}" class="btn btn-neutral">К истории</a></div></header>{% include "properties/includes/ai_content_editor.html" %}</div>
+<div class="app-form-page app-form-page--narrow"><header class="ui-page-header"><div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="home" %}Объект · ИИ</p><h1 class="ui-page-header__title">Проверка ИИ-текста</h1><p class="ui-page-header__description">{{ ai_content.get_content_type_display }} · {{ ai_content.get_tone_display }} · {{ ai_content.property.title }}</p></div><div class="ui-page-header__actions"><a href="{% url 'ai_assistant' ai_content.property.pk %}" class="btn btn-neutral">К истории</a></div></header>{% include "properties/includes/ai_content_editor.html" %}</div>
 {% endblock %}

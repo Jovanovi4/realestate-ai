@@ -624,6 +624,53 @@ class PropertyOwnerDetailsForm(forms.ModelForm):
         mark_invalid_fields(self)
 
 
+class PropertyOwnerSetupForm(forms.Form):
+    client = forms.ModelChoiceField(queryset=Client.objects.none(), required=False, label="Существующий контакт")
+    contact_name = forms.CharField(max_length=150, required=False, label="Имя нового собственника")
+    contact_phone = forms.CharField(max_length=30, required=False, label="Телефон нового собственника")
+    role = forms.ChoiceField(choices=PropertyOwnerLink.ROLE_CHOICES, label="Роль по объекту")
+    agreed_price = forms.DecimalField(max_digits=12, decimal_places=2, min_value=0, required=False, label="Согласованная цена")
+    agreement_expires_on = forms.DateField(required=False, label="Договорённость действует до", widget=forms.DateInput(attrs={"type": "date"}))
+    showing_instructions = forms.CharField(max_length=255, required=False, label="Условия показа")
+    publication_approved = forms.BooleanField(required=False, label="Публикация согласована")
+
+    def __init__(self, *args, user, property, **kwargs):
+        super().__init__(*args, **kwargs)
+        scope = (Client.objects.filter(agency=property.agency) if property.agency_id else
+                 Client.objects.filter(agency__isnull=True, owner=property.owner))
+        self.contact_scope = scope
+        self.fields["client"].queryset = scope.exclude(
+            pk__in=property.owner_links.values_list("client_id", flat=True),
+        ).order_by("name", "pk")
+        for field in self.fields.values():
+            field.widget.attrs["class"] = (
+                "form-check-input" if isinstance(field.widget, forms.CheckboxInput)
+                else "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+            )
+        self.fields["contact_phone"].widget.attrs.update(PHONE_MASK_ATTRS)
+        mark_invalid_fields(self)
+
+    def clean_contact_phone(self):
+        phone = self.cleaned_data.get("contact_phone", "")
+        return normalize_phone(phone) if phone else ""
+
+    def clean(self):
+        data = super().clean()
+        client = data.get("client")
+        name = (data.get("contact_name") or "").strip()
+        phone = data.get("contact_phone")
+        if client and (name or phone):
+            self.add_error("client", "Выберите контакт или заполните данные нового собственника.")
+        if not client:
+            if not name:
+                self.add_error("contact_name", "Укажите имя собственника.")
+            if not phone:
+                self.add_error("contact_phone", "Укажите телефон собственника.")
+            elif self.contact_scope.filter(phone=phone).exists():
+                self.add_error("contact_phone", "Контакт с этим номером уже есть. Выберите его из списка.")
+        return data
+
+
 class ClientSearchForm(forms.ModelForm):
     class Meta:
         model = Client
@@ -817,6 +864,29 @@ class ClientInteractionForm(forms.ModelForm):
         ]
         self.fields["interaction_type"].widget.attrs["class"] = "form-select"
         self.fields["text"].widget.attrs["class"] = "form-control"
+
+
+class OwnerInteractionForm(ClientInteractionForm):
+    property = forms.ModelChoiceField(
+        queryset=Property.objects.none(), required=False, label="Объект",
+        empty_label="Без привязки к объекту",
+    )
+
+    class Meta(ClientInteractionForm.Meta):
+        fields = ("property", "interaction_type", "text")
+
+    def __init__(self, *args, client, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["property"].queryset = Property.objects.filter(
+            owner_links__client=client,
+        ).order_by("title", "pk")
+        self.fields["property"].widget.attrs["class"] = "form-select"
+        self.fields["interaction_type"].choices = [
+            (value, label) for value, label in self.fields["interaction_type"].choices
+            if value in {"call", "message", "note"}
+        ]
+        self.fields["text"].required = True
+        mark_invalid_fields(self)
 
 
 class ClientReminderForm(forms.ModelForm):

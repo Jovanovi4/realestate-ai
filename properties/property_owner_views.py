@@ -2,7 +2,7 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.shortcuts import get_object_or_404, redirect
+from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views import View
@@ -11,7 +11,7 @@ from billing.enforcement import TariffDenied, require_resource_action
 from billing.rules import Operation
 
 from .agency_access import workspace_queryset
-from .forms import ClientInteractionForm, OwnerContactForm, PropertyOwnerAttachForm, PropertyOwnerDetailsForm
+from .forms import ClientInteractionForm, OwnerContactForm, PropertyOwnerAttachForm, PropertyOwnerDetailsForm, PropertyOwnerSetupForm
 from .models import Client, ClientReminder, Property, PropertyOwnerLink
 
 
@@ -30,10 +30,60 @@ def owner_access_error(request, property):
     return False
 
 
+def render_owner_settings(request, property, *, setup_form=None, details_form=None, status=200):
+    links = list(property.owner_links.select_related("client"))
+    for link in links:
+        link.details_form = (
+            details_form if details_form is not None and details_form.instance.pk == link.pk
+            else PropertyOwnerDetailsForm(instance=link, prefix=f"owner-{link.pk}")
+        )
+    return render(request, "properties/property_owner_settings.html", {
+        "property": property,
+        "owner_links": links,
+        "owner_setup_form": setup_form or PropertyOwnerSetupForm(user=request.user, property=property),
+    }, status=status)
+
+
+class PropertyOwnerSettingsView(LoginRequiredMixin, View):
+    def get(self, request, pk):
+        property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
+        return render_owner_settings(request, property)
+
+    def post(self, request, pk):
+        property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
+        if owner_access_error(request, property):
+            return redirect("property_owner_settings", pk=pk)
+        form = PropertyOwnerSetupForm(request.POST, user=request.user, property=property)
+        if not form.is_valid():
+            return render_owner_settings(request, property, setup_form=form, status=400)
+        data = form.cleaned_data
+        try:
+            with transaction.atomic():
+                client = data["client"]
+                if client is None:
+                    client = Client.objects.create(
+                        owner=request.user, agency=property.agency,
+                        name=data["contact_name"].strip(), phone=data["contact_phone"],
+                        source="manual", contact_role="owner",
+                    )
+                PropertyOwnerLink.objects.create(
+                    property=property, client=client, role=data["role"],
+                    agreed_price=data["agreed_price"],
+                    agreement_expires_on=data["agreement_expires_on"],
+                    showing_instructions=data["showing_instructions"],
+                    publication_approved_at=timezone.now() if data["publication_approved"] else None,
+                )
+        except (IntegrityError, ValidationError):
+            form.add_error(None, "Не удалось связать собственника с объектом. Проверьте контакт и условия.")
+            return render_owner_settings(request, property, setup_form=form, status=400)
+        messages.success(request, "Собственник и условия работы сохранены.")
+        return redirect("property_owner_settings", pk=pk)
+
+
 class PropertyOwnerAttachView(LoginRequiredMixin, View):
     def post(self, request, pk):
         property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
-        destination = f"{reverse('property_detail', args=[pk])}#property-owners"
+        destination = reverse("property_owner_settings", args=[pk])
         if owner_access_error(request, property):
             return redirect(destination)
         form = PropertyOwnerAttachForm(request.POST, user=request.user, property=property)
@@ -54,7 +104,7 @@ class PropertyOwnerAttachView(LoginRequiredMixin, View):
 class PropertyOwnerCreateView(LoginRequiredMixin, View):
     def post(self, request, pk):
         property = get_object_or_404(workspace_queryset(Property.objects, request.user), pk=pk)
-        destination = f"{reverse('property_detail', args=[pk])}#property-owners"
+        destination = reverse("property_owner_settings", args=[pk])
         if owner_access_error(request, property):
             return redirect(destination)
         form = OwnerContactForm(request.POST)
@@ -66,7 +116,7 @@ class PropertyOwnerCreateView(LoginRequiredMixin, View):
         if property.agency_id is None:
             scope = scope.filter(owner=property.owner)
         if scope.filter(phone=form.cleaned_data["phone"]).exists():
-            messages.error(request, "Контакт с этим телефоном уже есть. Выберите его в списке существующих контактов.")
+            messages.error(request, "Контакт с этим телефоном уже есть. Выберите его из существующих контактов.")
             return redirect(destination)
         try:
             with transaction.atomic():
@@ -78,7 +128,8 @@ class PropertyOwnerCreateView(LoginRequiredMixin, View):
                 client.save()
                 PropertyOwnerLink.objects.create(property=property, client=client, role=role)
         except (IntegrityError, ValidationError):
-            messages.error(request, "Контакт с этим телефоном уже существует. Выберите его в списке.")
+            messages.error(request, "Контакт с этим телефоном уже существует. Выберите его из списка.")
+            return redirect(destination)
         else:
             messages.success(request, "Собственник добавлен к объекту.")
         return redirect(destination)
@@ -87,13 +138,12 @@ class PropertyOwnerCreateView(LoginRequiredMixin, View):
 class PropertyOwnerUpdateView(LoginRequiredMixin, View):
     def post(self, request, pk, link_pk):
         property, link = owner_link_for(request.user, pk, link_pk)
-        destination = f"{reverse('property_detail', args=[pk])}#property-owners"
+        destination = reverse("property_owner_settings", args=[pk])
         if owner_access_error(request, property):
             return redirect(destination)
         form = PropertyOwnerDetailsForm(request.POST, instance=link, prefix=f"owner-{link.pk}")
         if not form.is_valid():
-            messages.error(request, "Проверьте условия работы с собственником.")
-            return redirect(destination)
+            return render_owner_settings(request, property, details_form=form, status=400)
         link = form.save(commit=False)
         if form.cleaned_data["publication_approved"]:
             link.publication_approved_at = link.publication_approved_at or timezone.now()
@@ -107,7 +157,7 @@ class PropertyOwnerUpdateView(LoginRequiredMixin, View):
 class PropertyOwnerRemoveView(LoginRequiredMixin, View):
     def post(self, request, pk, link_pk):
         property, link = owner_link_for(request.user, pk, link_pk)
-        destination = f"{reverse('property_detail', args=[pk])}#property-owners"
+        destination = reverse("property_owner_settings", args=[pk])
         if owner_access_error(request, property):
             return redirect(destination)
         with transaction.atomic():
@@ -123,7 +173,7 @@ class PropertyOwnerRemoveView(LoginRequiredMixin, View):
 class PropertyOwnerInteractionView(LoginRequiredMixin, View):
     def post(self, request, pk, link_pk):
         property, link = owner_link_for(request.user, pk, link_pk)
-        destination = f"{reverse('property_detail', args=[pk])}#property-owners"
+        destination = f"{reverse('client_detail', args=[link.client_id])}#client-history"
         if owner_access_error(request, property):
             return redirect(destination)
         form = ClientInteractionForm(request.POST)

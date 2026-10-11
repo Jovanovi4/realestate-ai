@@ -3,7 +3,7 @@
 {% block title %}Задачи{% endblock %}
 {% block content %}
 <header class="ui-page-header">
-  <div><p class="ui-page-header__eyebrow">Рабочее пространство</p><h1 class="ui-page-header__title">Задачи</h1><p class="ui-page-header__description">{{ today|date:"d.m.Y" }} · Ответственный: {{ request.user|staff_name }}</p></div>
+  <div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="calendar" %}Рабочее пространство</p><h1 class="ui-page-header__title">Задачи</h1><p class="ui-page-header__description">{{ today|date:"d.m.Y" }} · Ответственный: {{ request.user|staff_name }}</p></div>
   <div class="ui-page-header__actions"><a href="{% url 'showing_create' %}" class="btn btn-neutral">Назначить показ</a><a href="{% url 'task_create' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Новая задача</a></div>
 </header>
 

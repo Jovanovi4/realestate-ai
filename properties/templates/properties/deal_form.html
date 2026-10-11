@@ -10,8 +10,8 @@
 <section class="deal-focus" aria-label="Этап и ближайшее действие">
   <div class="deal-focus__stage">
     <span class="detail-kicker">Этап сделки</span>
-    <details class="deal-focus__editor"{% if form.stage.errors %} open{% endif %}>
-      <summary><span class="deal-stage-badge is-{{ object.stage }}">{{ object.get_stage_display }}</span><span class="deal-focus__edit-label">Изменить этап</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
+    <details class="detail-status-control__editor deal-focus__editor"{% if form.stage.errors %} open{% endif %}>
+      <summary aria-label="Изменить этап сделки: {{ object.get_stage_display }}"><span class="detail-status-control__current"><span class="badge deal-stage-badge is-{{ object.stage }}">{{ object.get_stage_display }}</span></span><span class="detail-status-control__edit-label">Изменить этап</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></summary>
       <div class="deal-focus__editor-body"><div class="app-field">{% include "includes/form_field.html" with field=form.stage %}</div><button class="btn btn-neutral btn-sm" type="submit" form="deal-edit-form">Сохранить этап</button></div>
     </details>
   </div>
@@ -28,6 +28,14 @@
     {% endif %}
   </div>
 </section>
+<div class="client-tabs-shell deal-tabs-shell">
+  <ul class="nav nav-pills workspace-tabs ui-switch detail-tabs" id="deal-tabs" role="tablist" aria-label="Разделы сделки">
+    <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option active" id="deal-overview-tab" data-bs-toggle="tab" data-bs-target="#deal-overview" type="button" role="tab" aria-controls="deal-overview" aria-selected="true">Обзор</button></li>
+    <li class="nav-item" role="presentation"><button class="nav-link ui-switch__option" id="deal-work-tab" data-bs-toggle="tab" data-bs-target="#deal-work" type="button" role="tab" aria-controls="deal-work" aria-selected="false">Задачи и показы</button></li>
+  </ul>
+</div>
+<div class="tab-content detail-tab-content">
+  <section class="tab-pane fade show active" id="deal-overview" role="tabpanel" aria-labelledby="deal-overview-tab" tabindex="0">
 {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
 {% if form.outcome_note.errors %}<div class="alert alert-danger" role="alert">Проверьте <a href="#deal-details">итог или причину отказа</a> ниже.</div>{% endif %}
 {% if form.expected_commission.errors %}<div class="alert alert-danger" role="alert">Проверьте <a href="#deal-details">сумму комиссии</a> ниже.</div>{% endif %}
@@ -41,17 +49,6 @@
 {% endif %}
 
 {% if object and owner_links %}<section class="detail-section mb-4" aria-label="Сторона собственника"><div class="detail-section__heading"><div><span class="detail-kicker">По объекту</span><h2>Собственник</h2></div><a class="btn btn-text btn-sm" href="{% url 'property_detail' object.property.pk %}#property-owners">Условия по объекту</a></div><div class="detail-linked-list">{% for link in owner_links %}<a class="detail-linked-list__item" href="{% url 'client_detail' link.client.pk %}"><span><strong>{{ link.client.name }}</strong><span class="detail-linked-list__description">{{ link.get_role_display }} · {{ link.client.phone }}</span></span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endfor %}</div></section>{% endif %}
-
-{% if object %}
-<div class="detail-two-column deal-workflow">
-  <section class="detail-section{% if not deal_tasks %} deal-workflow__empty{% endif %}" aria-labelledby="deal-tasks-title"><div class="detail-section__heading"><h2 id="deal-tasks-title">{% if deal_tasks %}Задачи{% else %}Нет задач{% endif %}</h2><a href="{% url 'task_create' %}?deal={{ object.pk }}" class="btn {% if deal_tasks %}btn-icon {% endif %}btn-neutral btn-sm"{% if deal_tasks %} data-tooltip="Добавить задачу" aria-label="Добавить задачу"{% endif %}>{% if deal_tasks %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>{% else %}Добавить задачу{% endif %}</a></div>
-    {% if deal_tasks %}<div class="detail-linked-list">{% for task in deal_tasks %}{% if task.owner_id == request.user.pk %}<a class="detail-linked-list__item" href="{% url 'task_detail' task.pk %}">{% else %}<div class="detail-linked-list__item">{% endif %}<span><strong>{{ task.text }}</strong></span><span class="detail-linked-list__aside">{% if task.due_at %}<time datetime="{{ task.due_at|date:'c' }}">{{ task.due_at|date:"d.m.Y · H:i" }}</time>{% else %}Без срока{% endif %}<span>{{ task.owner|staff_name }}</span></span>{% if task.owner_id == request.user.pk %}</a>{% else %}</div>{% endif %}{% endfor %}</div>{% endif %}
-  </section>
-  <section class="detail-section{% if not deal_showings %} deal-workflow__empty{% endif %}" aria-labelledby="deal-showings-title"><div class="detail-section__heading"><h2 id="deal-showings-title">{% if deal_showings %}Показы{% else %}Нет показов{% endif %}</h2><a href="{% url 'showing_create' %}?deal={{ object.pk }}" class="btn {% if deal_showings %}btn-icon {% endif %}btn-neutral btn-sm"{% if deal_showings %} data-tooltip="Назначить показ" aria-label="Назначить показ"{% endif %}>{% if deal_showings %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>{% else %}Назначить показ{% endif %}</a></div>
-    {% if deal_showings %}<div class="detail-linked-list">{% for showing in deal_showings %}{% if showing.owner_id == request.user.pk %}<a class="detail-linked-list__item" href="{% url 'showing_detail' showing.pk %}">{% else %}<div class="detail-linked-list__item">{% endif %}<span><strong>{{ showing.starts_at|date:"d.m.Y · H:i" }}</strong><span class="detail-linked-list__description">{{ showing.location|default:object.property.address|default:"Место не указано" }}</span></span><span class="detail-linked-list__aside">{{ showing.get_status_display }}<span>{{ showing.owner|staff_name }}</span></span>{% if showing.owner_id == request.user.pk %}</a>{% else %}</div>{% endif %}{% endfor %}</div>{% endif %}
-  </section>
-</div>
-{% endif %}
 
 <section class="app-form-panel deal-form-panel"{% if object %} id="deal-details"{% endif %}>
   <div class="app-form-panel__heading"><h2>{% if object %}Детали сделки{% else %}Начните работу по объекту{% endif %}</h2>{% if not object %}<p>Задачи и показы можно добавить после создания сделки.</p>{% endif %}</div>
@@ -77,4 +74,24 @@
     <div class="detail-form-actions"><button class="btn btn-primary" type="submit">{% if object %}Сохранить сделку{% else %}Создать сделку{% endif %}</button></div>
   </form>
 </section>
+{% if object %}
+  </section>
+  <section class="tab-pane fade" id="deal-work" role="tabpanel" aria-labelledby="deal-work-tab" tabindex="0">
+    {% include "properties/includes/deal_workflow.html" %}
+  </section>
+</div>
+<script>
+  window.addEventListener('DOMContentLoaded', () => {
+    const tabs = document.getElementById('deal-tabs');
+    const workHashes = new Set(['#deal-work', '#deal-tasks-title', '#deal-showings-title']);
+    if (workHashes.has(window.location.hash)) {
+      bootstrap.Tab.getOrCreateInstance(document.getElementById('deal-work-tab')).show();
+    }
+    tabs?.addEventListener('shown.bs.tab', (event) => {
+      const target = event.target.dataset.bsTarget;
+      if (target) history.replaceState(null, '', `${window.location.pathname}${window.location.search}${target}`);
+    });
+  });
+</script>
+{% endif %}
 {% endblock %}

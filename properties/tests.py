@@ -39,13 +39,14 @@ class NavigationStructureTests(TestCase):
         self.assertEqual(response.status_code, 200)
         html = response.content.decode()
         primary_nav = html.split('<nav class="sidebar-main-nav"', 1)[1].split("</nav>", 1)[0]
-        self.assertEqual(primary_nav.count('<a class="sidebar-link'), 7)
+        self.assertEqual(primary_nav.count('<a class="sidebar-link'), 8)
         self.assertIn('>Задачи</span>', primary_nav)
         self.assertIn('>Недвижимость</span>', primary_nav)
         self.assertIn('>CRM</span>', primary_nav)
         self.assertIn('>Интеграции</span>', primary_nav)
         self.assertIn(f'href="{reverse("landing_list")}"', primary_nav)
         self.assertIn(f'href="{reverse("integration_telegram")}"', primary_nav)
+        self.assertIn(f'href="{reverse("analytics")}"', primary_nav)
         self.assertNotIn(f'href="{reverse("agency_dashboard")}"', primary_nav)
         self.assertIn("reaicrmSidebar('realty')", html)
         self.assertIn('class="sidebar-rail-toggle"', html)
@@ -134,6 +135,7 @@ class NavigationStructureTests(TestCase):
         for view in ("cards", "compact", "list"):
             self.assertContains(response, f'data-catalog-option="{view}"')
         self.assertContains(response, 'class="property-card landing-card h-100"', count=2)
+        self.assertContains(response, 'data-catalog-card-open', count=2)
         self.assertContains(response, 'class="property-card__footer"', count=2)
         self.assertContains(response, f'href="{reverse("edit_property", args=[published.pk])}#landing-pane"')
         self.assertContains(response, f'href="{reverse("public_landing", args=[published.landing_slug])}"', count=1)
@@ -147,6 +149,7 @@ class NavigationStructureTests(TestCase):
         filtered = self.client.get(reverse("property_list"), {"q": "Объект"})
 
         self.assertContains(full, 'data-catalog-view="properties" data-view="cards"')
+        self.assertContains(full, 'data-catalog-card-open', count=1)
         self.assertContains(full, 'id="property-results"')
         self.assertContains(full, 'data-property-count>1</span>')
         self.assertContains(partial, 'data-result-count="1"')
@@ -202,6 +205,22 @@ class AgencyWorkflowTests(TestCase):
         response = self.client.post(reverse("agency_join", args=[invitation.code]))
         self.assertRedirects(response, reverse("agency_dashboard"))
         return invitation
+
+    def test_empty_my_leads_uses_shared_empty_state_and_can_reset_filter(self):
+        self.create_agency()
+        self.invite_and_join()
+
+        response = self.client.get(reverse("lead_list"), {"assigned": "mine"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.context["has_any_leads"])
+        self.assertFalse(response.context["leads"])
+        self.assertContains(response, 'class="empty-state" aria-labelledby="empty-leads-title"')
+        self.assertContains(response, 'class="empty-state__icon"')
+        self.assertContains(response, 'class="empty-state__title" id="empty-leads-title"')
+        self.assertContains(response, "По выбранным условиям заявок нет")
+        self.assertContains(response, f'href="{reverse("lead_list")}" hx-get="{reverse("lead_list")}"')
+        self.assertContains(response, "Сбросить фильтры")
 
     def test_invitation_retry_uses_original_link(self):
         self.create_agency()
@@ -392,7 +411,7 @@ class AgencyWorkflowTests(TestCase):
         self.assertEqual(self.client.post(reverse("agency_invite"), {"role": "manager"}).status_code, 404)
         self.client.force_login(self.founder)
         response = self.client.post(reverse("lead_assign", args=[self.lead.pk]), {"assigned_to": self.agent.pk})
-        self.assertRedirects(response, reverse("lead_detail", args=[self.lead.pk]))
+        self.assertRedirects(response, f"{reverse('lead_detail', args=[self.lead.pk])}#lead-about")
         self.lead.refresh_from_db()
         self.assertEqual(self.lead.assigned_to, self.agent)
         self.assertEqual(ClientReminder.objects.get(lead=self.lead, is_done=False).owner, self.agent)
@@ -402,6 +421,62 @@ class AgencyWorkflowTests(TestCase):
         agent_day = self.client.get(reverse("workday"))
         self.assertIn(self.lead, list(agent_day.context["today_leads"]) + list(agent_day.context["overdue_leads"]))
         self.assertEqual(agency.memberships.count(), 2)
+
+    def test_manager_assignment_handler_and_full_card_remain_available(self):
+        agency = self.create_agency()
+        self.invite_and_join()
+        self.client.force_login(self.founder)
+        panel = self.client.get(reverse("lead_list"), {"lead": self.lead.pk})
+        self.assertNotContains(panel, "Сменить ответственного")
+        self.assertContains(self.client.get(reverse("lead_detail", args=[self.lead.pk])), "Сменить ответственного")
+        url = reverse("lead_assign", args=[self.lead.pk])
+        response = self.client.post(url, {
+            "assigned_to": self.agent.pk, "panel_context": "lead_list",
+            "panel_list_query": "assigned=mine&page=1",
+        }, HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.assigned_to, self.agent)
+        self.assertEqual(ClientReminder.objects.get(lead=self.lead, is_done=False).owner, self.agent)
+
+        invalid = self.client.post(url, {
+            "assigned_to": "999999", "panel_context": "lead_list",
+            "panel_list_query": "assigned=mine&page=1",
+        }, HTTP_HX_REQUEST="true")
+        self.assertEqual(invalid.status_code, 200)
+        self.assertContains(invalid, "Выберите сотрудника команды.")
+        self.assertContains(invalid, 'assigned=mine&amp;page=1')
+
+    def test_agent_can_process_assigned_team_lead_but_cannot_reassign_it(self):
+        self.create_agency()
+        self.invite_and_join()
+        self.client.force_login(self.founder)
+        self.client.post(reverse("lead_assign", args=[self.lead.pk]), {"assigned_to": self.agent.pk})
+        self.client.force_login(self.agent)
+
+        panel = self.client.get(reverse("lead_list"), {"assigned": "mine", "lead": self.lead.pk})
+        self.assertEqual(panel.status_code, 200)
+        self.assertContains(panel, "Записать первый контакт")
+        self.assertNotContains(panel, "Сменить ответственного")
+        self.assertEqual(self.client.post(reverse("lead_assign", args=[self.lead.pk]), {
+            "assigned_to": self.founder.pk, "panel_context": "lead_list",
+        }, HTTP_HX_REQUEST="true").status_code, 404)
+
+        result = self.client.post(reverse("lead_process", args=[self.lead.pk]), {
+            "source": "landing", "qualification": "qualified", "contact_method": "call",
+            "next_action": "Уточнить время показа",
+            "next_action_due_at": timezone.localtime(timezone.now() + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M"),
+            "action": "contacted", "panel_context": "lead_list",
+        }, HTTP_HX_REQUEST="true")
+        self.assertEqual(result.status_code, 204)
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.assigned_to, self.agent)
+        self.assertIsNotNone(self.lead.first_contacted_at)
+        self.assertEqual(ClientReminder.objects.get(lead=self.lead, is_done=False).owner, self.agent)
+
+        personal = Property.objects.create(owner=self.founder, title="Личный объект")
+        private_lead = Lead.objects.create(property=personal, name="Личный клиент", phone="+79990000333")
+        self.assertEqual(self.client.get(reverse("lead_list"), {"lead": private_lead.pk}).status_code, 404)
 
     def test_removed_member_loses_access_and_assignments_return_to_founder(self):
         agency = self.create_agency()
@@ -1300,7 +1375,9 @@ class AccountAndPropertyAccessTests(TestCase):
 
         response = self.client.get(reverse("lead_detail", args=[lead.pk]))
 
-        self.assertContains(response, 'class="detail-two-column lead-detail-layout"')
+        self.assertContains(response, 'id="lead-overview" role="tabpanel"')
+        self.assertContains(response, 'id="lead-about" role="tabpanel"')
+        self.assertContains(response, 'id="lead-history" role="tabpanel"')
         self.assertContains(response, "Хочу посмотреть")
         self.assertContains(response, reverse("client_detail", args=[client.pk]))
         self.assertContains(response, reverse("property_detail", args=[property.pk]))
@@ -1633,6 +1710,7 @@ class DealWorkflowTests(TestCase):
         self.assertContains(self.client.get(reverse("lead_detail", args=[self.lead.pk])), "Перевести в сделку")
         form_page = self.client.get(f"{reverse('deal_create')}?lead={self.lead.pk}")
         self.assertEqual(form_page.context["form"].initial["client"], self.client_record)
+        self.assertNotContains(form_page, 'id="deal-tabs"')
         self.assertEqual(form_page.context["form"].initial["property"], self.property)
         self.assertEqual(form_page.context["form"].initial["responsible"], self.owner)
         response = self.client.post(reverse("deal_create"), self.payload())
@@ -1650,7 +1728,6 @@ class DealWorkflowTests(TestCase):
         self.assertEqual((deal_task.text, deal_task.due_at, deal_task.owner), (lead_task.text, lead_task.due_at, self.owner))
         self.assertEqual(str(deal.expected_commission), "120000.00")
         self.assertContains(self.client.get(reverse("client_detail", args=[self.client_record.pk])), reverse("deal_detail", args=[deal.pk]))
-        self.assertContains(self.client.get(reverse("property_detail", args=[self.property.pk])), reverse("deal_detail", args=[deal.pk]))
         self.assertContains(self.client.get(reverse("lead_detail", args=[self.lead.pk])), reverse("deal_detail", args=[deal.pk]))
 
         repeated = self.client.post(reverse("deal_create"), self.payload())
@@ -1749,7 +1826,7 @@ class DealWorkflowTests(TestCase):
         self.assertEqual(deal.property, self.property)
         self.assertEqual(deal.stage, "viewing")
 
-    def test_edit_shows_pair_once_and_work_before_financial_fields(self):
+    def test_edit_separates_deal_overview_from_tasks_and_showings(self):
         deal = Deal.objects.create(
             owner=self.owner, responsible=self.owner,
             client=self.client_record, property=self.property, lead=self.lead,
@@ -1762,8 +1839,17 @@ class DealWorkflowTests(TestCase):
         self.assertContains(response, reverse("property_detail", args=[self.property.pk]))
         self.assertNotIn('name="client"', page)
         self.assertNotIn('name="property"', page)
-        self.assertLess(page.index('id="deal-tasks-title"'), page.index('id="id_expected_commission"'))
-        self.assertLess(page.index('id="deal-showings-title"'), page.index('id="id_expected_commission"'))
+        self.assertContains(response, 'id="deal-overview-tab"')
+        self.assertContains(response, 'id="deal-work-tab"')
+        self.assertLess(page.index('class="deal-focus"'), page.index('id="deal-tabs"'))
+        self.assertContains(response, 'class="detail-status-control__editor deal-focus__editor"')
+        self.assertContains(response, 'aria-label="Изменить этап сделки: Новая"')
+        self.assertContains(response, '<use href="#ui-icon-edit"></use>')
+        self.assertNotContains(response, 'class="deal-focus__edit-label"')
+        self.assertLess(page.index('id="deal-overview" role="tabpanel"'), page.index('aria-label="Связанные данные сделки"'))
+        self.assertLess(page.index('id="id_expected_commission"'), page.index('id="deal-work" role="tabpanel"'))
+        self.assertLess(page.index('id="deal-work" role="tabpanel"'), page.index('id="deal-tasks-title"'))
+        self.assertLess(page.index('id="deal-work" role="tabpanel"'), page.index('id="deal-showings-title"'))
 
         save = self.client.post(url, {"stage": "viewing", "expected_commission": "120000.00"})
         self.assertRedirects(save, url)

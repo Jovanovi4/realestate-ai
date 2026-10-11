@@ -5,7 +5,7 @@ import csv
 import uuid
 from decimal import Decimal, InvalidOperation
 from datetime import timedelta
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode
 
 from django.conf import settings
 from django.contrib import messages
@@ -34,7 +34,7 @@ from billing.rules import Operation, PolicyService
 from billing.services import AccountService
 
 from .forms import (
-    ClientDetailsForm, ClientForm, ClientInteractionForm, ClientPropertyReactionForm, ClientPropertySuggestionForm, ClientReminderForm, ClientSearchForm, LeadActionCompleteForm, LeadDeclineForm, LeadForm, LeadProcessingForm, OwnerContactForm, PropertyOwnerAttachForm, PropertyOwnerDetailsForm,
+    ClientDetailsForm, ClientForm, ClientInteractionForm, ClientPropertyReactionForm, ClientPropertySuggestionForm, ClientReminderForm, ClientSearchForm, LeadActionCompleteForm, LeadDeclineForm, LeadForm, LeadProcessingForm, OwnerContactForm, OwnerInteractionForm,
     PropertyForm, RegistrationForm, RealtorProfileForm,
 )
 from .agency_access import agency_for, deletable_queryset, may_manage_agency, workspace_queryset
@@ -52,6 +52,7 @@ from .services.presentation_docx_service import PresentationDocxService
 from .services.image_upload_service import prepare_image_upload
 from .services.csv_security import spreadsheet_safe_cell
 from .services.client_relationship_service import activate_client_relationship, change_client_relationship, relationship_change_error
+from .services.crm_analytics_service import AnalyticsPeriod
 from .landing_colors import landing_custom_palette
 from .landing_presets import editor_preset_context
 
@@ -424,23 +425,8 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
         owner_links = list(self.object.owner_links.select_related("client").all())
         today = timezone.localdate()
         for link in owner_links:
-            link.details_form = PropertyOwnerDetailsForm(instance=link, prefix=f"owner-{link.pk}")
             link.agreement_expired = bool(link.agreement_expires_on and link.agreement_expires_on < today)
-            link.last_contact = link.client.interactions.filter(property=self.object).order_by("-created_at", "-pk").first()
-            link.next_task = link.client.reminders.filter(
-                property=self.object, is_done=False, cancelled_at__isnull=True,
-            ).order_by("due_at", "pk").first()
         context["owner_links"] = owner_links
-        context["owner_overdue_links"] = [link for link in owner_links if link.agreement_expired]
-        context["owner_next_agreement"] = min(
-            (link for link in owner_links if link.agreement_expires_on and not link.agreement_expired),
-            key=lambda link: link.agreement_expires_on,
-            default=None,
-        )
-        context["owner_attach_form"] = PropertyOwnerAttachForm(user=self.request.user, property=self.object)
-        context["owner_contact_form"] = OwnerContactForm()
-        context["owner_role_choices"] = PropertyOwnerLink.ROLE_CHOICES
-        context["owner_interaction_form"] = ClientInteractionForm()
         image_count = self.object.images.count()
         has_primary_image = self.object.images.filter(is_primary=True).exists()
         profile = RealtorProfile.objects.filter(user=self.object.owner).first()
@@ -475,9 +461,6 @@ class PropertyDetailView(LoginRequiredMixin, DetailView):
         context["image_count"] = image_count
         context["property_setup_hint"] = not (self.object.price and self.object.address and has_primary_image)
         context["can_delete"] = not self.object.agency_id or may_manage_agency(self.request.user)
-        property_deals = workspace_queryset(Deal.objects.filter(property=self.object), self.request.user).select_related("client")
-        context["property_deals_count"] = property_deals.count()
-        context["property_deals"] = list(property_deals[:5])
         context["telegram_bot_ready"] = public_bot_ready()
         context["telegram_bot_username"] = settings.TELEGRAM_PUBLIC_BOT_USERNAME
         context["telegram_property_url"] = property_link(self.object)
@@ -790,11 +773,115 @@ class RealtorProfileUpdateView(LoginRequiredMixin, UpdateView):
         return context
 
 
+def client_panel_query(raw_query):
+    """Keep only list filters when returning from an inline client action."""
+    supplied = parse_qs(raw_query)
+    params = {}
+    if supplied.get("role", [""])[0] == "owner":
+        params["role"] = "owner"
+    query = supplied.get("q", [""])[0].strip()[:100]
+    if query:
+        params["q"] = query
+    for key, choices in (("status", Client.STATUS_CHOICES), ("source", Client.SOURCE_CHOICES)):
+        value = supplied.get(key, [""])[0]
+        if value in dict(choices):
+            params[key] = value
+    allowed_sorts = {"newest", "oldest", "updated", "name_asc", "name_desc", "leads_desc", "objects_desc"}
+    sort = supplied.get("sort", [""])[0]
+    if sort in allowed_sorts:
+        params["sort"] = sort
+    for key in ("date_from", "date_to"):
+        value = supplied.get(key, [""])[0]
+        if value:
+            try:
+                if parse_date(value):
+                    params[key] = value
+            except ValueError:
+                pass
+    page = supplied.get("page", [""])[0]
+    if page.isdecimal() and len(page) <= 6 and int(page) > 0:
+        params["page"] = page
+    return urlencode(params)
+
+
+def client_panel_details(request, client, **overrides):
+    """A small version of the client overview for the list side panel."""
+    priority_lead = client.leads.select_related("property", "assigned_to__realtor_profile").filter(
+        outcome="open", first_contacted_at__isnull=True,
+    ).exclude(status="archived").order_by("created_at", "pk").first()
+    priority_owner_inquiry = client.owner_inquiries.select_related("assigned_to__realtor_profile").filter(
+        property__isnull=True,
+    ).exclude(result="declined").order_by("next_action_due_at", "pk").first()
+    next_reminder = client.reminders.select_related("owner__realtor_profile", "lead").filter(
+        is_done=False, cancelled_at__isnull=True,
+    ).order_by(F("due_at").asc(nulls_last=True), "pk").first()
+    editable_reminder = bool(
+        next_reminder and not priority_lead and not priority_owner_inquiry
+        and next_reminder.owner_id == request.user.pk and not next_reminder.lead_id
+        and not next_reminder.owner_showing_id
+    )
+    last_discussion = client.interactions.exclude(
+        interaction_type="status",
+    ).exclude(text__in=("", "Первый контакт по заявке.")).exclude(
+        interaction_type="note", text__startswith="Действие «",
+    ).order_by("-created_at", "-pk").first()
+    last_outcome = client.reminders.filter(
+        is_done=True, cancelled_at__isnull=True, completed_at__isnull=False,
+    ).exclude(outcome_note="").order_by("-completed_at", "-pk").first()
+    latest_discussion = None
+    if last_outcome and (not last_discussion or last_outcome.completed_at >= last_discussion.created_at):
+        latest_discussion = {"kind": "Итог действия", "text": last_outcome.outcome_note, "at": last_outcome.completed_at}
+    elif last_discussion:
+        latest_discussion = {"kind": last_discussion.get_interaction_type_display(), "text": last_discussion.text, "at": last_discussion.created_at}
+    return {
+        "selected_client": client,
+        "panel_priority_lead": priority_lead,
+        "panel_priority_owner_inquiry": priority_owner_inquiry if not priority_lead else None,
+        "panel_next_reminder": next_reminder,
+        "panel_reminder_editable": editable_reminder,
+        "panel_task_form": overrides.get("panel_task_form") or ClientReminderForm(
+            instance=next_reminder if editable_reminder else None,
+            initial={} if editable_reminder else {"due_at": timezone.localtime(timezone.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")},
+        ),
+        "panel_latest_discussion": latest_discussion,
+        "panel_leads_count": client.leads.count(),
+        "panel_deals_count": client.deals.count(),
+        "panel_owned_properties_count": client.owned_properties.count() if client.is_property_owner else 0,
+        "panel_now": timezone.now(),
+        "panel_status_error": overrides.get("panel_status_error"),
+        "panel_status_value": overrides.get("panel_status_value", client.status),
+        "panel_task_error": overrides.get("panel_task_error"),
+        "panel_task_open": overrides.get("panel_task_open", False),
+        "panel_status_open": overrides.get("panel_status_open", False),
+    }
+
+
+def is_client_panel_request(request):
+    return request.headers.get("HX-Request") == "true" and request.POST.get("panel_context") == "client_list"
+
+
+def render_client_panel(request, client, **overrides):
+    overrides.setdefault("panel_status_value", request.POST.get("status", client.status))
+    context = client_panel_details(request, client, **overrides)
+    context["client_panel_query"] = client_panel_query(request.POST.get("panel_list_query", ""))
+    return render(request, "properties/includes/client_panel.html", context)
+
+
+def client_panel_saved(message):
+    return HttpResponse(status=204, headers={"HX-Trigger": json.dumps({"clientPanelSaved": {"message": message}})})
+
+
 class ClientListView(LoginRequiredMixin, ListView):
     model = Client
     template_name = "properties/client_list.html"
     context_object_name = "clients"
     paginate_by = 10
+
+    def get_template_names(self):
+        if (self.request.headers.get("HX-Request") == "true"
+                and self.request.headers.get("HX-History-Restore-Request") != "true"):
+            return ["properties/includes/client_workspace.html"]
+        return [self.template_name]
 
     @staticmethod
     def valid_date(value):
@@ -906,6 +993,24 @@ class ClientListView(LoginRequiredMixin, ListView):
             Client.objects, self.request.user,
         ).filter(contact_role__in=("owner", "both") if context["owner_mode"] else ("seeker", "both")).exists()
         context["can_bulk_delete"] = not agency_for(self.request.user) or may_manage_agency(self.request.user)
+        query = self.request.GET.copy()
+        query.pop("client", None)
+        query["page"] = str(context["page_obj"].number)
+        context["client_panel_query"] = client_panel_query(query.urlencode())
+        requested_client = self.request.GET.get("client", "")
+        if requested_client:
+            role = ("owner", "both") if context["owner_mode"] else ("seeker", "both")
+            selected_client = get_object_or_404(
+                workspace_queryset(Client.objects, self.request.user).filter(contact_role__in=role),
+                pk=requested_client if requested_client.isdecimal() else None,
+            )
+            context.update(client_panel_details(self.request, selected_client))
+            visible_ids = [item.pk for item in context["clients"]]
+            if visible_ids:
+                if selected_client.pk in visible_ids and len(visible_ids) > 1:
+                    context["next_client_id"] = visible_ids[(visible_ids.index(selected_client.pk) + 1) % len(visible_ids)]
+                elif selected_client.pk not in visible_ids:
+                    context["next_client_id"] = visible_ids[0]
         return context
 
 
@@ -1030,7 +1135,7 @@ class ClientDetailView(LoginRequiredMixin, UpdateView):
             self.object.search_commercial_purpose if search_segment == "commercial" else "",
             self.object.preferred_area, self.object.budget,
         ))
-        context["interaction_form"] = ClientInteractionForm()
+        context["interaction_form"] = OwnerInteractionForm(client=self.object) if self.object.is_property_owner else ClientInteractionForm()
         context["reminder_form"] = ClientReminderForm(initial={"due_at": (timezone.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M")})
         interaction_queryset = self.object.interactions.select_related("lead", "lead__property", "property")
         reminder_queryset = self.object.reminders.select_related("owner__realtor_profile", "lead", "deal")
@@ -1136,6 +1241,8 @@ class ClientStatusUpdateView(LoginRequiredMixin, View):
         try:
             require_resource_action(request.user, client, Operation.EDIT_CRM)
         except TariffDenied as error:
+            if is_client_panel_request(request):
+                return render_client_panel(request, client, panel_status_error=error.message)
             if request.headers.get("HX-Request") == "true":
                 return render(request, "properties/includes/client_status_control.html", {"client": client, "billing_error": error.message})
             messages.error(request, error.message)
@@ -1143,17 +1250,23 @@ class ClientStatusUpdateView(LoginRequiredMixin, View):
         status = request.POST.get("status")
         if status not in dict(Client.STATUS_CHOICES):
             error = "Выберите состояние отношений. Показ и итог по объекту меняйте в сделке."
+            if is_client_panel_request(request):
+                return render_client_panel(request, client, panel_status_error=error)
             if request.headers.get("HX-Request") == "true":
                 return render(request, "properties/includes/client_status_control.html", {"client": client, "status_error": error})
             messages.error(request, error)
             return redirect("client_detail", pk=client.pk)
         error = relationship_change_error(client, status)
         if error:
+            if is_client_panel_request(request):
+                return render_client_panel(request, client, panel_status_error=error)
             if request.headers.get("HX-Request") == "true":
                 return render(request, "properties/includes/client_status_control.html", {"client": client, "status_error": error})
             messages.error(request, error)
             return redirect("client_detail", pk=client.pk)
         change_client_relationship(client, status)
+        if is_client_panel_request(request):
+            return client_panel_saved("Отношения обновлены.")
         if request.headers.get("HX-Request") == "true":
             return render(request, "properties/includes/client_status_control.html", {"client": client})
         return redirect("client_detail", pk=client.pk)
@@ -1203,7 +1316,7 @@ class ClientInteractionCreateView(LoginRequiredMixin, View):
             post_data = request.POST.copy()
             if post_data.get("interaction_type") not in {"call", "message"}:
                 post_data["interaction_type"] = "call"
-        form = ClientInteractionForm(post_data)
+        form = OwnerInteractionForm(post_data, client=client) if client.is_property_owner else ClientInteractionForm(post_data)
         if form.is_valid():
             if form.cleaned_data["interaction_type"] in {"call", "message"} and client.leads.filter(
                 outcome="open", first_contacted_at__isnull=True,
@@ -1225,7 +1338,7 @@ class ClientInteractionCreateView(LoginRequiredMixin, View):
                     client.save(update_fields=["first_contacted_at", "updated_at"])
                     activate_client_relationship(client.pk, reason="Первый контакт зафиксирован.")
         else:
-            messages.error(request, "Не удалось добавить запись. Проверьте тип и текст взаимодействия.")
+            messages.error(request, "Не удалось добавить запись. Проверьте тип, объект и текст взаимодействия.")
         return redirect(f"{reverse('client_detail', kwargs={'pk': client.pk})}#client-history")
 
 
@@ -1235,6 +1348,8 @@ class ClientReminderCreateView(LoginRequiredMixin, View):
         try:
             require_resource_action(request.user, client, Operation.EDIT_CRM)
         except TariffDenied as error:
+            if is_client_panel_request(request):
+                return render_client_panel(request, client, panel_task_error=error.message, panel_task_open=True)
             messages.error(request, error.message)
             return redirect("client_detail", pk=client.pk)
         form = ClientReminderForm(request.POST)
@@ -1243,9 +1358,42 @@ class ClientReminderCreateView(LoginRequiredMixin, View):
             reminder.client = client
             reminder.owner = request.user
             reminder.save()
+            if is_client_panel_request(request):
+                return client_panel_saved("Задача добавлена.")
             messages.success(request, "Задача добавлена.")
         else:
+            if is_client_panel_request(request):
+                return render_client_panel(request, client, panel_task_form=form, panel_task_open=True)
             messages.error(request, "Не удалось добавить задачу. Проверьте текст и срок выполнения.")
+        return redirect("client_detail", pk=client.pk)
+
+
+class ClientPanelTaskUpdateView(LoginRequiredMixin, View):
+    @transaction.atomic
+    def post(self, request, pk, reminder_pk):
+        client = get_object_or_404(workspace_queryset(Client.objects, request.user), pk=pk)
+        reminder = get_object_or_404(
+            client.reminders.select_for_update(), pk=reminder_pk, owner=request.user,
+            is_done=False, cancelled_at__isnull=True, lead__isnull=True, owner_showing__isnull=True,
+        )
+        try:
+            require_resource_action(request.user, client, Operation.EDIT_CRM)
+            require_resource_action(request.user, reminder, Operation.EDIT_CRM)
+        except TariffDenied as error:
+            if is_client_panel_request(request):
+                return render_client_panel(request, client, panel_task_error=error.message, panel_task_open=True)
+            messages.error(request, error.message)
+            return redirect("client_detail", pk=client.pk)
+        form = ClientReminderForm(request.POST, instance=reminder)
+        if not form.is_valid():
+            if is_client_panel_request(request):
+                return render_client_panel(request, client, panel_task_form=form, panel_task_open=True)
+            messages.error(request, "Проверьте текст задачи и срок выполнения.")
+            return redirect("client_detail", pk=client.pk)
+        form.save()
+        if is_client_panel_request(request):
+            return client_panel_saved("Задача обновлена.")
+        messages.success(request, "Задача обновлена.")
         return redirect("client_detail", pk=client.pk)
 
 
@@ -1263,11 +1411,15 @@ class ClientReminderCompleteView(LoginRequiredMixin, View):
         try:
             require_resource_action(request.user, client, Operation.EDIT_CRM)
         except TariffDenied as error:
+            if is_client_panel_request(request):
+                return render_client_panel(request, client, panel_task_error=error.message, panel_task_open=True)
             messages.error(request, error.message)
             return redirect("client_detail", pk=client.pk)
         reminder.is_done = True
         reminder.completed_at = timezone.now()
         reminder.save(update_fields=["is_done", "completed_at"])
+        if is_client_panel_request(request):
+            return client_panel_saved("Задача выполнена.")
         return redirect("client_detail", pk=client.pk)
 
 
@@ -1358,7 +1510,8 @@ class LeadListView(LoginRequiredMixin, ListView):
     paginate_by = 10
 
     def get_template_names(self):
-        if self.request.headers.get("HX-Request") == "true":
+        if (self.request.headers.get("HX-Request") == "true"
+                and self.request.headers.get("HX-History-Restore-Request") != "true"):
             return ["properties/includes/lead_workspace.html"]
         return [self.template_name]
 
@@ -1373,8 +1526,78 @@ class LeadListView(LoginRequiredMixin, ListView):
             | Q(property__title__icontains=query) | Q(property__address__icontains=query)
         )
 
+    def analytics_params(self):
+        """Validated read-only drill-down filters from the analytics page."""
+        if hasattr(self, "_analytics_params"):
+            return self._analytics_params
+        params = {}
+        metric = self.request.GET.get("metric", "")
+        if metric not in {"received", "contacted", "unanswered", "overdue"}:
+            self._analytics_params = params
+            return params
+        params["metric"] = metric
+        scope = self.request.GET.get("scope")
+        if scope == "personal":
+            params["scope"] = "personal"
+        elif scope == "team" and agency_for(self.request.user):
+            params["scope"] = "team"
+        if metric in {"received", "contacted"}:
+            try:
+                first = parse_date(self.request.GET.get("date_from", ""))
+                last = parse_date(self.request.GET.get("date_to", ""))
+                if not first or not last:
+                    raise ValueError
+                AnalyticsPeriod.ending_now(first_day=first, last_day=last)
+            except ValueError:
+                fallback = AnalyticsPeriod.ending_now()
+                first, last = fallback.first_day, fallback.last_day
+            params.update({"date_from": first.isoformat(), "date_to": last.isoformat()})
+        source = self.request.GET.get("source", "")
+        if metric == "received" and (source in dict(Lead.SOURCE_CHOICES) or source == "unknown"):
+            params["source"] = source
+        responsible = self.request.GET.get("responsible", "")
+        agency = agency_for(self.request.user)
+        if agency and responsible.isdecimal() and may_manage_agency(self.request.user):
+            if agency.memberships.filter(user_id=int(responsible)).exists():
+                params["responsible"] = responsible
+        self._analytics_params = params
+        return params
+
+    def apply_analytics_filters(self, queryset):
+        params = self.analytics_params()
+        if not params:
+            return queryset
+        queryset = queryset.filter(is_demo=False, property__is_demo=False).filter(
+            Q(client__isnull=True) | Q(client__is_demo=False),
+        )
+        if params.get("scope") == "team":
+            queryset = queryset.filter(property__agency_id=agency_for(self.request.user).pk)
+        elif params.get("scope") == "personal":
+            queryset = queryset.filter(property__agency__isnull=True, property__owner=self.request.user)
+        if params.get("responsible"):
+            queryset = queryset.filter(assigned_to_id=int(params["responsible"]))
+        metric = params["metric"]
+        if metric in {"received", "contacted"}:
+            first = parse_date(params["date_from"]) if "date_from" in params else None
+            last = parse_date(params["date_to"]) if "date_to" in params else None
+            if first and last:
+                period = AnalyticsPeriod.ending_now(first_day=first, last_day=last)
+                field = "created_at" if metric == "received" else "first_contacted_at"
+                queryset = queryset.filter(**{f"{field}__gte": period.start, f"{field}__lt": period.end})
+        elif metric == "unanswered":
+            queryset = queryset.filter(outcome="open", first_contacted_at__isnull=True).exclude(status="archived")
+        elif metric == "overdue":
+            queryset = queryset.filter(Lead.overdue_filter(timezone.now())).exclude(status="archived")
+        if "source" in params:
+            if params["source"] == "unknown":
+                queryset = queryset.exclude(source__in=dict(Lead.SOURCE_CHOICES))
+            else:
+                queryset = queryset.filter(source=params["source"])
+        return queryset
+
     def get_queryset(self):
         queryset = workspace_queryset(Lead.objects, self.request.user, prefix="property__").select_related("property", "client", "assigned_to__realtor_profile").prefetch_related("client__leads")
+        queryset = self.apply_analytics_filters(queryset)
         if self.request.GET.get("assigned") == "mine":
             queryset = queryset.filter(assigned_to=self.request.user)
         status = self.request.GET.get("status")
@@ -1409,6 +1632,8 @@ class LeadListView(LoginRequiredMixin, ListView):
         selected_q = self.search_query()
         count_queryset = workspace_queryset(Lead.objects, self.request.user, prefix="property__")
         has_any_leads = count_queryset.exists()
+        analytics_params = self.analytics_params()
+        count_queryset = self.apply_analytics_filters(count_queryset)
         if selected_assigned:
             count_queryset = count_queryset.filter(assigned_to=self.request.user)
         if selected_q:
@@ -1423,10 +1648,20 @@ class LeadListView(LoginRequiredMixin, ListView):
         context["selected_status"] = selected_status
         context["selected_assigned"] = selected_assigned
         context["selected_q"] = selected_q
+        context["analytics_params"] = analytics_params
+        context["analytics_query"] = urlencode(analytics_params)
+        context["analytics_label"] = {
+            "received": "Заявки за период", "contacted": "Первый контакт за период",
+            "unanswered": "Без первого ответа", "overdue": "Просроченные заявки",
+        }.get(analytics_params.get("metric"), "")
+        context["analytics_source_label"] = (
+            dict(Lead.SOURCE_CHOICES).get(analytics_params.get("source"), "Не указан")
+            if "source" in analytics_params else ""
+        )
         context["queue_now"] = timezone.now()
 
         def filter_url(*, status="", assigned=False):
-            params = {}
+            params = dict(analytics_params)
             if status:
                 params["status"] = status
             if assigned:
@@ -1444,6 +1679,7 @@ class LeadListView(LoginRequiredMixin, ListView):
         context["all_assigned_url"] = filter_url(status=selected_status)
         context["mine_assigned_url"] = filter_url(status=selected_status, assigned=True)
         clear_params = {
+            **analytics_params,
             **({"status": selected_status} if selected_status else {}),
             **({"assigned": "mine"} if selected_assigned else {}),
         }
@@ -1451,10 +1687,41 @@ class LeadListView(LoginRequiredMixin, ListView):
         context["has_any_leads"] = has_any_leads
         context["can_bulk_delete"] = not agency_for(self.request.user) or may_manage_agency(self.request.user)
         context["pagination_query"] = urlencode({
+            **analytics_params,
             **({"status": selected_status} if selected_status else {}),
             **({"assigned": "mine"} if selected_assigned else {}),
             **({"q": selected_q} if selected_q else {}),
         })
+        context["lead_panel_query"] = urlencode({
+            **analytics_params,
+            **({"status": selected_status} if selected_status else {}),
+            **({"assigned": "mine"} if selected_assigned else {}),
+            **({"q": selected_q} if selected_q else {}),
+            "page": context["page_obj"].number,
+        })
+        requested_lead = self.request.GET.get("lead", "")
+        if requested_lead:
+            selected_lead = get_object_or_404(
+                workspace_queryset(Lead.objects, self.request.user, prefix="property__")
+                .select_related("property", "client", "assigned_to__realtor_profile"),
+                pk=requested_lead if requested_lead.isdecimal() else None,
+            )
+            detail = LeadDetailView()
+            detail.request = self.request
+            detail.object = selected_lead
+            context.update(detail.get_context_data())
+            context["selected_lead"] = selected_lead
+            response_due = selected_lead.first_response_due_at if not selected_lead.first_contacted_at else None
+            action_due = selected_lead.next_action_due_at
+            context["panel_first_response_is_next"] = bool(response_due and response_due <= action_due)
+            context["panel_deadline"] = min(response_due, action_due) if response_due else action_due
+            context["panel_deadline_overdue"] = context["panel_deadline"] < context["queue_now"]
+            visible_ids = [item.pk for item in context["leads"]]
+            if visible_ids:
+                if selected_lead.pk in visible_ids and len(visible_ids) > 1:
+                    context["next_lead_id"] = visible_ids[(visible_ids.index(selected_lead.pk) + 1) % len(visible_ids)]
+                elif selected_lead.pk not in visible_ids:
+                    context["next_lead_id"] = visible_ids[0]
         context["demo_test_completed"] = (
             self.request.GET.get("demo_test") == "1"
             and workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(is_demo=True).exists()
@@ -1519,6 +1786,51 @@ class LeadDetailView(LoginRequiredMixin, DetailView):
         return context
 
 
+def is_lead_panel_request(request):
+    return request.headers.get("HX-Request") == "true" and request.POST.get("panel_context") == "lead_list"
+
+
+def render_lead_panel(request, lead, **kwargs):
+    detail = LeadDetailView()
+    detail.request = request
+    detail.object = lead
+    context = detail.get_context_data(**kwargs)
+    response_due = lead.first_response_due_at if not lead.first_contacted_at else None
+    action_due = lead.next_action_due_at
+    context["panel_first_response_is_next"] = bool(response_due and response_due <= action_due)
+    context["panel_deadline"] = min(response_due, action_due) if response_due else action_due
+    context["panel_deadline_overdue"] = context["panel_deadline"] < context["queue_now"]
+    context["panel_error"] = kwargs.get("panel_error")
+    # Only known list filters may be returned to the close link.
+    saved = parse_qs(request.POST.get("panel_list_query", ""))
+    params = {}
+    if saved.get("status", [""])[0] in dict(Lead.STATUS_CHOICES):
+        params["status"] = saved["status"][0]
+    if saved.get("assigned", [""])[0] == "mine":
+        params["assigned"] = "mine"
+    query = saved.get("q", [""])[0].strip()[:100]
+    if query:
+        params["q"] = query
+    page = saved.get("page", [""])[0]
+    if page.isdecimal() and len(page) <= 6 and int(page) > 0:
+        params["page"] = page
+    context["lead_panel_query"] = urlencode(params)
+    return render(request, "properties/includes/lead_panel.html", context)
+
+
+def lead_panel_saved(message, *, level="success"):
+    return HttpResponse(status=204, headers={"HX-Trigger": json.dumps({"leadPanelSaved": {"message": message, "level": level}})})
+
+
+def lead_panel_feedback(request, lead, message, *, level="success", redirect_to="lead_detail"):
+    if is_lead_panel_request(request):
+        if level == "error":
+            return render_lead_panel(request, lead, panel_error=message)
+        return lead_panel_saved(message, level=level)
+    getattr(messages, level)(request, message)
+    return redirect(redirect_to, pk=lead.pk)
+
+
 class LeadProcessView(LoginRequiredMixin, View):
     def post(self, request, pk):
         lead = get_object_or_404(
@@ -1527,6 +1839,8 @@ class LeadProcessView(LoginRequiredMixin, View):
         )
         from_client = request.POST.get("return_to_client") == "1" and bool(lead.client_id)
         if lead.status == "archived" or lead.outcome != "open":
+            if is_lead_panel_request(request):
+                return render_lead_panel(request, lead, panel_error="Заявка уже завершена или находится в архиве.")
             messages.error(request, "Заявка уже завершена или находится в архиве.")
             return self.redirect_after(request, lead, from_client)
         form = LeadProcessingForm(request.POST)
@@ -1549,9 +1863,13 @@ class LeadProcessView(LoginRequiredMixin, View):
                     workspace_queryset(Lead.objects.select_for_update(), request.user, prefix="property__"), pk=pk,
                 )
                 if lead.status == "archived" or lead.outcome != "open":
+                    if is_lead_panel_request(request):
+                        return render_lead_panel(request, lead, panel_error="Заявка уже завершена или находится в архиве.")
                     messages.error(request, "Заявка уже завершена или находится в архиве.")
                     return self.redirect_after(request, lead, from_client)
                 if action == "contacted" and lead.first_contacted_at:
+                    if is_lead_panel_request(request):
+                        return lead_panel_saved("Первый контакт по этой заявке уже зафиксирован.", level="info")
                     messages.info(request, "Первый контакт по этой заявке уже зафиксирован.")
                     return self.redirect_after(request, lead, from_client)
                 lead.source = form.cleaned_data["source"]
@@ -1575,7 +1893,10 @@ class LeadProcessView(LoginRequiredMixin, View):
                         interaction_type=form.cleaned_data["contact_method"],
                         text=form.cleaned_data["contact_note"] or "Первый контакт по заявке.",
                     )
-            messages.success(request, "Первый контакт и следующий шаг сохранены." if action == "contacted" else "Обработка заявки обновлена.")
+            message = "Первый контакт и следующий шаг сохранены." if action == "contacted" else "Обработка заявки обновлена."
+            if is_lead_panel_request(request):
+                return lead_panel_saved(message)
+            messages.success(request, message)
             return self.redirect_after(request, lead, from_client)
         return self.render_invalid(request, lead, form, from_client=from_client)
 
@@ -1589,6 +1910,8 @@ class LeadProcessView(LoginRequiredMixin, View):
 
     @staticmethod
     def render_invalid(request, lead, form, status=200, from_client=False):
+        if is_lead_panel_request(request):
+            return render_lead_panel(request, lead, processing_form=form)
         if from_client:
             detail = ClientDetailView()
             detail.request = request
@@ -1610,8 +1933,7 @@ class LeadActionCompleteView(LoginRequiredMixin, View):
             workspace_queryset(Lead.objects, request.user, prefix="property__").select_related("property", "client"), pk=pk,
         )
         if lead.status == "archived" or lead.outcome != "open":
-            messages.error(request, "Заявка уже завершена или находится в архиве.")
-            return redirect("lead_detail", pk=pk)
+            return lead_panel_feedback(request, lead, "Заявка уже завершена или находится в архиве.", level="error")
         form = LeadActionCompleteForm(request.POST)
         if not form.is_valid():
             return self.render_invalid(request, lead, form)
@@ -1626,11 +1948,9 @@ class LeadActionCompleteView(LoginRequiredMixin, View):
             )
             task = get_object_or_404(lead.action_tasks.select_for_update(), pk=form.cleaned_data["task_id"])
             if task.is_done:
-                messages.info(request, "Это действие уже завершено.")
-                return redirect("lead_detail", pk=pk)
+                return lead_panel_feedback(request, lead, "Это действие уже завершено.", level="info")
             if lead.status == "archived" or lead.outcome != "open":
-                messages.error(request, "Заявка уже завершена или находится в архиве.")
-                return redirect("lead_detail", pk=pk)
+                return lead_panel_feedback(request, lead, "Заявка уже завершена или находится в архиве.", level="error")
             task.is_done = True
             task.completed_at = timezone.now()
             task.outcome_note = form.cleaned_data["outcome_note"]
@@ -1648,11 +1968,12 @@ class LeadActionCompleteView(LoginRequiredMixin, View):
                         f"Следующий шаг: {lead.next_action} до {timezone.localtime(lead.next_action_due_at):%d.%m.%Y %H:%M}."
                     ),
                 )
-        messages.success(request, "Итог сохранён. Следующее действие назначено.")
-        return redirect("lead_detail", pk=pk)
+        return lead_panel_feedback(request, lead, "Итог сохранён. Следующее действие назначено.")
 
     @staticmethod
     def render_invalid(request, lead, form, status=200):
+        if is_lead_panel_request(request):
+            return render_lead_panel(request, lead, complete_form=form)
         detail = LeadDetailView()
         detail.request = request
         detail.object = lead
@@ -1667,9 +1988,13 @@ class LeadOutcomeView(LoginRequiredMixin, View):
         )
         action = request.POST.get("action")
         if action not in ("decline", "reopen", "convert_existing"):
+            if is_lead_panel_request(request):
+                return render_lead_panel(request, lead, panel_error="Неизвестное действие.")
             return redirect("lead_detail", pk=pk)
         form = LeadDeclineForm(request.POST) if action == "decline" else None
         if form and not form.is_valid():
+            if is_lead_panel_request(request):
+                return render_lead_panel(request, lead, decline_form=form)
             detail = LeadDetailView()
             detail.request = request
             detail.object = lead
@@ -1677,20 +2002,19 @@ class LeadOutcomeView(LoginRequiredMixin, View):
         try:
             require_resource_action(request.user, lead.property, Operation.EDIT_CRM)
         except TariffDenied as error:
-            messages.error(request, error.message)
-            return redirect("lead_detail", pk=pk)
+            if is_lead_panel_request(request) and form:
+                return render_lead_panel(request, lead, decline_form=form, panel_error=error.message)
+            return lead_panel_feedback(request, lead, error.message, level="error")
         with transaction.atomic():
             lead = get_object_or_404(
                 workspace_queryset(Lead.objects.select_for_update(), request.user, prefix="property__"), pk=pk,
             )
             if lead.status == "archived":
-                messages.error(request, "Сначала восстановите заявку из архива.")
-                return redirect("lead_detail", pk=pk)
+                return lead_panel_feedback(request, lead, "Сначала восстановите заявку из архива.", level="error")
             if action == "convert_existing":
                 deal_id = request.POST.get("deal_id", "")
                 if not deal_id.isdecimal():
-                    messages.error(request, "Выберите сделку для заявки.")
-                    return redirect("lead_detail", pk=pk)
+                    return lead_panel_feedback(request, lead, "Выберите сделку для заявки.", level="error")
                 deal = get_object_or_404(
                     workspace_queryset(Deal.objects.select_for_update(), request.user),
                     pk=int(deal_id), stage__in=Deal.ACTIVE_STAGES,
@@ -1699,13 +2023,11 @@ class LeadOutcomeView(LoginRequiredMixin, View):
                 try:
                     convert_lead_to_deal(lead, deal)
                 except ValidationError as error:
-                    messages.error(request, error.messages[0])
-                    return redirect("lead_detail", pk=pk)
-                messages.success(request, "Заявка привязана к сделке. Следующее действие перенесено.")
+                    return lead_panel_feedback(request, lead, error.messages[0], level="error")
+                message = "Заявка привязана к сделке. Следующее действие перенесено."
             elif action == "decline":
                 if lead.outcome != "open":
-                    messages.info(request, "Заявка уже завершена.")
-                    return redirect("lead_detail", pk=pk)
+                    return lead_panel_feedback(request, lead, "Заявка уже завершена.", level="info")
                 lead.outcome = "declined"
                 lead.outcome_reason = form.cleaned_data["reason"]
                 lead.save(update_fields=["outcome", "outcome_reason", "updated_at"])
@@ -1714,11 +2036,10 @@ class LeadOutcomeView(LoginRequiredMixin, View):
                         client_id=lead.client_id, lead=lead, interaction_type="status",
                         text=f"Заявка закрыта без сделки. Причина: {lead.outcome_reason}",
                     )
-                messages.success(request, "Заявка закрыта. Причина сохранена в истории.")
+                message = "Заявка закрыта. Причина сохранена в истории."
             else:
                 if lead.outcome != "declined":
-                    messages.info(request, "Заявка уже в работе или переведена в сделку.")
-                    return redirect("lead_detail", pk=pk)
+                    return lead_panel_feedback(request, lead, "Заявка уже в работе или переведена в сделку.", level="info")
                 lead.outcome = "open"
                 lead.outcome_reason = ""
                 update_fields = ["outcome", "outcome_reason", "updated_at"]
@@ -1731,8 +2052,8 @@ class LeadOutcomeView(LoginRequiredMixin, View):
                     ClientInteraction.objects.create(
                         client_id=lead.client_id, lead=lead, interaction_type="status", text="Работа по заявке возобновлена.",
                     )
-                messages.success(request, "Заявка снова в работе. Следующее действие восстановлено.")
-        return redirect("lead_detail", pk=pk)
+                message = "Заявка снова в работе. Следующее действие восстановлено."
+        return lead_panel_feedback(request, lead, message)
 
 
 class LeadBulkStatusUpdateView(LoginRequiredMixin, View):
@@ -1791,8 +2112,9 @@ class LeadDeleteView(LoginRequiredMixin, View):
                     lead.status = "archived"
                     lead.save(update_fields=["status", "updated_at"])
         except TariffDenied as error:
-            messages.error(request, error.message)
-            return redirect("lead_detail", pk=pk)
+            return lead_panel_feedback(request, lead, error.message, level="error")
+        if is_lead_panel_request(request):
+            return lead_panel_saved("Заявка перенесена в архив. Связи со сделками и история сохранены.")
         messages.success(request, "Заявка перенесена в архив. Связи со сделками и история сохранены.")
         return redirect(f"{reverse('lead_list')}?status=archived")
 

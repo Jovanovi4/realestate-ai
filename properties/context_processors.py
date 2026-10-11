@@ -13,6 +13,8 @@ def active_navigation_item(request):
         return "landings"
     if name == "integration_telegram":
         return "telegram"
+    if name == "analytics":
+        return "analytics"
     if "property" in name or name in {
         "upload_images", "reorder_images", "set_primary_image", "avito_export", "cian_export", "ai_assistant", "telegram_publish",
     }:
@@ -51,7 +53,7 @@ def realtor_profile(request):
     nav_item = active_navigation_item(request)
     nav_section = {
         "properties": "realty", "landings": "realty",
-        "leads": "crm", "clients": "crm", "deals": "crm",
+        "leads": "crm", "clients": "crm", "deals": "crm", "analytics": "crm",
         "telegram": "integrations",
     }.get(nav_item, "")
     return {

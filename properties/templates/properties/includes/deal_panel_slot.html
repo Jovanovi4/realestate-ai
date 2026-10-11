@@ -1,0 +1,54 @@
+{% load crm_display %}
+<div id="deal-panel-slot" class="deal-panel-slot{% if selected_deal %} is-open{% endif %}"{% if selected_deal %} data-deal-id="{{ selected_deal.pk }}"{% endif %}>
+{% if selected_deal %}
+  <a class="lead-workspace__backdrop deal-panel__backdrop" href="?{{ deal_panel_query }}#deal-board-{{ selected_deal.stage }}" data-deal-panel-close aria-label="Закрыть карточку сделки" tabindex="-1"></a>
+  <aside class="lead-panel deal-panel" id="deal-panel" role="dialog" aria-labelledby="deal-panel-title" tabindex="-1">
+    <header class="lead-panel__header">
+      <div class="lead-panel__heading"><span class="detail-kicker">Сделка</span><h2 id="deal-panel-title">{{ selected_deal.client.name }}</h2></div>
+      <div class="lead-panel__header-actions">
+        {% if next_deal_id %}<a class="btn btn-icon btn-sm btn-neutral" href="?{{ deal_panel_query }}{% if deal_panel_query %}&amp;{% endif %}deal={{ next_deal_id }}#deal-board-{{ selected_deal.stage }}" data-deal-panel-open="{{ next_deal_id }}" aria-label="Открыть следующую сделку на этом этапе" data-tooltip="Следующая сделка"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endif %}
+        <a class="btn btn-icon btn-sm btn-neutral" href="{% url 'deal_detail' selected_deal.pk %}" aria-label="Открыть полную карточку сделки" data-tooltip="Полная карточка"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-external-link"></use></svg></a>
+        <a class="btn btn-icon btn-sm btn-neutral" href="?{{ deal_panel_query }}#deal-board-{{ selected_deal.stage }}" data-deal-panel-close aria-label="Закрыть карточку сделки" aria-keyshortcuts="Escape" data-tooltip="Закрыть"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></a>
+      </div>
+    </header>
+    <div class="lead-panel__discard" id="deal-panel-discard" role="alertdialog" aria-labelledby="deal-panel-discard-title" aria-describedby="deal-panel-discard-text" hidden>
+      <strong id="deal-panel-discard-title">Есть несохранённые изменения</strong><p id="deal-panel-discard-text">Сохраните этап или выйдите без изменений.</p>
+      <div class="lead-panel__discard-actions"><button class="btn btn-neutral btn-sm" type="button" data-deal-discard-stay>Продолжить редактирование</button><button class="btn btn-text btn-sm" type="button" data-deal-discard-leave>Выйти без сохранения</button></div>
+    </div>
+    <div class="lead-panel__body">
+      <div class="lead-panel__identity">
+        <a class="lead-panel__property deal-panel__property" href="{% url 'property_detail' selected_deal.property.pk %}">{{ selected_deal.property.title }}</a>
+        <div class="lead-panel__meta"><span>Ответственный: <strong>{% if selected_deal.responsible %}{{ selected_deal.responsible|staff_name }}{% else %}Не назначен{% endif %}</strong></span></div>
+      </div>
+      <section class="client-panel__section" aria-label="Этап сделки">
+        <div class="client-panel__section-head"><span class="detail-kicker">Этап</span></div>
+        <div class="detail-status-control">
+          <details class="detail-status-control__editor deal-panel__stage-editor"><summary aria-label="Изменить этап сделки: {{ selected_deal.get_stage_display }}"><span class="detail-status-control__current"><span class="badge deal-stage-badge is-{{ selected_deal.stage }}">{{ selected_deal.get_stage_display }}</span></span><span class="detail-status-control__edit-label">Изменить этап</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></summary>
+            <form class="detail-status-control__form" method="post" action="{% url 'deal_stage_update' selected_deal.pk %}" data-deal-panel-stage-form data-deal-id="{{ selected_deal.pk }}">
+              {% csrf_token %}<input type="hidden" name="expected_stage" value="{{ selected_deal.stage }}">
+              <label class="visually-hidden" for="deal-panel-stage">Этап сделки</label><select class="form-select form-select-sm" id="deal-panel-stage" name="stage">{% for value, label in selected_deal.STAGE_CHOICES %}<option value="{{ value }}"{% if selected_deal.stage == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+              <div class="deal-panel__loss-field" data-deal-panel-loss-field{% if selected_deal.stage != 'lost' %} hidden{% endif %}><label class="form-label" for="deal-panel-outcome">Причина отказа</label><textarea class="form-control" id="deal-panel-outcome" name="outcome_note" rows="3" maxlength="3000">{{ selected_deal.outcome_note }}</textarea></div>
+              <p class="client-panel__error" role="alert" tabindex="-1" data-deal-panel-error hidden></p>
+              <button class="btn btn-sm btn-neutral detail-status-control__save" type="submit" data-panel-status-save>Сохранить</button>
+            </form>
+          </details>
+        </div>
+      </section>
+      <section class="lead-panel__focus{% if deal_panel_showing_first and deal_panel_showing.owner_id == request.user.pk %} deal-panel__focus-card{% endif %}" aria-label="Ближайшее действие">
+        <span class="detail-kicker">Ближайшее действие</span>
+        {% if deal_panel_showing_first %}
+          <strong>{% if deal_panel_showing.owner_id == request.user.pk %}<a class="deal-panel__focus-link" href="{% url 'showing_detail' deal_panel_showing.pk %}">Показ объекта</a>{% else %}Показ объекта{% endif %}</strong><p class="lead-panel__deadline">{{ deal_panel_showing.starts_at|date:"d.m.Y · H:i" }}</p>
+        {% elif deal_panel_task %}
+          <strong>{{ deal_panel_task.text }}</strong><p class="lead-panel__deadline{% if deal_panel_task.due_at and deal_panel_task.due_at < deal_panel_now %} is-overdue{% endif %}">{% if deal_panel_task.due_at %}{% if deal_panel_task.due_at < deal_panel_now %}Просрочено · {% else %}До {% endif %}{{ deal_panel_task.due_at|date:"d.m.Y · H:i" }}{% else %}Без срока{% endif %}</p>
+          {% if deal_panel_task.owner_id == request.user.pk %}<a class="btn btn-neutral btn-sm deal-panel__task-link" href="{% url 'task_detail' deal_panel_task.pk %}">Открыть задачу</a>{% endif %}
+        {% else %}<strong>Запланируйте действие</strong>{% endif %}
+      </section>
+      <div class="lead-panel__actions deal-panel__quick-actions" role="group" aria-label="Действия со сделкой">
+        <a class="lead-overview__outcome-action" href="{% url 'task_create' %}?deal={{ selected_deal.pk }}"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg></span><span>Добавить задачу</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>
+        <a class="lead-overview__outcome-action" href="{% url 'showing_create' %}?deal={{ selected_deal.pk }}"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-calendar"></use></svg></span><span>Назначить показ</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>
+      </div>
+      <details class="client-panel__overview"><summary>О сделке<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary><div class="client-panel__overview-body"><dl><div><dt>Клиент</dt><dd><a href="{% url 'client_detail' selected_deal.client.pk %}">Открыть карточку</a></dd></div>{% if selected_deal.expected_commission %}<div><dt>Комиссия</dt><dd>{{ selected_deal.expected_commission|money:selected_deal.property.currency }}</dd></div>{% endif %}{% if selected_deal.lead_id %}<div><dt>Заявка</dt><dd><a href="{% url 'lead_detail' selected_deal.lead_id %}">Открыть</a></dd></div>{% endif %}</dl>{% if selected_deal.outcome_note %}<p>{{ selected_deal.outcome_note|linebreaksbr }}</p>{% endif %}</div></details>
+    </div>
+  </aside>
+{% endif %}
+</div>

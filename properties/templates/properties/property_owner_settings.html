@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Собственники · {{ property.title }}{% endblock %}
+{% block content %}
+<div class="app-form-page app-form-page--narrow">
+  <header class="ui-page-header">
+    <div>
+      {% url 'property_detail' property.pk as property_url %}{% with breadcrumb_href=property_url|add:'#property-owners' %}{% include "properties/includes/detail_breadcrumb.html" with href=breadcrumb_href parent="Данные объекта" current="Собственники" %}{% endwith %}
+      <h1 class="ui-page-header__title">Собственники объекта</h1>
+      <p class="ui-page-header__description">{{ property.title }}</p>
+    </div>
+  </header>
+
+  {% for link in owner_links %}
+    <section class="detail-section{% if not forloop.first %} detail-section--spaced{% endif %}">
+      <div class="detail-section__heading">
+        <div><span class="detail-kicker">Условия работы</span><h2>{{ link.client.name }}</h2></div>
+        <a class="btn btn-icon btn-sm btn-neutral" href="{% url 'client_detail' link.client.pk %}" data-tooltip="Карточка собственника" aria-label="Открыть карточку собственника {{ link.client.name }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-external-link"></use></svg></a>
+      </div>
+      <form method="post" action="{% url 'property_owner_update' property.pk link.pk %}" class="app-form" novalidate>
+        {% csrf_token %}
+        {% if link.details_form.non_field_errors %}<div class="app-form-error-summary" role="alert">{{ link.details_form.non_field_errors }}</div>{% endif %}
+        <div class="app-form-grid">
+          <div class="app-field">{% include "includes/form_field.html" with field=link.details_form.role %}</div>
+          <div class="app-field">{% include "includes/form_field.html" with field=link.details_form.agreed_price %}</div>
+          <div class="app-field">{% include "includes/form_field.html" with field=link.details_form.agreement_expires_on %}</div>
+          <div class="app-field is-wide">{% include "includes/form_field.html" with field=link.details_form.showing_instructions %}</div>
+          <div class="app-field is-wide"><label class="property-owners__check">{{ link.details_form.publication_approved }}<span>{{ link.details_form.publication_approved.label }}</span></label>{% if link.details_form.publication_approved.errors %}<p class="app-field-error" role="alert">{{ link.details_form.publication_approved.errors|striptags }}</p>{% endif %}<p class="form-text mb-0">Отметка для CRM; публикацией управляют настройки объекта.</p></div>
+        </div>
+        <div class="app-form-actions"><button class="btn btn-primary" type="submit">Сохранить условия</button></div>
+      </form>
+      <form method="post" action="{% url 'property_owner_remove' property.pk link.pk %}" class="property-owners__remove">{% csrf_token %}<button class="btn btn-text btn-sm" type="submit" data-confirm="Удалить связь контакта с объектом? История общения и задачи сохранятся." data-confirm-title="Убрать собственника?" data-confirm-button="Убрать">Убрать связь с объектом</button></form>
+    </section>
+  {% endfor %}
+
+  <section class="detail-section{% if owner_links %} detail-section--spaced{% endif %}">
+    <div class="detail-section__heading"><div><span class="detail-kicker">Связь с объектом</span><h2>Добавить собственника</h2><p>Выберите существующий контакт или укажите имя и телефон нового.</p></div></div>
+    <form method="post" action="{% url 'property_owner_settings' property.pk %}" class="app-form" novalidate>
+      {% csrf_token %}
+      {% if owner_setup_form.non_field_errors %}<div class="app-form-error-summary" role="alert">{{ owner_setup_form.non_field_errors }}</div>{% endif %}
+      <div class="app-form-grid">
+        <div class="app-field is-wide">{% include "includes/form_field.html" with field=owner_setup_form.client %}</div>
+        <div class="app-field">{% include "includes/form_field.html" with field=owner_setup_form.contact_name %}</div>
+        <div class="app-field">{% include "includes/form_field.html" with field=owner_setup_form.contact_phone %}</div>
+      </div>
+      <div class="app-form-panel__heading property-owners__new"><h2>Условия работы</h2></div>
+      <div class="app-form-grid">
+        <div class="app-field">{% include "includes/form_field.html" with field=owner_setup_form.role %}</div>
+        <div class="app-field">{% include "includes/form_field.html" with field=owner_setup_form.agreed_price %}</div>
+        <div class="app-field">{% include "includes/form_field.html" with field=owner_setup_form.agreement_expires_on %}</div>
+        <div class="app-field is-wide">{% include "includes/form_field.html" with field=owner_setup_form.showing_instructions %}</div>
+        <div class="app-field is-wide"><label class="property-owners__check">{{ owner_setup_form.publication_approved }}<span>{{ owner_setup_form.publication_approved.label }}</span></label><p class="form-text mb-0">Отметка для CRM; публикацией управляют настройки объекта.</p></div>
+      </div>
+      <div class="app-form-actions"><button class="btn btn-primary" type="submit">Сохранить собственника</button></div>
+    </form>
+  </section>
+</div>
+{% endblock %}

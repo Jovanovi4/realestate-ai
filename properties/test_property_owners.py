@@ -7,7 +7,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from .models import Agency, AgencyMembership, Client, ClientInteraction, ClientReminder, Deal, Property, PropertyOwnerLink
+from .models import Agency, AgencyMembership, Client, ClientInteraction, ClientReminder, Deal, OwnerInquiry, Property, PropertyOwnerLink
 
 
 class PropertyOwnerWorkflowTests(TestCase):
@@ -60,12 +60,23 @@ class PropertyOwnerWorkflowTests(TestCase):
                 agreement_expires_on=timezone.localdate() + timedelta(days=14),
             )
         Property.objects.create(owner=self.realtor, title="Не объект Марии")
+        OwnerInquiry.objects.create(
+            owner=self.realtor, client=contact, assigned_to=self.realtor,
+            deal_type="sale", address="Тестовая улица, 12",
+        )
 
         detail = self.client.get(reverse("client_detail", args=[contact.pk]))
         self.assertEqual(detail.context["owner_properties_total"], 4)
         self.assertEqual(len(detail.context["owner_properties"]), 3)
         self.assertContains(detail, f"{reverse('property_list')}?owner_client={contact.pk}")
         self.assertContains(detail, "Договорённость до")
+        self.assertContains(detail, 'id="client-owner-inquiries-tab"')
+        self.assertContains(detail, 'id="client-owner-properties-tab"')
+        html = detail.content.decode()
+        self.assertLess(html.index('id="client-history" role="tabpanel"'), html.index('id="client-owner-inquiries" role="tabpanel"'))
+        self.assertLess(html.index('id="client-owner-inquiries" role="tabpanel"'), html.index('id="client-owner-properties" role="tabpanel"'))
+        self.assertLess(html.index('id="client-owner-inquiries" role="tabpanel"'), html.index("Тестовая улица, 12"))
+        self.assertLess(html.index('id="client-owner-properties" role="tabpanel"'), html.index("Договорённость до"))
 
         full_list = self.client.get(reverse("property_list"), {"owner_client": contact.pk})
         self.assertEqual(full_list.context["paginator"].count, 4)
@@ -83,6 +94,92 @@ class PropertyOwnerWorkflowTests(TestCase):
         response = self.client.get(reverse("deal_detail", args=[deal.pk]))
         self.assertContains(response, "Собственник")
         self.assertContains(response, owner_contact.phone)
+
+    def test_owner_details_and_report_open_from_their_respective_property_tabs(self):
+        contact = Client.objects.create(owner=self.realtor, name="Мария", phone="+79990000024", contact_role="owner")
+        link = PropertyOwnerLink.objects.create(property=self.property, client=contact)
+
+        response = self.client.get(reverse("property_detail", args=[self.property.pk]))
+        html = response.content.decode()
+        overview = html.split('id="overview-pane"', 1)[1].split('id="data-pane"', 1)[0]
+        data = html.split('id="data-pane"', 1)[1].split('id="photos-pane"', 1)[0]
+        publication = html.split('id="publication-pane"', 1)[1].split('id="owner-reports"', 1)[1]
+
+        self.assertNotIn('id="property-owners"', overview)
+        self.assertNotIn('id="property-deals"', overview)
+        self.assertIn('id="property-owners"', data)
+        self.assertIn(reverse("property_owner_settings", args=[self.property.pk]), data)
+        self.assertNotIn(reverse("property_owner_update", args=[self.property.pk, link.pk]), data)
+        self.assertNotIn(reverse("property_owner_interaction", args=[self.property.pk, link.pk]), data)
+        self.assertNotIn(reverse("owner_report", args=[link.pk]), data)
+        self.assertIn(reverse("owner_report", args=[link.pk]), publication)
+
+        settings_page = self.client.get(reverse("property_owner_settings", args=[self.property.pk]))
+        self.assertContains(settings_page, reverse("property_owner_update", args=[self.property.pk, link.pk]))
+        self.assertContains(settings_page, "Условия работы")
+
+        report = self.client.get(reverse("owner_report", args=[link.pk]))
+        self.assertContains(report, f'{reverse("property_detail", args=[self.property.pk])}#owner-reports')
+
+    def test_owner_and_work_terms_are_created_together(self):
+        response = self.client.post(reverse("property_owner_settings", args=[self.property.pk]), {
+            "contact_name": "Мария", "contact_phone": "+7 (999) 123-45-67", "role": "owner",
+            "agreed_price": "7000000", "agreement_expires_on": "2026-12-31",
+            "showing_instructions": "Предупредить за день", "publication_approved": "on",
+        })
+        self.assertRedirects(response, reverse("property_owner_settings", args=[self.property.pk]))
+        link = PropertyOwnerLink.objects.get(property=self.property)
+        self.assertEqual(link.client.name, "Мария")
+        self.assertEqual(str(link.agreed_price), "7000000.00")
+        self.assertEqual(link.showing_instructions, "Предупредить за день")
+        self.assertIsNotNone(link.publication_approved_at)
+
+        detail = self.client.get(reverse("property_detail", args=[self.property.pk]))
+        self.assertContains(detail, "Предупредить за день")
+        self.assertNotContains(detail, "Сохранить условия")
+
+    def test_owner_settings_reuse_contact_and_keep_invalid_input_visible(self):
+        contact = Client.objects.create(owner=self.realtor, name="Анна", phone="+79990000025")
+        settings_url = reverse("property_owner_settings", args=[self.property.pk])
+        invalid = self.client.post(settings_url, {
+            "client": contact.pk, "contact_name": "Другое имя", "role": "co_owner",
+            "agreed_price": "5000000",
+        })
+        self.assertEqual(invalid.status_code, 400)
+        self.assertContains(invalid, "Выберите контакт или заполните данные нового собственника.", status_code=400)
+        self.assertFalse(PropertyOwnerLink.objects.exists())
+
+        response = self.client.post(settings_url, {
+            "client": contact.pk, "role": "co_owner", "agreed_price": "5000000",
+        })
+        self.assertRedirects(response, settings_url)
+        link = PropertyOwnerLink.objects.get(property=self.property)
+        self.assertEqual(link.client, contact)
+        self.assertEqual(link.role, "co_owner")
+        self.assertEqual(contact.owned_properties.count(), 1)
+        contact.refresh_from_db()
+        self.assertEqual(contact.contact_role, "both")
+
+    def test_owner_contact_from_global_card_keeps_property_context(self):
+        contact = Client.objects.create(owner=self.realtor, name="Мария", phone="+79990000024", contact_role="owner")
+        PropertyOwnerLink.objects.create(property=self.property, client=contact)
+        card = self.client.get(reverse("client_detail", args=[contact.pk]))
+        self.assertContains(card, 'name="property"')
+        self.assertContains(card, "Записать контакт")
+
+        response = self.client.post(reverse("client_interaction_create", args=[contact.pk]), {
+            "property": self.property.pk, "interaction_type": "call", "text": "Показ согласован",
+        })
+        self.assertRedirects(response, f'{reverse("client_detail", args=[contact.pk])}#client-history')
+        interaction = ClientInteraction.objects.get(client=contact, interaction_type="call")
+        self.assertEqual(interaction.property, self.property)
+        self.assertEqual(interaction.text, "Показ согласован")
+
+        foreign_property = Property.objects.create(owner=self.other, title="Чужой объект")
+        self.client.post(reverse("client_interaction_create", args=[contact.pk]), {
+            "property": foreign_property.pk, "interaction_type": "call", "text": "Чужая запись",
+        })
+        self.assertEqual(ClientInteraction.objects.filter(client=contact, interaction_type="call").count(), 1)
 
     def test_public_landing_does_not_expose_owner_contact(self):
         contact = Client.objects.create(owner=self.realtor, name="Секретный собственник", phone="+79990000023", contact_role="owner")
@@ -173,6 +270,7 @@ class PropertyOwnerWorkflowTests(TestCase):
         link = PropertyOwnerLink.objects.create(property=self.property, client=own_contact)
         self.client.force_login(self.other)
         self.assertEqual(self.client.get(reverse("property_detail", args=[self.property.pk])).status_code, 404)
+        self.assertEqual(self.client.get(reverse("property_owner_settings", args=[self.property.pk])).status_code, 404)
         self.assertEqual(self.client.post(reverse("property_owner_update", args=[self.property.pk, link.pk]), {}).status_code, 404)
         self.assertEqual(self.client.post(reverse("property_owner_remove", args=[self.property.pk, link.pk])).status_code, 404)
         with self.assertRaises(ValidationError):

@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% load crm_display %}
+{% block title %}Аналитика{% endblock %}
+{% block content %}
+<header class="ui-page-header">
+  <div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="briefcase" %}CRM</p><h1 class="ui-page-header__title">Аналитика</h1><p class="ui-page-header__description">Заявки, первый ответ и работа со сделками. Демо-записи не учитываются.</p></div>
+</header>
+
+{% if can_view_team %}<nav class="nav nav-pills workspace-tabs ui-switch detail-tabs billing-workspace-tabs analytics-scope" aria-label="Рабочее пространство">
+  <a class="nav-link ui-switch__option{% if report.scope.kind == 'personal' %} active{% endif %}" href="{{ personal_url }}"{% if report.scope.kind == 'personal' %} aria-current="page"{% endif %}>Личное пространство</a>
+  <a class="nav-link ui-switch__option{% if report.scope.kind == 'team' %} active{% endif %}" href="{{ team_url }}"{% if report.scope.kind == 'team' %} aria-current="page"{% endif %}>Команда</a>
+</nav>{% endif %}
+
+<section class="analytics-filters" aria-label="Фильтры аналитики">
+  <div class="analytics-filters__top"><div><strong>Период</strong><span>{{ report.period.first_day|date:"d.m.Y" }} — {{ report.period.last_day|date:"d.m.Y" }} · Москва</span></div>
+    <nav class="ui-switch analytics-presets" aria-label="Быстрый выбор периода">{% for preset in preset_links %}<a class="ui-switch__option{% if preset.active %} is-active{% endif %}" href="{{ preset.url }}"{% if preset.active %} aria-current="page"{% endif %}>{{ preset.days }} дней</a>{% endfor %}</nav>
+  </div>
+  <form method="get" class="analytics-filter-form">
+    <input type="hidden" name="scope" value="{{ report.scope.kind }}">
+    <div><label class="form-label" for="analytics-from">С даты</label><input class="form-control" id="analytics-from" type="date" name="date_from" value="{{ report.period.first_day|date:'Y-m-d' }}" required></div>
+    <div><label class="form-label" for="analytics-to">По дату</label><input class="form-control" id="analytics-to" type="date" name="date_to" value="{{ report.period.last_day|date:'Y-m-d' }}" required></div>
+    {% if can_choose_member and report.scope.kind == 'team' %}<div><label class="form-label" for="analytics-member">Ответственный</label><select class="form-select" id="analytics-member" name="member"><option value="">Вся команда</option>{% for item in member_choices %}<option value="{{ item.user_id }}"{% if report.scope.member_id == item.user_id %} selected{% endif %}>{{ item.user|staff_name }}</option>{% endfor %}</select></div>{% endif %}
+    <button class="btn btn-neutral" type="submit">Показать</button>
+  </form>
+  {% if period_error %}<p class="analytics-filter-error" role="alert">{{ period_error }}</p>{% endif %}
+  {% if report.scope.kind == 'team' and membership.role == 'agent' %}<p class="analytics-filter-note">Показаны ваши заявки, задачи и сделки команды.</p>{% elif report.scope.member_id %}<p class="analytics-filter-note">Показатели сотрудника относятся к записям, назначенным ему сейчас.</p>{% endif %}
+</section>
+
+<section class="analytics-section" aria-labelledby="analytics-period-title">
+  <div class="analytics-section__heading"><div><p class="analytics-section__eyebrow">Результат за период</p><h2 id="analytics-period-title">За выбранные дни</h2></div></div>
+  <div class="analytics-kpis">
+    <article class="analytics-kpi"><span class="analytics-kpi__label">Поступило заявок</span><strong>{{ report.during.received }}</strong><a href="{{ lead_links.received }}">Открыть заявки <span aria-hidden="true">→</span></a></article>
+    <article class="analytics-kpi"><span class="analytics-kpi__label">Ответ в течение 30 минут</span><strong>{{ report.during.sla_percent|default_if_none:"—" }}{% if report.during.sla_percent != None %}<small> %</small>{% endif %}</strong><span class="analytics-kpi__meta">{{ report.during.sla_on_time }} из {{ report.during.sla_eligible }} заявок со сроком</span><details class="analytics-kpi__help"><summary aria-label="Как считается ответ в течение 30 минут"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-info"></use></svg></summary><p>Доля заявок периода, которым уже исполнилось 30 минут и по которым первый контакт записан вовремя.</p></details></article>
+    <article class="analytics-kpi"><span class="analytics-kpi__label">Медиана первого ответа</span><strong>{{ report.during.median_response_minutes|default_if_none:"—" }}{% if report.during.median_response_minutes != None %}<small> мин</small>{% endif %}</strong><span class="analytics-kpi__meta">По {{ report.during.median_sample }} записанным ответам</span><details class="analytics-kpi__help"><summary aria-label="Как считается время первого ответа"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-info"></use></svg></summary><p>Медианное время от поступления заявки до первого контакта среди ответов, записанных за период.</p></details></article>
+    <article class="analytics-kpi analytics-kpi--urgent"><span class="analytics-kpi__label">Просроченных заявок сейчас</span><strong>{{ report.now.overdue_leads }}</strong><a href="{{ lead_links.overdue }}">Разобрать заявки <span aria-hidden="true">→</span></a></article>
+  </div>
+  <p class="analytics-filter-note">За период: {{ report.during.completed_tasks }} выполненных задач · {{ report.during.converted_leads }} заявок переведено в сделку · {{ report.during.created_deals }} сделок создано.</p>
+</section>
+
+<section class="analytics-section" aria-labelledby="analytics-now-title">
+  <div class="analytics-section__heading"><div><p class="analytics-section__eyebrow">Состояние сейчас</p><h2 id="analytics-now-title">Рабочая очередь</h2></div></div>
+  <div class="analytics-queue">
+    <div><span>Без первого ответа</span><strong>{{ report.now.unanswered }}</strong><a href="{{ lead_links.unanswered }}">Открыть</a></div>
+    <div><span>Открытые задачи</span><strong>{{ report.now.open_tasks }}</strong></div>
+    <div><span>Просроченные задачи</span><strong>{{ report.now.overdue_tasks }}</strong></div>
+    <div><span>Активные сделки</span><strong>{{ report.now.active_deals }}</strong><a href="{{ deal_url }}">К сделкам</a></div>
+  </div>
+</section>
+
+<div class="analytics-grid">
+  <section class="analytics-panel" aria-labelledby="analytics-trend-title">
+    <div class="analytics-panel__head"><div><p class="analytics-section__eyebrow">По дате поступления</p><h2 id="analytics-trend-title">Динамика заявок</h2></div><span>{{ report.during.received }} всего</span></div>
+    {% if report.during.received %}<div class="analytics-chart" aria-label="Поступившие заявки по дням или неделям"><div class="analytics-chart__columns">{% for bucket in report.chart %}<a class="analytics-chart__bucket" href="{{ bucket.url }}" aria-label="{{ bucket.start|date:'d.m' }}{% if bucket.start != bucket.end %}–{{ bucket.end|date:'d.m' }}{% endif %}: {{ bucket.count }} заявок. Открыть список" title="{{ bucket.start|date:'d.m' }}{% if bucket.start != bucket.end %}–{{ bucket.end|date:'d.m' }}{% endif %}: {{ bucket.count }}"><span class="analytics-chart__bar{% if not bucket.count %} analytics-chart__bar--empty{% endif %}" style="height:{{ bucket.height }}%"></span><span class="analytics-chart__tick">{% if forloop.first or forloop.counter|divisibleby:5 or forloop.last %}{{ bucket.start|date:"d.m" }}{% endif %}</span></a>{% endfor %}</div></div>{% else %}<p class="analytics-empty">За выбранный период заявок нет.</p>{% endif %}
+  </section>
+  <section class="analytics-panel" aria-labelledby="analytics-sources-title">
+    <div class="analytics-panel__head"><div><p class="analytics-section__eyebrow">По заявкам периода</p><h2 id="analytics-sources-title">Источники</h2></div></div>
+    {% if report.sources %}<div class="analytics-bars">{% for source in report.sources %}<a class="analytics-bar-row" href="{{ source.url }}"><span class="analytics-bar-row__label">{{ source.label }}</span><span class="analytics-bar-row__track"><span style="width:{{ source.width }}%"></span></span><strong>{{ source.count }}</strong></a>{% endfor %}</div>{% else %}<p class="analytics-empty">Источники появятся вместе с первыми заявками.</p>{% endif %}
+  </section>
+</div>
+
+<section class="analytics-panel analytics-funnel" aria-labelledby="analytics-funnel-title">
+  <div class="analytics-panel__head"><div><p class="analytics-section__eyebrow">Текущий срез · не зависит от периода</p><h2 id="analytics-funnel-title">Воронка сделок</h2></div><a class="btn btn-text btn-sm" href="{{ deal_url }}">Все сделки <span aria-hidden="true">→</span></a></div>
+  <div class="analytics-funnel__stages">{% for stage in report.stages %}<a class="analytics-funnel__stage" href="{{ stage.url }}"><span>{{ stage.label }}</span><strong>{{ stage.count }}</strong><span class="analytics-funnel__track"><span style="width:{{ stage.width }}%"></span></span></a>{% endfor %}</div>
+</section>
+
+{% if member_rows %}<section class="analytics-panel analytics-team" aria-labelledby="analytics-team-title">
+  <div class="analytics-panel__head"><div><p class="analytics-section__eyebrow">Команда</p><h2 id="analytics-team-title">По ответственным</h2></div></div>
+  <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th scope="col">Сотрудник</th><th scope="col">Заявки за период</th><th scope="col">Без ответа</th><th scope="col">Просрочены</th><th scope="col">Задачи сейчас</th><th scope="col">Сделки сейчас</th></tr></thead><tbody>{% for row in member_rows %}<tr><th scope="row">{% if row.user %}<a href="{{ row.url }}">{{ row.user|staff_name }}</a>{% else %}Не назначено{% endif %}</th><td>{{ row.received }}</td><td>{{ row.unanswered }}</td><td>{{ row.overdue }}</td><td>{{ row.open_tasks }}</td><td>{{ row.active_deals }}</td></tr>{% endfor %}</tbody></table></div>
+  <p class="analytics-filter-note">Исторические показатели отнесены к текущему ответственному. Переназначение изменит эту разбивку.</p>
+</section>{% endif %}
+{% endblock %}

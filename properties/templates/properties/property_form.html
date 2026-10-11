@@ -27,16 +27,16 @@
       {% if show_landing_hint %}<div class="contextual-hint mb-3"><span class="contextual-hint-mark">i</span><span>Проверьте оформление в предпросмотре, затем сохраните объект.</span></div>{% endif %}
       <section class="upload-control upload-control--logo" aria-labelledby="landing-logo-title"><button type="button" class="upload-control__preview" @click="$refs.logoInput.click()" aria-label="Загрузить или заменить логотип"><template x-if="logoPreview"><img :src="logoPreview" alt="Логотип лендинга"></template><span x-show="!logoPreview" class="upload-control__placeholder"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-image"></use></svg></span><span class="upload-control__overlay" aria-hidden="true">Изменить</span></button><div class="upload-control__content"><h2 id="landing-logo-title">Логотип в шапке</h2><span class="upload-control__hint">{{ form.landing_logo.help_text }} Лучше горизонтальный вариант на прозрачном фоне.</span><span class="upload-control__filename" x-show="logoFileName" x-text="logoFileName"></span><div class="d-none">{{ form.landing_logo }}</div>{% if form.landing_logo.errors %}<div class="app-field-error text-danger" role="alert">{{ form.landing_logo.errors|striptags }}</div>{% endif %}</div></section>
       {% include "properties/includes/landing_appearance_settings.html" %}
-      <div class="landing-preview-action">
-        <button type="button" class="btn btn-neutral" data-bs-toggle="modal" data-bs-target="#landing-draft-modal"
-                data-landing-draft-preview-trigger>Посмотреть изменения</button>
-        <span>Предпросмотр не сохраняет и не публикует лендинг.</span>
-      </div>
       <details class="form-section"><summary><span class="form-section-number">2</span><span>Блоки лендинга</span></summary><div class="form-section-body"><p class="form-text">Перетаскивайте блоки в нужной последовательности и выключайте ненужные.</p>{{ form.landing_block_order }}{{ form.landing_enabled_blocks }}{% if form.landing_block_order.errors %}<div class="text-danger small">{{ form.landing_block_order.errors|striptags }}</div>{% endif %}<div class="list-group" id="landing-block-order">{% for value, label, is_enabled in form.landing_blocks %}<div class="list-group-item d-flex align-items-center gap-2" draggable="true" data-block="{{ value }}" {% if value == "mortgage" %}x-show="propertyGroup !== 'commercial'" x-cloak{% endif %}><span class="text-muted">↕</span><span class="flex-grow-1">{{ label }}</span><div class="form-check form-switch mb-0"><input class="form-check-input landing-block-toggle" type="checkbox" data-block-toggle="{{ value }}" {% if is_enabled %}checked{% endif %}><label class="visually-hidden">Показывать {{ label }}</label></div></div>{% endfor %}</div></div></details>
     </div>
   </div>
 
-  <button type="submit" class="btn btn-primary btn-lg mt-3">{{ submit_label }}</button>
+  <div class="property-editor__actions">
+    <button type="submit" class="btn btn-primary btn-lg">{{ submit_label }}</button>
+    <button type="button" class="btn btn-neutral btn-lg"
+            data-bs-toggle="modal" data-bs-target="#landing-draft-modal"
+            data-landing-draft-preview-trigger>Посмотреть изменения</button>
+  </div>
   <button type="submit" hidden formmethod="post"
           formaction="{% if form.instance.pk %}{% url 'property_landing_draft_preview' form.instance.pk %}{% else %}{% url 'create_landing_draft_preview' %}{% endif %}"
           formtarget="reaicrm-landing-draft-preview" data-landing-draft-preview-submit></button>

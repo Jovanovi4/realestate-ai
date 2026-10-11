@@ -8,7 +8,7 @@
   const mobile = window.matchMedia('(max-width: 767.98px)');
   const isDealBoard = board.hasAttribute('data-deal-board');
   const stageFor = (column) => isDealBoard ? column?.dataset?.dealStage : column?.dataset?.clientStatus;
-  const columns = () => [...board.querySelectorAll('.client-board__column')];
+  const columns = () => [...board.querySelectorAll('.client-board__column:not([hidden])')];
   const countFor = (column) => Number(column.querySelector('.client-board__count')?.textContent.trim() || 0);
   const stageFromHash = () => {
     const id = window.location.hash.slice(1);
@@ -45,7 +45,7 @@
     render();
     const column = columns().find((item) => stageFor(item) === selectedStage);
     const id = column?.querySelector('.client-board__heading h2')?.id;
-    if (id) window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}#${id}`);
+    if (id) window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#${id}`);
   });
   window.addEventListener('hashchange', () => {
     const requestedStage = stageFromHash();

@@ -3,7 +3,7 @@
 {% block title %}Отношения с клиентами{% endblock %}
 {% block content %}
 <header class="ui-page-header">
-  <div><p class="ui-page-header__eyebrow">CRM</p><h1 class="ui-page-header__title">Отношения с клиентами</h1><p class="ui-page-header__description">Кто только обратился, с кем работаем и с кем остаёмся на связи. Этапы по объектам — в сделках.</p></div>
+  <div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="briefcase" %}CRM</p><h1 class="ui-page-header__title">Отношения с клиентами</h1><p class="ui-page-header__description">Кто только обратился, с кем работаем и с кем остаёмся на связи. Этапы по объектам — в сделках.</p></div>
   <div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Список клиентов</a><a href="{% url 'deal_board' %}" class="btn btn-primary">Воронка сделок</a></div>
 </header>
 

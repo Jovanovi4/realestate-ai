@@ -2,7 +2,7 @@
 {% block title %}Telegram · Интеграции{% endblock %}
 {% block content %}
 <header class="ui-page-header">
-  <div><p class="ui-page-header__eyebrow">Интеграции</p><h1 class="ui-page-header__title">Telegram</h1><p class="ui-page-header__description">Ленты объявлений для покупателей и состояние отправки.</p></div>
+  <div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="plug" %}Интеграции</p><h1 class="ui-page-header__title">Telegram</h1><p class="ui-page-header__description">Ленты объявлений для покупателей и состояние отправки.</p></div>
 </header>
 
 {% if telegram_has_team %}

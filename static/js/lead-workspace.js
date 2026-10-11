@@ -1,0 +1,323 @@
+(() => {
+  if (window.reaicrmLeadPanelInitialized) return;
+  window.reaicrmLeadPanelInitialized = true;
+  let lastOpenedLead = null;
+  let hadPanel = false;
+  let observedWorkspace = null;
+  let restoreScroll = null;
+  let listReturnScroll = null;
+  let savedMessage = null;
+  let pendingNavigation = null;
+  let allowNavigation = false;
+  let allowUnload = false;
+  let refreshingAfterSave = false;
+  let historyIndex = Number.isInteger(history.state?.reaicrmLeadIndex) ? history.state.reaicrmLeadIndex : 0;
+  let restoringCancelledHistory = false;
+  const formSnapshots = new WeakMap();
+  history.replaceState({ ...history.state, reaicrmLeadIndex: historyIndex }, '', window.location.href);
+  const observer = new ResizeObserver(() => syncPanel());
+  const formValues = (form) => new URLSearchParams(new FormData(form)).toString();
+  const rememberForms = (clearUnsaved = false) => {
+    document.querySelectorAll('#lead-panel form').forEach((form) => {
+      formSnapshots.set(form, formValues(form));
+      if (clearUnsaved) delete form.dataset.unsaved;
+    });
+  };
+  const hasUnsavedChanges = () => [...document.querySelectorAll('#lead-panel form')].some(
+    (form) => form.dataset.unsaved === 'true' || formValues(form) !== formSnapshots.get(form),
+  );
+  const hideDiscardWarning = () => {
+    const warning = document.getElementById('lead-panel-discard');
+    if (warning) warning.hidden = true;
+  };
+  const warnBeforeLeaving = (action, hardNavigation, trigger) => {
+    const warning = document.getElementById('lead-panel-discard');
+    if (!warning) return;
+    pendingNavigation = { action, hardNavigation, trigger };
+    warning.hidden = false;
+    warning.querySelector('[data-lead-discard-stay]')?.focus({ preventScroll: true });
+  };
+  const resumeNavigation = () => {
+    if (!pendingNavigation) return;
+    const { action, hardNavigation } = pendingNavigation;
+    pendingNavigation = null;
+    hideDiscardWarning();
+    allowNavigation = true;
+    allowUnload = hardNavigation;
+    action();
+    allowNavigation = false;
+    if (!hardNavigation) allowUnload = false;
+  };
+  const updateSidebarCounters = (workspace) => {
+    const counts = [
+      { element: document.querySelector('[aria-controls="sidebar-crm-links"]'), count: Number(workspace.dataset.newLeadsCount) || 0, label: workspace.dataset.newLeadsLabel, base: 'CRM', ariaHidden: false },
+      { element: document.querySelector('#sidebar-crm-links a[href="' + workspace.dataset.leadsUrl + '"]'), count: Number(workspace.dataset.newLeadsCount) || 0, label: workspace.dataset.newLeadsLabel, base: 'Заявки', ariaHidden: true },
+      { element: document.querySelector('.sidebar-main-nav a[href="' + workspace.dataset.tasksUrl + '"]'), count: Number(workspace.dataset.overdueCount) || 0, label: workspace.dataset.overdueLabel, base: 'Задачи', ariaHidden: false, suffix: 'просроченных дел' },
+    ];
+    counts.forEach(({ element, count, label, base, ariaHidden, suffix = 'заявок требуют ответа' }) => {
+      if (!element) return;
+      let badge = element.querySelector('.sidebar-counter');
+      if (!count) {
+        badge?.remove();
+        if (base === 'Заявки') element.removeAttribute('aria-label');
+        else element.setAttribute('aria-label', base);
+        return;
+      }
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'sidebar-counter';
+        element.insertBefore(badge, element.querySelector('.sidebar-group-chevron'));
+      }
+      badge.textContent = label;
+      badge.title = `${count} ${suffix}`;
+      if (ariaHidden) badge.setAttribute('aria-hidden', 'true');
+      else badge.setAttribute('aria-label', `${count} ${suffix}`);
+      element.setAttribute('aria-label', `${base}, ${count} ${suffix}`);
+    });
+  };
+  const showSavedNotice = (body, workspace, details) => {
+    if (!body || !details) return;
+    body.querySelector('.lead-panel__notice')?.remove();
+    const notice = document.createElement('div');
+    notice.className = `alert alert-${details.level === 'info' ? 'info' : 'success'} lead-panel__notice`;
+    notice.setAttribute('role', 'status');
+    notice.textContent = details.message;
+    if (workspace?.dataset.nextLeadUrl) {
+      const next = document.createElement('a');
+      next.className = 'btn btn-neutral btn-sm';
+      next.href = workspace.dataset.nextLeadUrl;
+      next.setAttribute('hx-get', workspace.dataset.nextLeadUrl);
+      next.setAttribute('hx-target', '#lead-workspace');
+      next.setAttribute('hx-swap', 'outerHTML');
+      next.setAttribute('hx-push-url', 'true');
+      next.dataset.leadPanelOpen = workspace.dataset.nextLeadId;
+      next.textContent = 'Следующая заявка';
+      notice.append(next);
+    }
+    body.prepend(notice);
+    const next = notice.querySelector('[data-lead-panel-open]');
+    if (next) htmx.process(next);
+  };
+  rememberForms();
+  const backgroundElements = (workspace) => [
+    ...document.querySelectorAll('.app-sidebar, .mobile-header'),
+    ...[...(workspace?.parentElement?.children || [])].filter((element) => element !== workspace && element.tagName !== 'SCRIPT'),
+  ];
+
+  const syncPanel = ({ moveFocus = false } = {}) => {
+    const workspace = document.getElementById('lead-workspace');
+    if (workspace !== observedWorkspace) {
+      if (observedWorkspace) observer.unobserve(observedWorkspace);
+      if (workspace) observer.observe(workspace);
+      observedWorkspace = workspace;
+    }
+    if (workspace) {
+      workspace.classList.toggle('lead-workspace--roomy', workspace.getBoundingClientRect().width >= 1120);
+      const table = workspace.querySelector('.lead-workspace__list .table-responsive');
+      if (workspace.classList.contains('lead-workspace--roomy')
+          && ((table && table.scrollWidth > table.clientWidth + 1)
+            || document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) {
+        workspace.classList.remove('lead-workspace--roomy');
+      }
+    }
+    const panel = document.getElementById('lead-panel');
+    const list = document.querySelector('.lead-workspace__list');
+    const selected = document.querySelector('[data-lead-panel-open][aria-current="true"]');
+    const selectedId = selected?.dataset.leadPanelOpen || null;
+
+    if (!panel) {
+      document.body.classList.remove('lead-panel-overlay-open');
+      backgroundElements(workspace).forEach((element) => { element.inert = false; });
+      if (lastOpenedLead && hadPanel) {
+        document.querySelector(`[data-lead-panel-open="${lastOpenedLead}"]`)?.focus({ preventScroll: true });
+      }
+      hadPanel = false;
+      lastOpenedLead = null;
+      return;
+    }
+
+    const isOverlay = getComputedStyle(panel).position === 'fixed';
+    if (list) list.inert = isOverlay;
+    backgroundElements(workspace).forEach((element) => { element.inert = isOverlay; });
+    panel.setAttribute('aria-modal', String(isOverlay));
+    document.body.classList.toggle('lead-panel-overlay-open', isOverlay);
+    hadPanel = true;
+    if (selectedId) lastOpenedLead = selectedId;
+    if (moveFocus) panel.focus({ preventScroll: true });
+  };
+
+  document.addEventListener('DOMContentLoaded', () => {
+    rememberForms();
+    syncPanel();
+  });
+  document.addEventListener('hidden.bs.modal', (event) => {
+    if (event.target.id === 'action-confirmation-modal') allowUnload = false;
+  });
+  document.addEventListener('click', (event) => {
+    const stay = event.target.closest('[data-lead-discard-stay]');
+    if (stay) {
+      event.preventDefault();
+      const trigger = pendingNavigation?.trigger;
+      pendingNavigation = null;
+      hideDiscardWarning();
+      trigger?.focus({ preventScroll: true });
+      return;
+    }
+    if (event.target.closest('[data-lead-discard-leave]')) {
+      event.preventDefault();
+      resumeNavigation();
+      return;
+    }
+    if (event.target.closest('[data-lead-panel-plan]')) {
+      const editor = document.getElementById('lead-panel-process');
+      if (editor) {
+        editor.open = true;
+        editor.querySelector('[name="next_action"]')?.focus({ preventScroll: true });
+      }
+      return;
+    }
+    const row = event.target.closest('[data-lead-open-row]');
+    if (row && !event.target.closest('a, button, input, select, textarea, label, summary, details, [role="button"]')
+        && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && !(event.button > 0)) {
+      const opener = row.querySelector('[data-lead-panel-open]');
+      if (opener) {
+        event.preventDefault();
+        opener.click();
+        return;
+      }
+    }
+    const link = event.target.closest('a[href]');
+    if (!link || allowNavigation || !link.closest('#lead-workspace') || !hasUnsavedChanges()) return;
+    const destination = new URL(link.href, window.location.href);
+    if (!['http:', 'https:'].includes(destination.protocol)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const isSoft = link.hasAttribute('hx-get') && link.getAttribute('hx-target') === '#lead-workspace';
+    warnBeforeLeaving(() => isSoft ? link.click() : window.location.assign(destination.href), !isSoft, link);
+  }, true);
+  document.addEventListener('submit', (event) => {
+    const form = event.target;
+    if (form.closest('#lead-panel')) { allowUnload = true; return; }
+    if (allowNavigation || !form.closest('#lead-workspace') || !hasUnsavedChanges()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const submitter = event.submitter;
+    warnBeforeLeaving(() => form.requestSubmit(submitter || undefined), false, submitter || form);
+  }, true);
+  document.body.addEventListener('htmx:beforeRequest', (event) => {
+    if (event.detail.target?.id !== 'lead-workspace') return;
+    const control = event.detail.elt;
+    if (!allowNavigation && !refreshingAfterSave && hasUnsavedChanges()) {
+      event.preventDefault();
+      warnBeforeLeaving(() => control?.tagName === 'FORM' ? control.requestSubmit() : control?.click(), false, control);
+      return;
+    }
+    if (control?.matches('[data-lead-panel-open], [data-lead-panel-close], .lead-workspace__backdrop')) {
+      const currentScroll = { x: window.scrollX, y: window.scrollY };
+      if (control.dataset.leadPanelOpen) {
+        listReturnScroll = currentScroll;
+        lastOpenedLead = control.dataset.leadPanelOpen;
+      }
+      restoreScroll = control.dataset.leadPanelOpen ? currentScroll : (listReturnScroll || currentScroll);
+    }
+  });
+  document.body.addEventListener('htmx:afterSwap', (event) => {
+    if (event.detail.target?.id === 'lead-panel') {
+      allowUnload = false;
+      rememberForms();
+      syncPanel();
+      const panel = document.getElementById('lead-panel');
+      const error = panel?.querySelector('.errorlist, .alert-danger');
+      const field = error?.closest('div')?.querySelector('input:not([type="hidden"]), select, textarea');
+      (field || error)?.setAttribute('tabindex', '-1');
+      (field || error || panel)?.focus({ preventScroll: true });
+    }
+    if (event.detail.target?.id === 'lead-workspace') {
+      refreshingAfterSave = false;
+      rememberForms();
+      syncPanel({ moveFocus: !!document.getElementById('lead-panel') });
+      updateSidebarCounters(document.getElementById('lead-workspace'));
+      if (restoreScroll) {
+        window.scrollTo(restoreScroll.x, restoreScroll.y);
+        restoreScroll = null;
+      }
+      if (!document.getElementById('lead-panel')) listReturnScroll = null;
+      if (savedMessage) {
+        showSavedNotice(document.querySelector('#lead-panel .lead-panel__body'), document.getElementById('lead-workspace'), savedMessage);
+        savedMessage = null;
+      }
+    }
+  });
+  document.body.addEventListener('leadPanelSaved', (event) => {
+    savedMessage = event.detail?.message ? event.detail : null;
+    rememberForms(true);
+    allowUnload = false;
+    refreshingAfterSave = true;
+    showSavedNotice(document.querySelector('#lead-panel .lead-panel__body'), document.getElementById('lead-workspace'), savedMessage);
+    restoreScroll = { x: window.scrollX, y: window.scrollY };
+    htmx.ajax('GET', window.location.pathname + window.location.search, { target: '#lead-workspace', swap: 'outerHTML' });
+  });
+  document.body.addEventListener('htmx:afterRequest', (event) => {
+    if (event.detail.elt?.closest?.('#lead-panel')) allowUnload = false;
+    if (event.detail.target?.id === 'lead-workspace' && !event.detail.successful) refreshingAfterSave = false;
+  });
+  document.body.addEventListener('htmx:historyRestore', () => {
+    rememberForms();
+    syncPanel();
+    if (!document.getElementById('lead-panel') && listReturnScroll) {
+      window.scrollTo(listReturnScroll.x, listReturnScroll.y);
+      listReturnScroll = null;
+    }
+  });
+  document.body.addEventListener('htmx:pushedIntoHistory', () => {
+    historyIndex += 1;
+    history.replaceState({ ...history.state, reaicrmLeadIndex: historyIndex }, '', window.location.href);
+  });
+  window.addEventListener('popstate', (event) => {
+    if (restoringCancelledHistory) {
+      restoringCancelledHistory = false;
+      event.stopImmediatePropagation();
+      return;
+    }
+    const destinationIndex = event.state?.reaicrmLeadIndex;
+    if (!Number.isInteger(destinationIndex)) return;
+    if (destinationIndex !== historyIndex && hasUnsavedChanges()
+        && !window.confirm('Есть несохранённые изменения. Выйти без сохранения?')) {
+      event.stopImmediatePropagation();
+      restoringCancelledHistory = true;
+      history.go(historyIndex - destinationIndex);
+      return;
+    }
+    historyIndex = destinationIndex;
+  }, true);
+  window.addEventListener('resize', () => syncPanel());
+  window.addEventListener('beforeunload', (event) => {
+    if (allowUnload || !hasUnsavedChanges()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+  document.addEventListener('keydown', (event) => {
+    const panel = document.getElementById('lead-panel');
+    if (!panel) return;
+    if (event.key === 'Escape') {
+      const warning = document.getElementById('lead-panel-discard');
+      if (warning && !warning.hidden) {
+        event.preventDefault();
+        const trigger = pendingNavigation?.trigger;
+        pendingNavigation = null;
+        hideDiscardWarning();
+        trigger?.focus({ preventScroll: true });
+        return;
+      }
+      const close = panel.querySelector('[data-lead-panel-close]');
+      if (close) { event.preventDefault(); close.click(); }
+      return;
+    }
+    if (event.key !== 'Tab' || panel.getAttribute('aria-modal') !== 'true') return;
+    const focusable = [...panel.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary')]
+      .filter((element) => element.getClientRects().length);
+    if (!focusable.length) { event.preventDefault(); panel.focus(); return; }
+    if (event.shiftKey && (document.activeElement === focusable[0] || document.activeElement === panel)) { event.preventDefault(); focusable.at(-1).focus(); }
+    else if (!event.shiftKey && (document.activeElement === focusable.at(-1) || document.activeElement === panel)) { event.preventDefault(); focusable[0].focus(); }
+  });
+})();

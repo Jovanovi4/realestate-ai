@@ -58,6 +58,220 @@ class LeadProcessingTests(TestCase):
         self.assertEqual(task.text, self.lead.next_action)
         self.assertEqual(task.due_at, self.lead.next_action_due_at)
 
+    def test_lead_list_opens_compact_panel_with_first_contact_as_main_action(self):
+        response = self.client.get(reverse("lead_list"), {"lead": self.lead.pk})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content.count(b'data-lead-open-row'), 2)
+        self.assertRegex(response.content.decode(), r'<tr class="lead-table__row is-open[^\"]*"[^>]*data-lead-open-row>')
+        self.assertContains(response, 'id="lead-panel"')
+        self.assertContains(response, 'class="lead-workspace lead-workspace--open"')
+        self.assertContains(response, "Записать первый контакт")
+        self.assertNotContains(response, "Записать итог</span>")
+        self.assertContains(response, self.lead.phone)
+        self.assertContains(response, self.property.title)
+        self.assertContains(response, "Ответственный:")
+        self.assertContains(response, "Первый ответ до")
+        self.assertContains(response, "Изменить план")
+        self.assertContains(response, "Перевести в сделку")
+        self.assertContains(response, "Закрыть без сделки")
+        self.assertNotContains(response, "Об обращении")
+        self.assertNotContains(response, "История действий")
+        self.assertContains(response, 'id="lead-panel-discard"')
+        self.assertContains(response, "Есть несохранённые изменения")
+
+    def test_panel_offers_next_visible_lead_and_refreshes_queue_counts(self):
+        other = Lead.objects.create(property=self.property, name="Борис", phone="+79990000222")
+        url = reverse("lead_list")
+        response = self.client.get(url, {"status": "new", "lead": self.lead.pk})
+        self.assertContains(response, 'data-new-leads-count="2"')
+        self.assertContains(response, f'data-lead-panel-open="{other.pk}"')
+        self.assertContains(response, 'aria-label="Открыть следующую заявку"')
+        self.assertEqual(next(tab["count"] for tab in response.context["status_tabs"] if tab["value"] == "new"), 2)
+
+        self.client.post(reverse("lead_process", args=[self.lead.pk]), {
+            **self.processing_data(), "panel_context": "lead_list",
+        }, HTTP_HX_REQUEST="true")
+        refreshed = self.client.get(url, {"status": "new", "lead": self.lead.pk}, HTTP_HX_REQUEST="true")
+        self.assertContains(refreshed, 'data-new-leads-count="1"')
+        self.assertContains(refreshed, f'data-lead-panel-open="{other.pk}"')
+        self.assertContains(refreshed, f'data-next-lead-id="{other.pk}"')
+        self.assertEqual(next(tab["count"] for tab in refreshed.context["status_tabs"] if tab["value"] == "new"), 1)
+        self.assertContains(refreshed, 'id="lead-panel"')
+
+    def test_overdue_lead_stays_visibly_urgent_in_list_and_panel(self):
+        now = timezone.now()
+        Lead.objects.filter(pk=self.lead.pk).update(
+            created_at=now - timedelta(minutes=50),
+            next_action_due_at=now - timedelta(minutes=20),
+        )
+
+        response = self.client.get(reverse("lead_list"), {"lead": self.lead.pk})
+        self.assertContains(response, "is-urgent")
+        self.assertContains(response, "Первый ответ просрочен")
+        self.assertContains(response, 'data-overdue-count="1"')
+
+    def test_lead_panel_switches_main_action_after_first_contact(self):
+        self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data())
+
+        response = self.client.get(reverse("lead_list"), {"lead": self.lead.pk}, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="lead-panel"')
+        self.assertContains(response, "Записать итог</span>")
+        self.assertNotContains(response, "Записать первый контакт")
+        self.assertContains(response, 'name="task_id"')
+
+    def test_lead_panel_does_not_open_another_workspace_lead(self):
+        another_owner = User.objects.create_user("other-lead-owner", password="password")
+        another_property = Property.objects.create(owner=another_owner, title="Чужой объект")
+        another_lead = Lead.objects.create(property=another_property, name="Чужой клиент", phone="+79990000222")
+
+        response = self.client.get(reverse("lead_list"), {"lead": another_lead.pk})
+
+        self.assertEqual(response.status_code, 404)
+        post = self.client.post(reverse("lead_process", args=[another_lead.pk]), {
+            **self.processing_data(), "panel_context": "lead_list",
+        }, HTTP_HX_REQUEST="true")
+        self.assertEqual(post.status_code, 404)
+        another_lead.refresh_from_db()
+        self.assertIsNone(another_lead.first_contacted_at)
+
+    def test_lead_panel_keeps_both_overdue_deadlines_distinct(self):
+        now = timezone.now()
+        Lead.objects.filter(pk=self.lead.pk).update(
+            created_at=now - timedelta(minutes=90),
+            next_action_due_at=now - timedelta(minutes=70),
+        )
+
+        response = self.client.get(reverse("lead_list"), {"lead": self.lead.pk})
+
+        self.assertContains(response, "Задача просрочена")
+        self.assertContains(response, "Первый ответ просрочен")
+
+    def test_panel_deep_link_preserves_filters_and_full_card_link(self):
+        url = reverse("lead_list")
+        response = self.client.get(url, {"q": "Анна", "status": "new", "page": "1", "lead": self.lead.pk})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, f'aria-current="true">{self.lead.name}</a>')
+        self.assertContains(response, f'href="?status=new&amp;q=%D0%90%D0%BD%D0%BD%D0%B0&amp;page=1"')
+        self.assertContains(response, reverse("lead_detail", args=[self.lead.pk]))
+
+    def test_history_restore_request_returns_full_page_for_back_forward(self):
+        response = self.client.get(
+            reverse("lead_list"), {"lead": self.lead.pk},
+            HTTP_HX_REQUEST="true", HTTP_HX_HISTORY_RESTORE_REQUEST="true",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '<html')
+        self.assertContains(response, 'id="lead-panel"')
+
+    def test_panel_contact_post_updates_same_lead_without_redirect(self):
+        url = reverse("lead_process", args=[self.lead.pk])
+        data = {**self.processing_data(), "panel_context": "lead_list", "panel_list_query": "status=new&page=1"}
+        response = self.client.post(url, data, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 204)
+        self.assertIn("leadPanelSaved", response.headers["HX-Trigger"])
+        self.lead.refresh_from_db()
+        self.assertIsNotNone(self.lead.first_contacted_at)
+        self.assertEqual(self.lead.next_action, data["next_action"])
+        refreshed = self.client.get(reverse("lead_list"), {"lead": self.lead.pk}, HTTP_HX_REQUEST="true")
+        self.assertContains(refreshed, "Записать итог</span>")
+        self.assertContains(refreshed, data["next_action"])
+
+    def test_panel_invalid_contact_shows_field_error_and_keeps_list_query(self):
+        response = self.client.post(reverse("lead_process", args=[self.lead.pk]), {
+            **self.processing_data(next_action_due_at="2020-01-01T10:00"),
+            "panel_context": "lead_list", "panel_list_query": "q=%D0%90%D0%BD%D0%BD%D0%B0&page=2",
+        }, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="lead-panel"')
+        self.assertContains(response, "Укажите время в будущем")
+        self.assertContains(response, 'q=%D0%90%D0%BD%D0%BD%D0%B0&amp;page=2')
+        self.assertContains(response, 'data-unsaved="true"')
+        self.assertNotContains(response, 'id="lead-workspace"')
+        self.lead.refresh_from_db()
+        self.assertIsNone(self.lead.first_contacted_at)
+
+    def test_panel_action_result_and_decline_use_existing_workflow(self):
+        self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data())
+        task = ClientReminder.objects.get(lead=self.lead, is_done=False)
+        response = self.client.post(reverse("lead_action_complete", args=[self.lead.pk]), {
+            **self.completion_data(task), "panel_context": "lead_list",
+        }, HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        task.refresh_from_db()
+        self.assertTrue(task.is_done)
+        self.assertEqual(ClientReminder.objects.filter(lead=self.lead, is_done=False).count(), 1)
+
+        response = self.client.post(reverse("lead_outcome", args=[self.lead.pk]), {
+            "action": "decline", "reason": "", "panel_context": "lead_list",
+        }, HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Обязательное поле")
+        self.assertContains(response, 'class="lead-panel__action lead-panel__decline" open')
+
+        response = self.client.post(reverse("lead_outcome", args=[self.lead.pk]), {
+            "action": "decline", "reason": "Клиент отказался", "panel_context": "lead_list",
+        }, HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.outcome, "declined")
+        declined_list = self.client.get(reverse("lead_list"), {"lead": self.lead.pk})
+        self.assertContains(declined_list, 'lead-outcome-badge--declined')
+        self.assertContains(declined_list, 'lead-outcome-text--declined')
+
+    def test_panel_keeps_plan_editor_after_first_contact(self):
+        self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data())
+        panel = self.client.get(reverse("lead_list"), {"lead": self.lead.pk})
+        self.assertContains(panel, "Изменить план")
+        self.assertContains(panel, 'name="action" value="save"')
+
+        response = self.client.post(reverse("lead_process", args=[self.lead.pk]), {
+            **self.processing_data(action="save", next_action="Отправить документы"),
+            "panel_context": "lead_list",
+        }, HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.next_action, "Отправить документы")
+        self.assertEqual(ClientReminder.objects.get(lead=self.lead, is_done=False).text, "Отправить документы")
+
+    def test_panel_can_attach_qualified_lead_to_existing_deal(self):
+        self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data())
+        deal = Deal.objects.create(
+            owner=self.owner, responsible=self.owner, client=self.crm_client, property=self.property,
+        )
+        response = self.client.post(reverse("lead_outcome", args=[self.lead.pk]), {
+            "action": "convert_existing", "deal_id": deal.pk, "panel_context": "lead_list",
+        }, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 204)
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.outcome, "converted")
+        self.assertEqual(self.lead.outcome_deal, deal)
+        self.assertFalse(ClientReminder.objects.filter(lead=self.lead, is_done=False).exists())
+        panel = self.client.get(reverse("lead_list"), {"lead": self.lead.pk}, HTTP_HX_REQUEST="true")
+        self.assertContains(panel, "Итог обработки")
+        self.assertContains(panel, 'lead-outcome-badge--converted')
+        self.assertContains(panel, 'lead-outcome-text--converted')
+        self.assertNotContains(panel, "Записать итог</span>")
+
+    def test_panel_archive_updates_lead_and_normal_post_still_redirects(self):
+        response = self.client.post(reverse("lead_delete", args=[self.lead.pk]), {
+            "panel_context": "lead_list",
+        }, HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        self.lead.refresh_from_db()
+        self.assertEqual(self.lead.status, "archived")
+        self.assertRedirects(
+            self.client.post(reverse("lead_delete", args=[self.lead.pk])),
+            f"{reverse('lead_list')}?status=archived",
+        )
+
     def test_editing_lead_updates_same_open_task(self):
         original_task = ClientReminder.objects.get(lead=self.lead, is_done=False)
         response = self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data(action="save"))
@@ -448,12 +662,10 @@ class LeadProcessingTests(TestCase):
         self.assertContains(response, "Ответить клиенту до")
         self.assertContains(response, 'class="lead-editor" name="lead-action-editor" id="lead-edit"')
         self.assertContains(response, 'class="lead-action-complete" name="lead-action-editor" id="lead-action"')
-        self.assertContains(response, 'aria-label="Записать первый контакт" data-tooltip="Записать первый контакт"')
-        self.assertContains(response, 'aria-label="Записать итог действия" data-tooltip="Записать итог действия"')
-        self.assertContains(response, 'class="btn btn-icon btn-sm btn-neutral" aria-label="Записать итог действия"')
+        self.assertContains(response, '<span>Записать контакт</span>')
+        self.assertContains(response, '<span>Записать итог</span>')
         self.assertContains(response, f'href="tel:{self.lead.phone}" aria-label="Позвонить {self.lead.phone}"')
         self.assertContains(response, '<use href="#ui-icon-phone"></use>')
-        self.assertContains(response, '<span class="lead-next__mobile-label">Записать контакт</span>')
         self.assertContains(response, '<use href="#ui-icon-edit"></use>')
         self.assertContains(response, 'class="lead-contact__call-label">Позвонить</span>')
         self.assertContains(response, '<use href="#ui-icon-check"></use>')
@@ -466,15 +678,20 @@ class LeadProcessingTests(TestCase):
         self.assertContains(response, 'aria-label="Пояснение: Следующее действие"')
         self.assertContains(response, 'id="id_lead_next_action"')
         self.assertContains(response, 'id="id_complete_next_action"')
+        html = response.content.decode()
+        self.assertLess(html.index('id="lead-overview" role="tabpanel"'), html.index('id="lead-about" role="tabpanel"'))
+        self.assertLess(html.index('id="lead-about" role="tabpanel"'), html.index('id="lead-history" role="tabpanel"'))
+        self.assertLess(html.index('name="action" value="decline"'), html.index('id="lead-about" role="tabpanel"'))
+        self.assertEqual(html.count('name="action" value="decline"'), 1)
 
     def test_contacted_lead_distinguishes_plan_edit_from_action_outcome(self):
         self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data())
         response = self.client.get(reverse("lead_detail", args=[self.lead.pk]))
 
-        self.assertContains(response, 'aria-label="Изменить план" data-tooltip="Изменить план"')
+        self.assertContains(response, '<span>Изменить план</span>')
         self.assertContains(response, '<label class="form-label" for="id_lead_next_action">Текущее действие</label>')
         self.assertContains(response, 'value="save" class="btn btn-primary">Сохранить план</button>')
-        self.assertContains(response, 'aria-label="Записать итог действия" data-tooltip="Записать итог действия"')
+        self.assertContains(response, '<span>Записать итог</span>')
         self.assertContains(response, '<label class="form-label" for="id_complete_next_action">Следующее действие</label>')
         self.assertNotContains(response, "Изменить первый контакт и следующий шаг")
 

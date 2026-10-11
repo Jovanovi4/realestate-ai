@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
@@ -8,7 +9,7 @@ from django.test import TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
-from properties.models import AIContent, Agency, AgencyMembership, Client, ClientReminder, Property, PropertyImage, RealtorProfile
+from properties.models import AIContent, Agency, AgencyMembership, Client, ClientReminder, Lead, Property, PropertyImage, RealtorProfile
 
 from .models import ResourceReservation, Subscription, UsageOperation
 from .services import AccountService, SubscriptionService
@@ -137,6 +138,27 @@ class EnforcedBillingTests(TestCase):
         self.assertEqual((client.status_code, task.status_code), (403, 403))
         self.assertFalse(Client.objects.filter(name="Новый").exists())
         self.assertFalse(ClientReminder.objects.filter(text="Позвонить").exists())
+
+    def test_suspended_account_cannot_record_first_contact_from_panel(self):
+        prop = Property.objects.create(owner=self.user, title="Объект заявки")
+        lead = Lead.objects.create(property=prop, name="Клиент", phone="+79990000111")
+        Subscription.objects.create(
+            account=self.account, anchor_at=timezone.now(),
+            is_suspended=True, suspension_reason="Тест",
+        )
+        response = self.client.post(reverse("lead_process", args=[lead.pk]), {
+            "source": "landing", "qualification": "qualified", "contact_method": "call",
+            "next_action": "Позвонить повторно",
+            "next_action_due_at": timezone.localtime(timezone.now() + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M"),
+            "action": "contacted", "panel_context": "lead_list",
+        }, HTTP_HX_REQUEST="true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Данные доступны для просмотра")
+        self.assertContains(response, 'data-unsaved="true"')
+        lead.refresh_from_db()
+        self.assertIsNone(lead.first_contacted_at)
+        self.assertEqual(lead.next_action, "Связаться с клиентом")
 
     def test_team_member_cannot_edit_demo_team_but_can_use_personal_space(self):
         agency = Agency.objects.create(owner=self.user, name="Команда")

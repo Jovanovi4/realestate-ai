@@ -1,5 +1,14 @@
-<div id="lead-workspace" x-data="{ selected: [] }">
-  {% include "properties/includes/lead_filters.html" %}
-  {% include "properties/includes/lead_bulk_status.html" %}
-  {% include "properties/includes/lead_list_results.html" %}
+<div id="lead-workspace" class="lead-workspace{% if selected_lead %} lead-workspace--open{% endif %}" x-data="{ selected: [] }" data-leads-url="{% url 'lead_list' %}" data-tasks-url="{% url 'workday' %}" data-new-leads-count="{{ nav_new_leads_count }}" data-new-leads-label="{{ nav_new_leads_label }}" data-overdue-count="{{ nav_overdue_count }}" data-overdue-label="{{ nav_overdue_label }}"{% if next_lead_id %} data-next-lead-id="{{ next_lead_id }}" data-next-lead-url="?{{ lead_panel_query }}&amp;lead={{ next_lead_id }}"{% endif %}>
+  <div class="lead-workspace__layout">
+    <div class="lead-workspace__list">
+      {% if analytics_label %}<div class="analytics-drilldown"><span>Аналитика · {{ analytics_label }}{% if analytics_source_label %} · {{ analytics_source_label }}{% endif %}</span><a href="{% url 'lead_list' %}">Сбросить фильтр</a></div>{% endif %}
+      {% include "properties/includes/lead_filters.html" %}
+      {% include "properties/includes/lead_bulk_status.html" %}
+      {% include "properties/includes/lead_list_results.html" %}
+    </div>
+    {% if selected_lead %}
+      <a class="lead-workspace__backdrop" href="?{{ lead_panel_query }}" hx-get="?{{ lead_panel_query }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true" aria-label="Закрыть заявку" tabindex="-1"></a>
+      {% include "properties/includes/lead_panel.html" %}
+    {% endif %}
+  </div>
 </div>

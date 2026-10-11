@@ -2,10 +2,10 @@ from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
-from django.db.models import F, OuterRef, Subquery
+from django.db.models import F, OuterRef, Q, Subquery
 from django.db.models.functions import Coalesce
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
+from django.http import Http404, JsonResponse
+from django.shortcuts import get_object_or_404, render
 from django.urls import reverse
 from django.utils import timezone
 from django.views import View
@@ -14,7 +14,7 @@ from billing.enforcement import TariffDenied, require_resource_action
 from billing.rules import Operation
 
 from .forms import DealForm
-from .agency_access import workspace_queryset
+from .agency_access import agency_for, may_manage_agency, workspace_queryset
 from .board_pagination import paged_board_columns
 from .models import ClientInteraction, ClientReminder, Deal, Lead, Showing
 from .services.lead_outcome_service import convert_lead_to_deal
@@ -24,9 +24,104 @@ from .services.client_relationship_service import activate_client_relationship
 class DealBoardView(LoginRequiredMixin, TemplateView):
     template_name = "properties/deal_board.html"
 
+    def board_filters(self):
+        if hasattr(self, "_board_filters"):
+            return self._board_filters
+        params = {}
+        stage = self.request.GET.get("stage", "")
+        if stage in dict(Deal.STAGE_CHOICES):
+            params["stage"] = stage
+        scope = self.request.GET.get("scope", "")
+        agency = agency_for(self.request.user)
+        if scope == "personal":
+            params["scope"] = "personal"
+        elif scope == "team" and agency:
+            params["scope"] = "team"
+        if self.request.GET.get("assigned") == "mine":
+            params["assigned"] = "mine"
+        responsible = self.request.GET.get("responsible", "")
+        if agency and responsible.isdecimal() and may_manage_agency(self.request.user):
+            if agency.memberships.filter(user_id=int(responsible)).exists():
+                params["responsible"] = responsible
+        self._board_filters = params
+        return params
+
+    def filtered_deals(self):
+        queryset = workspace_queryset(Deal.objects, self.request.user)
+        params = self.board_filters()
+        agency = agency_for(self.request.user)
+        if params.get("scope") == "personal":
+            queryset = queryset.filter(agency__isnull=True, owner=self.request.user)
+        elif params.get("scope") == "team":
+            queryset = queryset.filter(agency=agency)
+        if params.get("assigned") == "mine":
+            queryset = queryset.filter(responsible=self.request.user)
+        if params.get("responsible"):
+            queryset = queryset.filter(responsible_id=int(params["responsible"]))
+        if params.get("stage"):
+            queryset = queryset.filter(stage=params["stage"])
+        if params:
+            queryset = queryset.filter(is_demo=False, property__is_demo=False, client__is_demo=False).filter(
+                Q(lead__isnull=True) | Q(lead__is_demo=False),
+            )
+        return queryset
+
+    def panel_context(self):
+        query = self.request.GET.copy()
+        query.pop("deal", None)
+        context = {"deal_panel_query": query.urlencode()}
+        raw_id = self.request.GET.get("deal", "")
+        if not raw_id:
+            return context
+        if not raw_id.isdigit():
+            raise Http404("Сделка не найдена")
+        deal = get_object_or_404(
+            workspace_queryset(
+                Deal.objects.select_related("client", "property", "lead", "responsible__realtor_profile"),
+                self.request.user,
+            ), pk=int(raw_id),
+        )
+        now = timezone.now()
+        next_task = deal.tasks.filter(is_done=False, cancelled_at__isnull=True).select_related(
+            "owner__realtor_profile",
+        ).order_by(F("due_at").asc(nulls_last=True), "pk").first()
+        next_showing = deal.showings.filter(status="planned", starts_at__gte=now).order_by("starts_at", "pk").first()
+        context.update({
+            "selected_deal": deal,
+            "deal_panel_task": next_task,
+            "deal_panel_showing": next_showing,
+            "deal_panel_showing_first": bool(
+                next_showing and (not next_task or not next_task.due_at or next_showing.starts_at < next_task.due_at)
+            ),
+            "deal_panel_now": now,
+        })
+        newer_or_equal = Q(updated_at__lt=deal.updated_at) | Q(updated_at=deal.updated_at, pk__lt=deal.pk)
+        visible_deals = self.filtered_deals().filter(stage=deal.stage)
+        next_id = visible_deals.filter(newer_or_equal).order_by("-updated_at", "-pk").values_list("pk", flat=True).first()
+        if next_id is None:
+            next_id = visible_deals.exclude(pk=deal.pk).order_by("-updated_at", "-pk").values_list("pk", flat=True).first()
+        context["next_deal_id"] = next_id
+        return context
+
+    def get(self, request, *args, **kwargs):
+        if request.headers.get("X-Deal-Panel") == "1":
+            return render(request, "properties/includes/deal_panel_slot.html", self.panel_context())
+        return super().get(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        deals = workspace_queryset(Deal.objects, self.request.user)
+        context.update(self.panel_context())
+        deals = self.filtered_deals()
+        board_filters = self.board_filters()
+        context["analytics_board_filtered"] = bool(board_filters)
+        context["analytics_scope_label"] = (
+            "Команда" if board_filters.get("scope") == "team" else
+            "Личное пространство" if board_filters.get("scope") == "personal" else
+            "Мои сделки" if board_filters.get("assigned") == "mine" else
+            "Выбранные сделки"
+        )
+        context["analytics_stage_filter"] = board_filters.get("stage")
+        context["analytics_stage_label"] = dict(Deal.STAGE_CHOICES).get(context["analytics_stage_filter"], "")
         now = timezone.now()
         planned = Showing.objects.filter(deal_id=OuterRef("pk"), status="planned")
         open_tasks = ClientReminder.objects.filter(deal_id=OuterRef("pk"), is_done=False).order_by(
@@ -51,7 +146,11 @@ class DealBoardView(LoginRequiredMixin, TemplateView):
         )
         context["columns"] = columns
         context["active_stages"] = Deal.ACTIVE_STAGES
-        context["active_count"] = sum(column["count"] for column in columns if column["key"] in Deal.ACTIVE_STAGES)
+        context["active_count"] = (
+            sum(column["count"] for column in columns)
+            if context["analytics_stage_filter"] else
+            sum(column["count"] for column in columns if column["key"] in Deal.ACTIVE_STAGES)
+        )
         return context
 
 

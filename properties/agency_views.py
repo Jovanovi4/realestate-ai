@@ -227,21 +227,36 @@ class AgencyMemberRemoveView(LoginRequiredMixin, View):
 
 class LeadAssignView(LoginRequiredMixin, View):
     def post(self, request, pk):
+        from .views import is_lead_panel_request, lead_panel_feedback
         membership = membership_for(request.user)
         if not membership or membership.role not in {"owner", "manager"}:
             raise Http404
-        lead = get_object_or_404(workspace_queryset(Lead.objects, request.user, prefix="property__"), pk=pk, property__agency=membership.agency)
+        lead = get_object_or_404(
+            workspace_queryset(Lead.objects, request.user, prefix="property__")
+            .select_related("property", "client", "assigned_to__realtor_profile"),
+            pk=pk, property__agency=membership.agency,
+        )
         assignee_id = request.POST.get("assigned_to", "")
         if not assignee_id.isdigit():
+            if is_lead_panel_request(request):
+                return lead_panel_feedback(request, lead, "Выберите сотрудника команды.", level="error")
             raise Http404
-        assignee = get_object_or_404(AgencyMembership, agency=membership.agency, user_id=assignee_id)
+        assignee = AgencyMembership.objects.filter(agency=membership.agency, user_id=assignee_id).first()
+        if not assignee:
+            if is_lead_panel_request(request):
+                return lead_panel_feedback(request, lead, "Выберите сотрудника команды.", level="error")
+            raise Http404
         try:
             account = AccountService.ensure_agency(membership.agency)
             require_allowed(PolicyService.evaluate(account, request.user, Operation.EDIT_CRM, resource=lead.property))
         except TariffDenied as error:
+            if is_lead_panel_request(request):
+                return lead_panel_feedback(request, lead, error.message, level="error")
             messages.error(request, error.message)
-            return redirect("lead_detail", pk=lead.pk)
+            return redirect(f"{reverse('lead_detail', args=[lead.pk])}#lead-about")
         lead.assigned_to = assignee.user
         lead.save(update_fields=["assigned_to", "updated_at"])
+        if is_lead_panel_request(request):
+            return lead_panel_feedback(request, lead, "Ответственный за заявку назначен.")
         messages.success(request, "Ответственный за заявку назначен.")
-        return redirect("lead_detail", pk=lead.pk)
+        return redirect(f"{reverse('lead_detail', args=[lead.pk])}#lead-about")

@@ -2,7 +2,7 @@
 {% block title %}Импорт клиентов{% endblock %}
 {% block content %}
 <div class="app-form-page app-form-page--narrow">
-  <header class="ui-page-header"><div><p class="ui-page-header__eyebrow">CRM · клиенты</p><h1 class="ui-page-header__title">Импорт клиентов</h1><p class="ui-page-header__description">Добавьте контакты из CSV. Существующие карточки останутся без изменений.</p></div><div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Все клиенты</a></div></header>
+  <header class="ui-page-header"><div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="briefcase" %}CRM · клиенты</p><h1 class="ui-page-header__title">Импорт клиентов</h1><p class="ui-page-header__description">Добавьте контакты из CSV. Существующие карточки останутся без изменений.</p></div><div class="ui-page-header__actions"><a href="{% url 'client_list' %}" class="btn btn-neutral">Все клиенты</a></div></header>
   <form method="post" enctype="multipart/form-data" class="app-form app-form-panel" novalidate>
     {% csrf_token %}
     {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}

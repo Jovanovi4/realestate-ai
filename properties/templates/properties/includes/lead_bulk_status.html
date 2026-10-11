@@ -1,4 +1,4 @@
-<form id="lead-bulk-form" method="post" action="{% url 'lead_bulk_status_update' %}" class="lead-bulk-toolbar" x-cloak x-show="selected.length" x-transition>
+<form id="lead-bulk-form" method="post" action="{% url 'lead_bulk_status_update' %}" class="lead-bulk-toolbar">
   {% csrf_token %}
   <input type="hidden" name="next" value="{{ request.get_full_path }}">
   <span class="lead-bulk-toolbar__count" x-text="`Выбрано: ${selected.length}`" aria-live="polite"></span>

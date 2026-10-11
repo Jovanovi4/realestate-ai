@@ -61,24 +61,26 @@
       empty.textContent = remaining ? 'На этой странице сделок нет' : 'Пока нет сделок';
       sourceItems.append(empty);
     }
-    const activeDifference = Number(destination.dataset.activeStage === 'true')
+    const filteredStage = board.classList.contains('deal-board--analytics-filtered');
+    const activeDifference = filteredStage ? -1 : Number(destination.dataset.activeStage === 'true')
       - Number(source.dataset.activeStage === 'true');
     const totalActive = Math.max(0, Number(activeCount.dataset.count) + activeDifference);
     activeCount.dataset.count = String(totalActive);
-    activeCount.textContent = `Активных сделок: ${totalActive}`;
+    activeCount.textContent = `${filteredStage ? 'Сделок на этапе' : 'Активных сделок'}: ${totalActive}`;
     status.textContent = 'Этап сделки сохранён.';
     document.dispatchEvent(new Event('board-move-saved'));
   };
   const reconcileBoard = async (stage) => {
     const url = new URL(window.location.href);
     url.searchParams.delete(`p_${stage}`);
-    window.history.replaceState(null, '', url.pathname + url.search + url.hash);
-    const response = await fetch(url.toString(), { credentials: 'same-origin' });
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+    const response = await fetch(url.toString(), { credentials: 'same-origin', cache: 'no-store' });
     if (!response.ok) return;
     const page = new DOMParser().parseFromString(await response.text(), 'text/html');
     const freshBoard = page.querySelector('[data-deal-board]');
     if (!freshBoard) return;
     board.innerHTML = freshBoard.innerHTML;
+    document.dispatchEvent(new Event('deal-board-refreshed'));
     const freshActiveCount = page.querySelector('[data-deal-active-count]');
     if (freshActiveCount) {
       activeCount.dataset.count = freshActiveCount.dataset.count;
@@ -130,6 +132,23 @@
       confirm.disabled = false;
     }
   };
+
+  document.addEventListener('deal-panel-stage-saved', (event) => {
+    const { id, stage } = event.detail || {};
+    if (!stage || !columnFor(stage)) return;
+    const card = [...board.querySelectorAll('[data-deal-card]')].find((item) => item.dataset.dealId === String(id));
+    if (card) moveCard(card, stage);
+    if (window.matchMedia('(max-width: 767.98px)').matches) {
+      const picker = document.querySelector('[data-board-stage-picker]');
+      if (picker) {
+        picker.value = stage;
+        picker.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+    reconcileBoard(stage).catch(() => {
+      if (!card) showError('Этап сохранён. Обновите страницу, чтобы увидеть сделку в колонке.');
+    });
+  });
 
   board.addEventListener('dragstart', (event) => {
     if (busy) {

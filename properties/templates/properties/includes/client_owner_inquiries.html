@@ -1,0 +1,7 @@
+<section class="detail-section client-owner-overview" aria-labelledby="client-owner-inquiries-title">
+  <div class="detail-section__heading client-owner-overview__heading">
+    <h2 id="client-owner-inquiries-title">Обращения собственника <span class="ui-count">{{ owner_inquiries_total }}</span></h2>
+    <div class="client-owner-overview__actions"><a href="{% url 'owner_inquiry_create' %}?client={{ client.pk }}" class="btn btn-icon btn-sm btn-neutral" aria-label="Новое обращение" data-tooltip="Новое обращение"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg></a>{% if owner_inquiries_total %}<a href="{% url 'owner_inquiry_list' %}?client={{ client.pk }}&amp;status=all" class="btn btn-text btn-sm">Показать все</a>{% endif %}</div>
+  </div>
+  {% if owner_inquiries %}<div class="detail-linked-list">{% for inquiry in owner_inquiries %}<a class="detail-linked-list__item" href="{% url 'owner_inquiry_detail' inquiry.pk %}"><span><strong>{% if inquiry.deal_type == 'rent' %}Сдать{% else %}Продать{% endif %} · {{ inquiry.address|default:inquiry.description|truncatechars:65 }}</strong></span><span class="detail-linked-list__aside"><span>{{ inquiry.get_result_display }}</span><time datetime="{{ inquiry.created_at|date:'c' }}">{{ inquiry.created_at|date:"d.m.Y" }}</time></span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endfor %}</div>{% else %}<p class="detail-muted mb-0">Обращений пока нет.</p>{% endif %}
+</section>

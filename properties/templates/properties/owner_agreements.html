@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Сроки договорённостей{% endblock %}
 {% block content %}
-<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">CRM · собственники</p><h1 class="ui-page-header__title">Сроки договорённостей</h1><p class="ui-page-header__description">Объекты, по которым нужно проверить продолжение работы.</p></div></header>
+<header class="ui-page-header"><div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="briefcase" %}CRM · собственники</p><h1 class="ui-page-header__title">Сроки договорённостей</h1><p class="ui-page-header__description">Объекты, по которым нужно проверить продолжение работы.</p></div></header>
 {% include "properties/includes/owner_workspace_nav.html" with active="agreements" %}
 <nav class="nav nav-pills workspace-tabs ui-switch detail-tabs billing-workspace-tabs" aria-label="Период договорённостей">
   <a class="nav-link ui-switch__option{% if scope == 'soon' %} active{% endif %}" href="?scope=soon"{% if scope == 'soon' %} aria-current="page"{% endif %}>Истекли и до 30 дней</a>

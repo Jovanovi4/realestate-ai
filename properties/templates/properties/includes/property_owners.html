@@ -1,74 +1,23 @@
 {% load crm_display %}
-<details class="property-crm-summary__item property-owners" id="property-owners">
-  <summary class="property-crm-summary__toggle">
-    <strong class="property-crm-summary__label">{% if owner_links|length == 1 %}Собственник{% else %}Собственники{% endif %}</strong>
-    <span class="property-crm-summary__value">
-      {% if owner_links %}{% if owner_links|length == 1 %}{{ owner_links.0.client.name }}{% else %}{{ owner_links.0.client.name }} и ещё {{ owner_links|length|add:"-1" }}{% endif %}{% if owner_next_agreement and not owner_overdue_links %}<span class="property-crm-summary__date"> · {% if owner_links|length == 1 %}договорённость до{% else %}ближайший срок{% endif %} {{ owner_next_agreement.agreement_expires_on|date:"d.m.Y" }}</span>{% endif %}{% else %}Не добавлены{% endif %}
-      {% for link in owner_overdue_links %}<span class="property-crm-summary__overdue">{{ link.client.name }} · договорённость истекла {{ link.agreement_expires_on|date:"d.m.Y" }}</span>{% endfor %}
-    </span>
-    <svg class="ui-icon property-crm-summary__chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg>
-  </summary>
-  <div class="property-crm-summary__content">
-  {% if owner_links %}
-    <a class="btn btn-text btn-sm property-crm-summary__all" href="{% url 'client_list' %}?role=owner">Все собственники</a>
-    <div class="property-owners__list">
-      {% for link in owner_links %}
-        <article class="property-owners__item">
-          <div class="property-owners__top">
-            <div><span class="detail-kicker">{{ link.get_role_display }}</span><a class="property-owners__name" href="{% url 'client_detail' link.client.pk %}">{{ link.client.name }}</a><a class="detail-muted" href="tel:{{ link.client.phone }}">{{ link.client.phone }}</a></div>
-            <div class="property-owners__actions">
-              <a class="btn btn-icon btn-sm btn-neutral" href="{% url 'owner_report' link.pk %}" aria-label="Отчёт для собственника {{ link.client.name }}" data-tooltip="Отчёт для собственника"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-download"></use></svg></a>
-              <a class="btn btn-icon btn-sm btn-neutral" href="{% url 'task_create' %}?client={{ link.client.pk }}&amp;property={{ property.pk }}&amp;next={% url 'property_detail' property.pk %}%23property-owners" aria-label="Задача по собственнику" data-tooltip="Задача по собственнику"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-calendar"></use></svg></a>
-            </div>
-          </div>
-          <div class="property-owners__meta">
-            {% if link.next_task %}<span>Следующий шаг: {{ link.next_task.text }}{% if link.next_task.due_at %} · {{ link.next_task.due_at|date:"d.m.Y в H:i" }}{% endif %}</span>{% endif %}
-            {% if link.last_contact %}<span>Последний контакт: {{ link.last_contact.get_interaction_type_display|lower }} · {{ link.last_contact.created_at|date:"d.m.Y" }}</span>{% endif %}
-            {% if link.agreement_expires_on %}<span{% if link.agreement_expired %} class="lead-deadline--overdue"{% endif %}>{% if link.agreement_expired %}Договорённость истекла{% else %}Договорённость до{% endif %} {{ link.agreement_expires_on|date:"d.m.Y" }}</span>{% endif %}
-            {% if link.agreed_price %}<span>Согласованная цена: {{ link.agreed_price|money:property.currency }}{% if property.deal_type == 'rent' %} / мес.{% endif %}</span>{% endif %}
-            {% if link.publication_approved_at %}<span>Публикация согласована {{ link.publication_approved_at|date:"d.m.Y" }}</span>{% endif %}
-          </div>
-          <div class="property-owners__controls">
-            <details class="client-context__editor"><summary>Записать контакт</summary>
-              <form method="post" action="{% url 'property_owner_interaction' property.pk link.pk %}" class="app-form">{% csrf_token %}
-                <div class="detail-form-grid"><div class="app-field"><label class="form-label" for="owner-interaction-type-{{ link.pk }}">Тип</label><select class="form-select" id="owner-interaction-type-{{ link.pk }}" name="interaction_type"><option value="call">Звонок</option><option value="message">Сообщение</option><option value="note">Заметка</option></select></div><div class="app-field is-wide"><label class="form-label" for="owner-interaction-text-{{ link.pk }}">Итог</label><textarea class="form-control" id="owner-interaction-text-{{ link.pk }}" name="text" rows="2" required placeholder="О чём договорились?"></textarea></div></div>
-                <button class="btn btn-neutral btn-sm" type="submit">Сохранить</button>
-              </form>
-            </details>
-            <details class="client-context__editor"><summary>Условия работы</summary>
-              <form method="post" action="{% url 'property_owner_update' property.pk link.pk %}" class="app-form" novalidate>{% csrf_token %}
-                <div class="detail-form-grid">
-                  <div class="app-field">{% include "includes/form_field.html" with field=link.details_form.role %}</div>
-                  <div class="app-field">{% include "includes/form_field.html" with field=link.details_form.agreed_price %}</div>
-                  <div class="app-field">{% include "includes/form_field.html" with field=link.details_form.agreement_expires_on %}</div>
-                  <div class="app-field is-wide">{% include "includes/form_field.html" with field=link.details_form.showing_instructions %}</div>
-                  <div class="app-field is-wide"><label class="property-owners__check">{{ link.details_form.publication_approved }}<span>{{ link.details_form.publication_approved.label }}</span></label><p class="form-text mb-0">Отметка для CRM; публикацией управляют настройки объекта.</p></div>
-                </div>
-                <div class="property-owners__form-actions"><button class="btn btn-neutral btn-sm" type="submit">Сохранить условия</button></div>
-              </form>
-              <form method="post" action="{% url 'property_owner_remove' property.pk link.pk %}" class="property-owners__remove">{% csrf_token %}<button class="btn btn-text btn-sm" type="submit" data-confirm="Удалить связь контакта с объектом? История общения и задачи сохранятся." data-confirm-title="Убрать собственника?" data-confirm-button="Убрать">Убрать связь с объектом</button></form>
-            </details>
-          </div>
-        </article>
-      {% endfor %}
-    </div>
-  {% endif %}
-  <details class="client-context__editor property-owners__add"{% if not owner_links %} open{% endif %}><summary>Добавить собственника</summary>
-    <div class="property-owners__add-grid">
-      {% if owner_attach_form.client.field.queryset.exists %}
-      <form method="post" action="{% url 'property_owner_attach' property.pk %}" class="app-form">{% csrf_token %}<h3>Из контактов</h3>
-        <div class="app-field">{% include "includes/form_field.html" with field=owner_attach_form.client %}</div>
-        <div class="app-field">{% include "includes/form_field.html" with field=owner_attach_form.role %}</div>
-        <button class="btn btn-neutral btn-sm" type="submit">Связать с объектом</button>
-      </form>
-      {% endif %}
-      <form method="post" action="{% url 'property_owner_create' property.pk %}" class="app-form">{% csrf_token %}<h3>Новый контакт</h3>
-        <div class="app-field">{% include "includes/form_field.html" with field=owner_contact_form.name %}</div>
-        <div class="app-field">{% include "includes/form_field.html" with field=owner_contact_form.phone %}</div>
-        <div class="app-field"><label class="form-label" for="new-owner-role">Роль по объекту</label><select class="form-select" id="new-owner-role" name="role">{% for value, label in owner_role_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}</select></div>
-        <button class="btn btn-neutral btn-sm" type="submit">Создать и связать</button>
-      </form>
-    </div>
-  </details>
+<section class="detail-section detail-section--spaced" id="property-owners" aria-labelledby="property-owners-title">
+  <div class="detail-section__heading">
+    <h2 id="property-owners-title">{% if owner_links|length == 1 %}Собственник{% else %}Собственники{% endif %}</h2>
+    <a href="{% url 'property_owner_settings' property.pk %}" class="btn btn-icon btn-sm btn-neutral" data-tooltip="Добавить или изменить собственника" aria-label="Добавить или изменить собственника объекта"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></a>
   </div>
-</details>
+  {% if owner_links %}
+    {% for link in owner_links %}
+      <div{% if owner_links|length > 1 %} class="detail-subsection"{% endif %}>
+        {% if owner_links|length > 1 %}<h3>{{ link.get_role_display }}</h3>{% endif %}
+        <dl class="detail-data-grid">
+          <div><dt>Имя</dt><dd><a href="{% url 'client_detail' link.client.pk %}">{{ link.client.name }}</a></dd></div>
+          <div><dt>Телефон</dt><dd>{{ link.client.phone }}</dd></div>
+          {% if owner_links|length == 1 %}<div><dt>Роль по объекту</dt><dd>{{ link.get_role_display }}</dd></div>{% endif %}
+          <div><dt>Согласованная цена</dt><dd>{% if link.agreed_price %}{{ link.agreed_price|money:property.currency }}{% if property.deal_type == 'rent' %} / мес.{% endif %}{% else %}—{% endif %}</dd></div>
+          <div><dt>Договорённость</dt><dd{% if link.agreement_expired %} class="lead-deadline--overdue"{% endif %}>{% if link.agreement_expires_on %}{% if link.agreement_expired %}Истекла {% else %}До {% endif %}{{ link.agreement_expires_on|date:"d.m.Y" }}{% else %}—{% endif %}</dd></div>
+          <div><dt>Публикация согласована</dt><dd>{% if link.publication_approved_at %}{{ link.publication_approved_at|date:"d.m.Y" }}{% else %}Нет{% endif %}</dd></div>
+          {% if link.showing_instructions %}<div><dt>Условия показа</dt><dd>{{ link.showing_instructions }}</dd></div>{% endif %}
+        </dl>
+      </div>
+    {% endfor %}
+  {% else %}<p class="detail-muted">Собственник пока не указан.</p>{% endif %}
+</section>
