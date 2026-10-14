@@ -1,0 +1,8 @@
+{% extends "base.html" %}
+{% block title %}Входящая почта{% endblock %}
+{% block content %}
+<header class="ui-page-header"><div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="briefcase" %}CRM</p><h1 class="ui-page-header__title">Входящая почта</h1><p class="ui-page-header__description">Проверьте сообщение и за одно действие создайте заявку или обращение собственника.</p></div><div class="ui-page-header__actions"><a href="{% url 'lead_list' %}" class="btn btn-neutral">К заявкам</a></div></header>
+<section class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Ожидают разбора</span><h2>Сообщения</h2></div></div>
+  {% if pending %}<div class="detail-linked-list">{% for event in pending %}<a class="detail-linked-list__item" href="{% url 'inbound_email_detail' event.pk %}"><span><strong>{{ event.subject|default:"Без темы" }}</strong><span class="detail-linked-list__description">{{ event.sender }} · {% if event.link.agency_id %}{{ event.link.agency.name }}{% else %}Личное пространство{% endif %}</span></span><span class="detail-linked-list__aside"><time datetime="{{ event.received_at|date:'c' }}">{{ event.received_at|date:"d.m.Y H:i" }}</time></span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endfor %}</div>{% else %}<p class="detail-muted mb-0">Новых писем для разбора нет.</p>{% endif %}
+</section>
+{% endblock %}

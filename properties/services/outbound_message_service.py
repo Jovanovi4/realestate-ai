@@ -55,7 +55,7 @@ def enqueue_lead_notifications(lead, profile, text):
     if settings.EMAIL_NOTIFICATIONS_ENABLED and settings.DEFAULT_FROM_EMAIL and profile.email:
         channels.append((OutboundMessage.Channel.EMAIL, {
             "recipient": profile.email,
-            "subject": f"Новая заявка: {lead.property.title}",
+            "subject": f"Новая заявка: {lead.property.title if lead.property_id else 'Подбор недвижимости'}",
             "text": text,
         }))
     if settings.TELEGRAM_NOTIFICATIONS_ENABLED and settings.TELEGRAM_BOT_TOKEN and profile.telegram_chat_id:
@@ -121,13 +121,20 @@ def _send_public(message):
     method = message.payload["method"]
     data = message.payload["data"]
     if method == "listing":
-        property = Property.objects.filter(pk=data["property_id"]).first()
-        feed = TelegramFeed.objects.filter(pk=data["feed_id"]).first()
-        if not (property and feed and is_visible(property) and feed_matches_property(feed, property)
-                and TelegramSubscriber.objects.filter(feed=feed, chat_id=data["chat_id"], active=True).exists()):
-            raise DeliveryCancelled("Объявление или подписка уже неактуальны")
-        if not send_listing(data["chat_id"], property):
-            raise DeliveryCancelled("Объявление больше недоступно")
+        # Closure cancels queued listings by updating their outbox rows. Keep
+        # this row locked through the provider call so closure cannot complete
+        # while an already claimed listing is still being sent.
+        with transaction.atomic():
+            current = OutboundMessage.objects.select_for_update().get(pk=message.pk)
+            if current.status != OutboundMessage.Status.SENDING or current.claim_token != message.claim_token:
+                raise DeliveryCancelled("Объявление больше недоступно")
+            property = Property.objects.filter(pk=data["property_id"]).first()
+            feed = TelegramFeed.objects.filter(pk=data["feed_id"]).first()
+            if not (property and feed and is_visible(property) and feed_matches_property(feed, property)
+                    and TelegramSubscriber.objects.filter(feed=feed, chat_id=data["chat_id"], active=True).exists()):
+                raise DeliveryCancelled("Объявление или подписка уже неактуальны")
+            if not send_listing(data["chat_id"], property):
+                raise DeliveryCancelled("Объявление больше недоступно")
     elif method in {"sendMessage", "answerCallbackQuery"}:
         _api(method, data)
     else:

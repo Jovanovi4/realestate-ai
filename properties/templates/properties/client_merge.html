@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Объединить контакты{% endblock %}
+{% block content %}
+<div class="app-form-page app-form-page--narrow">
+  <header class="ui-page-header"><div><p class="ui-page-header__eyebrow">CRM · контакты</p><h1 class="ui-page-header__title">Объединить контакты</h1><p class="ui-page-header__description">Проверьте, какую карточку оставить основной. Действие сохраняет заявки, задачи, сделки и историю.</p></div></header>
+  <section class="detail-section">
+    <div class="detail-section__heading"><div><span class="detail-kicker">Останется</span><h2>{{ target.name }}</h2></div></div>
+    <p class="detail-muted">{{ target.phone }}</p>
+    <div class="detail-section__heading"><div><span class="detail-kicker">Присоединится</span><h2>{{ source.name }}</h2></div></div>
+    <p class="detail-muted">{{ source.phone }}</p>
+    <div class="detail-linked-list" aria-label="Связанные записи">
+      {% for label, count in counts.items %}{% if count %}<div class="detail-linked-list__item"><strong>{{ label }}</strong><span>{{ count }}</span></div>{% endif %}{% endfor %}
+    </div>
+    {% if conflicts %}<div class="alert alert-warning mt-3" role="alert">Перед объединением устраните совпадения: {% for conflict in conflicts %}{{ conflict }} {% endfor %}</div>{% endif %}
+    <form method="post" class="app-form-actions mt-3">{% csrf_token %}<a class="btn btn-neutral" href="{% url 'client_detail' target.pk %}">Вернуться</a>{% if not conflicts %}<button class="btn btn-primary" type="submit" name="confirm" value="merge">Объединить контакты</button>{% endif %}</form>
+  </section>
+</div>
+{% endblock %}

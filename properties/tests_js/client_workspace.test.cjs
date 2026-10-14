@@ -6,6 +6,59 @@ const vm = require('node:vm');
 
 const code = fs.readFileSync(path.join(__dirname, '../../static/js/client-workspace.js'), 'utf8');
 
+test('client filters stay open across list refresh and close with Escape', () => {
+  const documentListeners = new Map();
+  const bodyListeners = new Map();
+  const trigger = {
+    attributes: {},
+    classList: { toggle() {} },
+    setAttribute(name, value) { this.attributes[name] = value; },
+    focus() { this.focused = true; },
+  };
+  const search = { focus() { this.focused = true; } };
+  const makeWorkspace = () => {
+    const classes = new Set();
+    return {
+      dataset: { activeFilters: 'true' },
+      classList: {
+        toggle(name, force) { if (force) classes.add(name); else classes.delete(name); },
+        contains(name) { return classes.has(name); },
+      },
+      querySelector(selector) { return selector === '#client-q' ? search : null; },
+    };
+  };
+  let workspace = makeWorkspace();
+  const document = {
+    body: { addEventListener(name, listener) { bodyListeners.set(name, listener); } },
+    addEventListener(name, listener) { documentListeners.set(name, listener); },
+    querySelectorAll() { return []; },
+    querySelector(selector) { return selector === '[data-client-filter-toggle]' ? trigger : null; },
+    getElementById(id) { return id === 'client-workspace' ? workspace : null; },
+  };
+  const history = { state: null, replaceState(state) { this.state = state; } };
+  const window = { location: { href: 'https://example.test/clients/' }, addEventListener() {} };
+  vm.runInNewContext(code, { document, window, history, FormData, URL, URLSearchParams, WeakMap });
+
+  assert.equal(trigger.attributes['aria-expanded'], 'false');
+  documentListeners.get('click')({
+    target: { closest(selector) { return selector === '[data-client-filter-toggle]' ? trigger : null; } },
+    preventDefault() {},
+  });
+  assert.equal(trigger.attributes['aria-expanded'], 'true');
+  assert.equal(search.focused, true);
+  workspace = makeWorkspace();
+  bodyListeners.get('htmx:afterSwap')({ detail: { target: { id: 'client-workspace' } } });
+  assert.equal(workspace.classList.contains('client-workspace--filters-open'), true);
+
+  documentListeners.get('keydown')({
+    key: 'Escape', target: { closest(selector) { return selector === '#client-toolbar' ? {} : null; } },
+    preventDefault() {},
+  });
+  assert.equal(trigger.attributes['aria-expanded'], 'false');
+  assert.equal(workspace.classList.contains('client-workspace--filters-open'), false);
+  assert.equal(trigger.focused, true);
+});
+
 test('client relationship save appears only after selecting another status', () => {
   const listeners = new Map();
   const select = { value: 'new' };
@@ -23,6 +76,7 @@ test('client relationship save appears only after selecting another status', () 
     addEventListener(name, listener) { listeners.set(name, listener); },
     querySelectorAll(selector) { return selector === '#client-panel form' ? [form] : []; },
     querySelector(selector) { return selector === '#client-panel [data-client-panel-status-form]' ? form : null; },
+    getElementById() { return null; },
   };
   const history = { state: null, replaceState(state) { this.state = state; } };
   const window = { location: { href: 'https://example.test/clients/?client=1' }, addEventListener() {} };
@@ -56,6 +110,7 @@ test('clicking a client row opens its panel without hijacking row controls', () 
     body: { addEventListener() {} },
     addEventListener(name, listener) { listeners.set(name, listener); },
     querySelectorAll() { return []; },
+    querySelector() { return null; },
     getElementById() { return null; },
   };
   const history = { state: null, replaceState(state) { this.state = state; } };
@@ -103,6 +158,7 @@ test('unsaved client task prevents panel navigation until discard is chosen', ()
     body: { addEventListener() {} },
     addEventListener(name, listener) { listeners.set(name, listener); },
     querySelectorAll(selector) { return selector === '#client-panel form' ? [form] : []; },
+    querySelector() { return null; },
     getElementById(id) { return id === 'client-panel-discard' ? warning : null; },
   };
   const history = { state: null, replaceState(state) { this.state = state; } };
@@ -186,39 +242,43 @@ test('saving a client action refreshes the list and offers the next client', () 
   assert.equal(processed.length, 1);
 });
 
-test('client list falls back to an overlay if a wide layout would scroll horizontally', () => {
-  const listeners = new Map();
-  const classes = new Set();
-  const table = { scrollWidth: 700, clientWidth: 600 };
-  const list = { scrollWidth: 700, clientWidth: 600, inert: false };
-  const workspace = {
-    parentElement: { children: [] }, getBoundingClientRect() { return { width: 1200 }; },
-    querySelector(selector) {
-      if (selector === '.client-workspace__list') return list;
-      if (selector === '.client-workspace__list .table-responsive') return table;
-      return null;
-    },
-    classList: {
-      toggle(name, active) { if (active) classes.add(name); else classes.delete(name); },
-      contains(name) { return classes.has(name); }, remove(name) { classes.delete(name); },
-    },
-  };
-  const document = {
-    body: { addEventListener() {}, classList: { remove() {} } },
-    documentElement: { scrollWidth: 1200, clientWidth: 1200 },
-    addEventListener(name, listener) { listeners.set(name, listener); },
-    querySelectorAll() { return []; }, querySelector() { return null; },
-    getElementById(id) { return id === 'client-workspace' ? workspace : null; },
-  };
-  const history = { state: null, replaceState(state) { this.state = state; } };
-  const window = { location: { href: 'https://example.test/clients/' }, addEventListener() {} };
-  vm.runInNewContext(code, {
-    document, window, history, FormData, URL, URLSearchParams, WeakMap,
-    ResizeObserver: class { observe() {} unobserve() {} },
-  });
-  listeners.get('DOMContentLoaded')();
-  assert.equal(classes.has('client-workspace--roomy'), false);
-  list.scrollWidth = table.scrollWidth = 600;
-  listeners.get('DOMContentLoaded')();
-  assert.equal(classes.has('client-workspace--roomy'), true);
+test('opening another client focuses the in-page panel without blocking the list', () => {
+  for (const width of [700, 1100]) {
+    const listeners = new Map();
+    let focused = 0;
+    let scrolled = 0;
+    const list = { inert: false };
+    const bodyClasses = new Set();
+    const panel = {
+      focus() { focused += 1; },
+      scrollIntoView() { scrolled += 1; },
+    };
+    const workspace = {
+      getBoundingClientRect() { return { width }; },
+      querySelector(selector) { return selector === '.client-workspace__list' ? list : null; },
+    };
+    const document = {
+      body: {
+        addEventListener(name, listener) { listeners.set(name, listener); },
+        classList: { toggle(name, active) { if (active) bodyClasses.add(name); else bodyClasses.delete(name); } },
+      },
+      addEventListener(name, listener) { listeners.set(name, listener); },
+      querySelectorAll() { return []; },
+      querySelector(selector) { return selector === '.client-workspace__list' ? list : null; },
+      getElementById(id) {
+        if (id === 'client-workspace') return workspace;
+        if (id === 'client-panel') return panel;
+        return null;
+      },
+    };
+    const history = { state: null, replaceState(state) { this.state = state; } };
+    const window = { location: { href: 'https://example.test/clients/?client=2' }, addEventListener() {} };
+    vm.runInNewContext(code, { document, window, history, FormData, URL, URLSearchParams, WeakMap });
+
+    listeners.get('htmx:afterSwap')({ detail: { target: { id: 'client-workspace' } } });
+    assert.equal(focused, 1);
+    assert.equal(scrolled, width < 704 ? 1 : 0);
+    assert.equal(list.inert, false);
+    assert.equal(bodyClasses.has('lead-panel-overlay-open'), false);
+  }
 });

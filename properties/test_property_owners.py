@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 from unittest.mock import patch
 
 from django.contrib.auth.models import User
@@ -244,15 +244,18 @@ class PropertyOwnerWorkflowTests(TestCase):
         self.assertIsNotNone(link.publication_approved_at)
         self.assertEqual(link.showing_instructions, "Предупредить за день")
 
-        due_at = timezone.localtime(timezone.now() + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
-        response = self.client.post(reverse("task_create"), {
-            "text": "Сообщить итог показа", "due_at": due_at,
-            "client": contact.pk, "property": self.property.pk, "deal": "",
-        })
+        fixed_now = timezone.make_aware(datetime.combine(timezone.localdate(), time(12, 0)))
+        due_at = timezone.localtime(fixed_now + timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M")
+        with patch("django.utils.timezone.now", return_value=fixed_now):
+            response = self.client.post(reverse("task_create"), {
+                "text": "Сообщить итог показа", "due_at": due_at,
+                "client": contact.pk, "property": self.property.pk, "deal": "",
+            })
         self.assertEqual(response.status_code, 302)
         task = ClientReminder.objects.get(text="Сообщить итог показа")
         self.assertEqual(task.property, self.property)
-        self.assertContains(self.client.get(reverse("workday")), "Сообщить итог показа")
+        with patch("django.utils.timezone.now", return_value=fixed_now):
+            self.assertContains(self.client.get(reverse("workday")), "Сообщить итог показа")
         self.assertContains(self.client.get(reverse("work_items")), "Квартира у парка · Сергей")
 
         self.client.post(reverse("property_owner_remove", args=[self.property.pk, link.pk]))

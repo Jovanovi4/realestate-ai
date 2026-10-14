@@ -21,6 +21,8 @@ def active_navigation_item(request):
         return "properties"
     if "lead" in name:
         return "leads"
+    if name in {"owner_inquiry_detail", "owner_inquiry_process", "owner_inquiry_assign", "owner_inquiry_create"}:
+        return "leads"
     if name.startswith("owner_inquiry") or name.startswith("owner_agreement") or name.startswith("owner_report"):
         return "clients"
     if "client" in name:
@@ -35,19 +37,24 @@ def realtor_profile(request):
     if not request.user.is_authenticated:
         return {"ai_enabled": settings.AI_ENABLED}
     membership = membership_for(request.user)
-    new_leads = workspace_queryset(Lead.objects, request.user, prefix="property__").exclude(status="archived").filter(outcome="open", first_contacted_at__isnull=True)
+    new_leads = workspace_queryset(Lead.objects, request.user).exclude(status="archived").filter(outcome="open", first_contacted_at__isnull=True)
     if membership and membership.role == "agent":
         new_leads = new_leads.filter(assigned_to=request.user)
-    new_leads_count = new_leads.count()
+    new_owner_inquiries = workspace_queryset(OwnerInquiry.objects, request.user).filter(
+        property__isnull=True, first_contacted_at__isnull=True,
+    ).exclude(result="declined").exclude(status="archived")
+    if membership and membership.role == "agent":
+        new_owner_inquiries = new_owner_inquiries.filter(assigned_to=request.user)
+    new_leads_count = new_leads.count() + new_owner_inquiries.count()
     today_start = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
     overdue_count = ClientReminder.objects.filter(owner=request.user, is_done=False, cancelled_at__isnull=True, lead__isnull=True, due_at__lt=timezone.now()).count()
     overdue_count += Showing.objects.filter(owner=request.user, status="planned", starts_at__lt=today_start).count()
-    overdue_count += workspace_queryset(Lead.objects, request.user, prefix="property__").filter(
+    overdue_count += workspace_queryset(Lead.objects, request.user).filter(
         Lead.overdue_filter(timezone.now()), assigned_to=request.user,
     ).exclude(status="archived").count()
     owner_inquiries = workspace_queryset(OwnerInquiry.objects, request.user).filter(
         assigned_to=request.user, property__isnull=True,
-    ).exclude(result="declined")
+    ).exclude(result="declined").exclude(status="archived")
     overdue_count += owner_inquiries.filter(first_contacted_at__isnull=True, first_response_due_at__lt=timezone.now()).count()
     overdue_count += owner_inquiries.filter(first_contacted_at__isnull=False, next_action_due_at__lt=timezone.now()).count()
     nav_item = active_navigation_item(request)

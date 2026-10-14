@@ -106,7 +106,7 @@ def collect_usage(account, *, now=None):
     occupied, invited = 1, 0
     if account.agency_id:
         occupied = AgencyMembership.objects.filter(agency_id=account.agency_id).count()
-        invited = AgencyInvitation.objects.filter(agency_id=account.agency_id, accepted_by__isnull=True, expires_at__gt=now).count()
+        invited = AgencyInvitation.objects.filter(agency_id=account.agency_id, accepted_by__isnull=True, revoked_at__isnull=True, expires_at__gt=now).count()
     inventory = AccountInventory.objects.filter(account=account, references_complete=True, files_complete=True).first() if account.pk else None
     storage = None
     if inventory:
@@ -185,6 +185,8 @@ class PolicyService:
                 return PolicyDecision(False, "invalid_resource", "Неизвестный ресурс рабочего пространства.")
             if not matches:
                 return PolicyDecision(False, "wrong_workspace", "Ресурс принадлежит другому рабочему пространству.")
+        if account.agency_id and account.agency.closed_at:
+            return PolicyDecision(False, "team_closed", "Команда закрыта. Данные доступны владельцу в архиве.")
         role = cls._role(account, actor)
         if operation == Operation.PUBLIC_LANDING:
             if not isinstance(resource, Property) or not resource.landing_published or resource.status == "archived":
@@ -197,7 +199,7 @@ class PolicyService:
                 if role:
                     return PolicyDecision(True, "already_accepted", "Приглашение уже принято.")
                 return PolicyDecision(False, "forbidden", "Доступ к команде уже отозван.")
-            if resource.accepted_by_id or resource.expires_at <= now or AgencyMembership.objects.filter(user=actor).exists():
+            if resource.accepted_by_id or resource.revoked_at or resource.expires_at <= now or AgencyMembership.objects.filter(user=actor).exists():
                 return PolicyDecision(False, "invalid_invitation", "Приглашение недействительно или вы уже состоите в команде.")
         elif not role:
             return PolicyDecision(False, "forbidden", "Нет доступа к этому рабочему пространству.")

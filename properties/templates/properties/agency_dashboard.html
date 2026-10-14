@@ -3,40 +3,65 @@
 {% block title %}Команда · RealtorAI{% endblock %}
 {% block content %}
 <header class="ui-page-header">
-  <div><p class="ui-page-header__eyebrow">Рабочее пространство</p><h1 class="ui-page-header__title">{% if agency %}{{ agency.name }}{% else %}Команда{% endif %}</h1><p class="ui-page-header__description">{% if agency %}Общая база, сотрудники и история изменений.{% else %}Объедините объекты, клиентов и заявки в общей базе агентства.{% endif %}</p></div>
+  <div><p class="ui-page-header__eyebrow">Команда</p><h1 class="ui-page-header__title">{% if agency %}{{ agency.name }}{% else %}Команда{% endif %}</h1><p class="ui-page-header__description">{% if agency %}Общая работа и доступ сотрудников.{% else %}Объедините объекты, клиентов и заявки в общей базе агентства.{% endif %}</p></div>
+  {% if is_owner %}<div class="ui-page-header__actions"><a href="{% url 'agency_settings' %}" class="btn btn-icon btn-sm btn-neutral" aria-label="Настройки команды" data-tooltip="Настройки команды"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-settings"></use></svg></a></div>{% endif %}
 </header>
 {% if not agency %}
 <section class="detail-section" style="max-width:42rem">
   <h2 class="h5 mb-3">Создать агентство</h2>
-  <p class="detail-muted">Ваши текущие личные объекты, клиенты и сделки перейдут в общую базу. Новые сотрудники увидят эти данные после принятия приглашения.</p>
+  <p class="detail-muted">Ваши личные объекты, контакты, обращения собственников, сделки и задачи перейдут в общую базу. Новые сотрудники увидят их после принятия приглашения.</p>
   <form method="post" action="{% url 'agency_create' %}" class="d-flex flex-wrap gap-2 align-items-end">{% csrf_token %}<div class="flex-grow-1"><label class="form-label" for="id_name">Название</label><input id="id_name" name="name" maxlength="150" required class="form-control" value="{{ create_form.name.value|default:'' }}">{% for error in create_form.name.errors %}<div class="text-danger small">{{ error }}</div>{% endfor %}</div><button type="submit" class="btn btn-primary">Создать агентство</button></form>
   <p class="detail-muted mt-3 mb-0">Если вас пригласили в команду, откройте ссылку приглашения под своим аккаунтом. Ваши личные данные останутся личными.</p>
 </section>
+{% if closed_agencies %}<section class="detail-section mt-4"><div class="detail-section__heading"><div><span class="detail-kicker">Сохранённые данные</span><h2>Архив команд</h2></div></div>{% for closed in closed_agencies %}<div class="agency-row"><div><strong>{{ closed.name }}</strong><span class="detail-muted d-block">Закрыта {{ closed.closed_at|date:"d.m.Y H:i" }}</span></div><a class="btn btn-sm btn-neutral" href="{% url 'agency_archive' closed.pk %}">Открыть архив</a></div>{% endfor %}</section>{% endif %}
 {% else %}
-<div class="workday-grid">
-  <section class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Команда</span><h2>Сотрудники</h2></div></div>
-    <div class="agency-list">
-    {% for member in members %}<div class="agency-row"><div><strong>{{ member.user|staff_name }}</strong><span class="detail-muted d-block">{{ member.get_role_display }}</span></div>{% if is_owner and member.role != 'owner' %}<div class="d-flex gap-2 flex-wrap"><form method="post" action="{% url 'agency_member_role' member.pk %}">{% csrf_token %}<select name="role" class="form-select form-select-sm" aria-label="Роль сотрудника" onchange="this.form.submit()"><option value="agent" {% if member.role == 'agent' %}selected{% endif %}>Риелтор</option><option value="manager" {% if member.role == 'manager' %}selected{% endif %}>Руководитель</option></select></form><form method="post" action="{% url 'agency_member_remove' member.pk %}" data-confirm="Исключить сотрудника? Его назначения перейдут владельцу агентства.">{% csrf_token %}<button class="btn btn-sm btn-danger" type="submit">Исключить</button></form></div>{% endif %}</div>{% endfor %}
-    </div>
-  </section>
-  {% if can_manage %}<section class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Доступ</span><h2>Пригласить сотрудника</h2></div></div>
-    <p class="detail-muted">Создайте одноразовую ссылку. Она действует 7 дней; сотрудник открывает её после входа в свой аккаунт.</p>
-    <form method="post" action="{% url 'agency_invite' %}" class="d-flex gap-2 align-items-end flex-wrap">{% csrf_token %}<input type="hidden" name="request_key" value="{{ resource_request_key }}"><div><label for="id_role" class="form-label">Роль</label><select id="id_role" name="role" class="form-select"><option value="agent">Риелтор</option>{% if is_owner %}<option value="manager">Руководитель</option>{% endif %}</select></div><button class="btn btn-primary" type="submit">Создать ссылку</button></form>
-    {% if invitations %}<h3 class="h6 mt-4">Активные приглашения</h3>{% for invite in invitations %}<div class="agency-row"><div><strong>{{ invite.get_role_display }}</strong><span class="detail-muted d-block">До {{ invite.expires_at|date:"d.m.Y H:i" }}</span></div><div class="d-flex gap-2 align-items-center"><a href="{% url 'agency_join' invite.code %}" class="small text-break">Ссылка приглашения</a>{% if is_owner or invite.created_by_id == request.user.pk %}<form method="post" action="{% url 'agency_invite_revoke' invite.pk %}">{% csrf_token %}<button class="btn btn-sm btn-text" type="submit">Отозвать</button></form>{% endif %}</div></div>{% endfor %}{% endif %}
+{% if work_overview %}<section class="agency-work-overview" aria-labelledby="agency-work-title">
+  <div class="detail-section__heading agency-work-overview__heading"><div><span class="detail-kicker">Команда сейчас</span><h2 id="agency-work-title">Требует внимания</h2></div></div>
+  <div class="agency-work-overview__grid">{% include "properties/includes/agency_work_stats.html" %}</div>
+  <details class="agency-work-overview__mobile">
+    <summary class="agency-work-overview__summary"><span class="agency-work-overview__summary-title" role="heading" aria-level="2">Требует внимания</span><span class="agency-work-overview__counts">{% for item in work_overview %}<span class="agency-work-overview__count{% if item.urgent and item.count %} agency-work-overview__count--urgent{% endif %}" title="{{ item.label }}" aria-label="{{ item.label }}: {{ item.count }}">{{ item.mobile_label }} <strong>{{ item.count }}</strong></span>{% endfor %}</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
+    <div class="agency-work-overview__grid agency-work-overview__details">{% include "properties/includes/agency_work_stats.html" %}</div>
+  </details>
+</section>{% endif %}
+<nav class="ui-switch agency-page-tabs" aria-label="Разделы команды">
+  <a class="ui-switch__option{% if active_tab == 'team' %} is-active{% endif %}" href="{% url 'agency_dashboard' %}"{% if active_tab == 'team' %} aria-current="page"{% endif %}>Команда</a>
+  <a class="ui-switch__option{% if active_tab == 'journal' %} is-active{% endif %}" href="{% url 'agency_dashboard' %}?tab=journal"{% if active_tab == 'journal' %} aria-current="page"{% endif %}>Журнал</a>
+</nav>
+{% if active_tab == 'team' %}
+<div class="workday-grid agency-management-grid">
+  <section class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Команда</span><h2>Сотрудники</h2></div></div><div class="agency-list">
+    {% if can_manage %}{% for row in work_members %}<div class="agency-member-row">
+      <div class="agency-member-row__person"><a href="{{ row.url }}" aria-label="Заявки и задачи сотрудника {{ row.user|staff_name }}"><strong>{{ row.user|staff_name }}</strong></a><span class="detail-muted">{{ row.membership.get_role_display }}</span></div>
+      <div class="agency-member-row__work"><span{% if row.urgent_work %} class="agency-member-row__overdue"{% endif %}>Срочных дел: <strong>{{ row.urgent_work }}</strong></span><span>Ближайший срок: {% if row.next_due_at %}<time datetime="{{ row.next_due_at|date:'c' }}"{% if row.next_due_overdue %} class="agency-member-row__overdue"{% endif %}>{{ row.next_due_at|date:"d.m · H:i" }}</time>{% else %}—{% endif %}</span></div>
+      {% if is_owner and row.membership.role != 'owner' %}<div class="agency-member-row__actions"><details class="agency-inline-editor"><summary class="btn btn-icon btn-sm btn-neutral" aria-label="Изменить роль сотрудника {{ row.user|staff_name }}" data-tooltip="Изменить роль"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></summary><form method="post" action="{% url 'agency_member_role' row.membership.pk %}" class="agency-inline-editor__form">{% csrf_token %}<label class="form-label" for="member-role-{{ row.membership.pk }}">Роль</label><select id="member-role-{{ row.membership.pk }}" name="role" class="form-select form-select-sm"><option value="agent" {% if row.membership.role == 'agent' %}selected{% endif %}>Риелтор</option><option value="manager" {% if row.membership.role == 'manager' %}selected{% endif %}>Руководитель</option></select><button class="btn btn-sm btn-neutral" type="submit">Сохранить роль</button></form></details><a href="{% url 'agency_member_remove' row.membership.pk %}" class="btn btn-icon btn-sm btn-neutral" aria-label="Исключить сотрудника {{ row.user|staff_name }}" data-tooltip="Передать дела и исключить"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-trash"></use></svg></a></div>{% endif %}
+    </div>{% endfor %}{% else %}{% for member in members %}<div class="agency-row"><div><strong>{{ member.user|staff_name }}</strong><span class="detail-muted d-block">{{ member.get_role_display }}</span></div></div>{% endfor %}{% endif %}
+  </div></section>
+  {% if can_manage %}<section class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Доступ</span><h2>Приглашения</h2></div><span class="agency-seat-count">Занято {{ occupied_seats }} · Ожидают {{ pending_seats }}</span></div>
+    <form method="post" action="{% url 'agency_invite' %}" class="agency-invite-form">{% csrf_token %}<input type="hidden" name="request_key" value="{{ resource_request_key }}"><div><label for="id_role" class="form-label">Роль</label><select id="id_role" name="role" class="form-select form-select-sm"><option value="agent">Риелтор</option>{% if is_owner %}<option value="manager">Руководитель</option>{% endif %}</select></div><button class="btn btn-primary btn-sm" type="submit">Создать ссылку</button></form>
+    <div class="agency-invite-list">{% for invite in invitations %}<div class="agency-row agency-invite-row"><div class="agency-invite-row__info"><strong>{{ invite.get_role_display }}</strong><span class="agency-invite-status{% if invite.display_status == 'Ожидает' %} is-pending{% endif %}">{{ invite.display_status }}</span><span class="detail-muted">{% if invite.revoked_at %}Отозвано {{ invite.revoked_at|date:"d.m.Y" }}{% else %}До <time datetime="{{ invite.expires_at|date:'c' }}">{{ invite.expires_at|date:"d.m.Y H:i" }}</time>{% endif %}</span></div><div class="agency-invite-row__actions">{% if invite.copy_url %}<button class="btn btn-icon btn-sm btn-neutral" type="button" data-copy-link="{{ invite.copy_url }}" aria-label="Скопировать ссылку приглашения для роли {{ invite.get_role_display }}" data-tooltip="Скопировать ссылку"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-copy"></use></svg></button>{% endif %}{% if invite.can_revoke %}<form method="post" action="{% url 'agency_invite_revoke' invite.pk %}" data-confirm="Ссылка перестанет работать. Сотрудник не сможет по ней войти." data-confirm-title="Отозвать приглашение?" data-confirm-button="Отозвать">{% csrf_token %}<button class="btn btn-icon btn-sm btn-neutral" type="submit" aria-label="Отозвать приглашение для роли {{ invite.get_role_display }}" data-tooltip="Отозвать приглашение"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></button></form>{% endif %}</div></div>{% empty %}<p class="detail-muted mb-0">Приглашений пока нет.</p>{% endfor %}</div><span class="visually-hidden" id="agency-copy-feedback" role="status" aria-live="polite"></span>
   </section>{% endif %}
 </div>
-<section class="detail-section mt-4" id="agency-history"><div class="detail-section__heading"><div><span class="detail-kicker">Журнал</span><h2>История изменений</h2></div></div>
-  <p class="detail-muted">Фиксируются новые изменения. Личные значения полей и телефоны в журнал не копируются.</p>
-  {% for event in audit_events %}<div class="agency-row"><div><strong>{{ event.get_action_display }}: {{ event.model_name }} #{{ event.object_pk }}</strong>{% if event.changed_fields %}<span class="detail-muted d-block">Поля: {{ event.changed_fields|join:", " }}</span>{% endif %}</div><span class="detail-muted text-end">{% if event.actor %}{{ event.actor.username }}{% else %}Система или посетитель{% endif %}<br>{{ event.created_at|date:"d.m.Y H:i" }}</span></div>{% empty %}<p class="detail-muted mb-0">Пока нет изменений.</p>{% endfor %}
-  {% if audit_events.has_other_pages %}
-  <nav class="mt-3" aria-label="Страницы истории изменений">
-    <ul class="pagination pagination-sm agency-history-pagination" style="--bs-pagination-color:var(--ui-muted-strong);--bs-pagination-hover-color:var(--ui-ink);--bs-pagination-focus-color:var(--ui-ink);--bs-pagination-active-bg:var(--ui-accent);--bs-pagination-active-border-color:var(--ui-accent)">
-      {% if audit_events.has_previous %}<li class="page-item"><a class="page-link" href="?history_page={{ audit_events.previous_page_number }}#agency-history" aria-label="Предыдущая страница">‹</a></li>{% endif %}
-      <li class="page-item active"><span class="page-link" aria-current="page">{{ audit_events.number }} / {{ audit_events.paginator.num_pages }}</span></li>
-      {% if audit_events.has_next %}<li class="page-item"><a class="page-link" href="?history_page={{ audit_events.next_page_number }}#agency-history" aria-label="Следующая страница">›</a></li>{% endif %}
-    </ul>
-  </nav>
-  {% endif %}
+{% else %}
+<section class="detail-section" id="agency-history"><div class="detail-section__heading"><div><span class="detail-kicker">Журнал</span><h2>История изменений</h2></div></div>
+  {% for event in audit_page %}<div class="agency-row agency-history-row"><div class="agency-history-row__content"><span class="agency-history-row__summary">{{ event.summary }}</span>{% if event.display_fields %}<span class="agency-history-row__fields">{{ event.display_fields|join:", " }}</span>{% endif %}</div><span class="agency-history-row__meta">{% if event.actor %}{{ event.actor|staff_name }}{% else %}Система или посетитель{% endif %} · <time datetime="{{ event.created_at|date:'c' }}">{{ event.created_at|date:"d.m.Y H:i" }}</time></span></div>{% empty %}<p class="detail-muted mb-0">Пока нет изменений.</p>{% endfor %}
+  {% if audit_page.has_other_pages %}<nav class="mt-3" aria-label="Страницы журнала команды"><ul class="pagination pagination-sm agency-history-pagination">{% if audit_page.has_previous %}<li class="page-item"><a class="page-link" href="?tab=journal&amp;page={{ audit_page.previous_page_number }}" aria-label="Предыдущая страница">‹</a></li>{% endif %}<li class="page-item active"><span class="page-link" aria-current="page">{{ audit_page.number }} / {{ audit_page.paginator.num_pages }}</span></li>{% if audit_page.has_next %}<li class="page-item"><a class="page-link" href="?tab=journal&amp;page={{ audit_page.next_page_number }}" aria-label="Следующая страница">›</a></li>{% endif %}</ul></nav>{% endif %}
 </section>
+{% endif %}
+<script>
+document.addEventListener('click', async (event) => {
+  const button = event.target.closest('[data-copy-link]');
+  if (!button) return;
+  const feedback = document.getElementById('agency-copy-feedback');
+  try {
+    await navigator.clipboard.writeText(button.dataset.copyLink);
+    if (feedback) feedback.textContent = 'Ссылка приглашения скопирована';
+    button.dataset.tooltip = 'Скопировано';
+    window.setTimeout(() => { button.dataset.tooltip = 'Скопировать ссылку'; }, 2500);
+  } catch (_) {
+    if (feedback) feedback.textContent = 'Не удалось скопировать ссылку';
+    window.prompt('Скопируйте ссылку приглашения', button.dataset.copyLink);
+  }
+});
+</script>
 {% endif %}
 {% endblock %}

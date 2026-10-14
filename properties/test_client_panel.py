@@ -56,6 +56,19 @@ class ClientPanelTests(TestCase):
                                    HTTP_HX_REQUEST="true", HTTP_HX_HISTORY_RESTORE_REQUEST="true")
         self.assertContains(restored, "<h1")
 
+    def test_next_client_fragment_keeps_open_workspace_and_selected_row(self):
+        next_client = Client.objects.create(
+            owner=self.user, name="Борис", phone="+79990000222", source="recommendation",
+        )
+        first = self.client.get(reverse("client_list"), {"client": self.contact.pk}, HTTP_HX_REQUEST="true")
+        self.assertContains(first, f'data-next-client-id="{next_client.pk}"')
+        self.assertContains(first, f'data-client-panel-open="{next_client.pk}"')
+
+        response = self.client.get(reverse("client_list"), {"client": next_client.pk}, HTTP_HX_REQUEST="true")
+        self.assertContains(response, 'class="lead-workspace client-workspace client-workspace--open"')
+        self.assertContains(response, '<h2 id="client-panel-title">Борис</h2>')
+        self.assertContains(response, f'data-client-panel-open="{next_client.pk}" aria-current="true"')
+
     def test_panel_status_uses_existing_relationship_rules_and_refreshes_list(self):
         url = reverse("client_status_update", args=[self.contact.pk])
         invalid = self.panel_post(url, {"status": "unknown"})
@@ -146,6 +159,7 @@ class ClientPanelTests(TestCase):
         )
         before = self.client.get(reverse("client_list"), HTTP_HX_REQUEST="true")
         self.assertContains(before, "Просрочено · 1")
+        self.assertContains(before, '<details class="client-reminders client-reminders--mobile">')
         completed = self.panel_post(reverse("client_reminder_complete", args=[self.contact.pk, reminder.pk]), {})
         self.assertEqual(completed.status_code, 204)
         after = self.client.get(reverse("client_list"), HTTP_HX_REQUEST="true")

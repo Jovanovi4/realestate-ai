@@ -1,10 +1,12 @@
 from datetime import timedelta
+from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Case, CharField, DateTimeField, ExpressionWrapper, F, IntegerField, Q, Value, When
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect
 from django.urls import reverse
 from django.utils import timezone
@@ -15,7 +17,7 @@ from billing.enforcement import TariffDenied, require_new_action, require_resour
 from billing.rules import Operation
 
 from .forms import ShowingForm, TaskForm
-from .agency_access import workspace_queryset
+from .agency_access import membership_for, workspace_queryset
 from .models import ClientInteraction, ClientReminder, Deal, Lead, OwnerInquiry, PropertyOwnerLink, Showing
 
 
@@ -63,17 +65,18 @@ class WorkdayView(LoginRequiredMixin, TemplateView):
         tomorrow = today_start + timedelta(days=1)
         tasks = ClientReminder.objects.filter(owner=self.request.user, is_done=False, cancelled_at__isnull=True, lead__isnull=True).select_related("client", "deal", "deal__property", "property")
         showings = Showing.objects.filter(owner=self.request.user).select_related("deal", "deal__client", "deal__property")
-        leads = workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(assigned_to=self.request.user, outcome="open").exclude(status="archived").select_related("property")
+        leads = workspace_queryset(Lead.objects, self.request.user).filter(assigned_to=self.request.user, outcome="open").exclude(status="archived").select_related("property")
         owner_inquiries = workspace_queryset(OwnerInquiry.objects, self.request.user).filter(
             assigned_to=self.request.user, property__isnull=True,
-        ).exclude(result="declined").select_related("client")
+        ).exclude(result="declined").exclude(status="archived").select_related("client")
         context.update({
             "today": today,
             "overdue_tasks": tasks.filter(due_at__lt=now).order_by("due_at"),
             "today_tasks": tasks.filter(due_at__gte=now, due_at__lt=tomorrow).order_by("due_at"),
             "unscheduled_tasks": tasks.filter(due_at__isnull=True).order_by("-created_at"),
-            "today_showings": showings.filter(starts_at__date=today).order_by("starts_at"),
-            "overdue_showings": showings.filter(status="planned", starts_at__lt=today_start).order_by("starts_at"),
+            "today_showings": showings.filter(status="planned", starts_at__gte=now, starts_at__lt=tomorrow).order_by("starts_at"),
+            "today_other_showings": showings.filter(status__in=("completed", "cancelled"), starts_at__date=today).order_by("starts_at"),
+            "overdue_showings": showings.filter(status="planned", starts_at__lt=now).order_by("starts_at"),
             "overdue_leads": leads.filter(Lead.overdue_filter(now)).order_by("next_action_due_at"),
             "today_leads": leads.exclude(Lead.overdue_filter(now)).filter(
                 Q(next_action_due_at__gte=now, next_action_due_at__lt=tomorrow)
@@ -118,7 +121,7 @@ class WorkItemsView(LoginRequiredMixin, TemplateView):
             sources.append(self.item_rows(tasks, kind="task", due_at=F("due_at"), now=now, tomorrow=tomorrow))
 
         if selected_kind in {"all", "lead"}:
-            leads = workspace_queryset(Lead.objects, self.request.user, prefix="property__").filter(
+            leads = workspace_queryset(Lead.objects, self.request.user).filter(
                 assigned_to=self.request.user, outcome="open",
             ).exclude(status="archived")
             first_response_due = ExpressionWrapper(F("created_at") + timedelta(minutes=30), output_field=DateTimeField())
@@ -131,7 +134,7 @@ class WorkItemsView(LoginRequiredMixin, TemplateView):
         if selected_kind in {"all", "owner"}:
             inquiries = workspace_queryset(OwnerInquiry.objects, self.request.user).filter(
                 assigned_to=self.request.user, property__isnull=True,
-            ).exclude(result="declined")
+            ).exclude(result="declined").exclude(status="archived")
             inquiry_due = Case(
                 When(first_contacted_at__isnull=True, next_action_due_at__gte=F("first_response_due_at"), then=F("first_response_due_at")),
                 default=F("next_action_due_at"), output_field=DateTimeField(),
@@ -155,7 +158,7 @@ class WorkItemsView(LoginRequiredMixin, TemplateView):
         lead_map = {
             lead.pk: lead for lead in workspace_queryset(
                 Lead.objects.filter(pk__in=ids["lead"], assigned_to=self.request.user, outcome="open"),
-                self.request.user, prefix="property__",
+                self.request.user,
             ).select_related("property")
         }
         owner_map = {
@@ -192,7 +195,7 @@ class WorkItemsView(LoginRequiredMixin, TemplateView):
                 needs_first_response = not lead.first_contacted_at and lead.first_response_due_at <= lead.next_action_due_at
                 item = {"kind": kind, "kind_label": "Заявка", "pk": pk,
                         "title": "Ответить клиенту" if needs_first_response else lead.next_action,
-                        "details": f"{lead.name} · {lead.property.title}", "due_at": due_at,
+                        "details": f"{lead.name} · {lead.property.title if lead.property_id else 'Подбор недвижимости'}", "due_at": due_at,
                         "url": reverse("lead_detail", args=[pk])}
             elif kind == "owner":
                 inquiry = owner_map.get(pk)
@@ -276,13 +279,21 @@ class TaskUpdateView(WorkdayFormMixin, UpdateView):
     context_object_name = "task"
 
     def get_queryset(self):
-        return ClientReminder.objects.filter(owner=self.request.user, lead__isnull=True).select_related("client", "deal", "property")
+        membership = membership_for(self.request.user)
+        visible = Q(owner=self.request.user)
+        if membership and membership.role in {"owner", "manager"}:
+            visible |= Q(agency=membership.agency)
+        return ClientReminder.objects.filter(visible, lead__isnull=True).select_related("client", "deal", "property")
 
     def dispatch(self, request, *args, **kwargs):
         feedback_task = self.get_queryset().filter(pk=kwargs["pk"], owner_showing__isnull=False).values_list("owner_showing_id", flat=True).first()
         if feedback_task:
             from .owner_feedback_views import showing_feedback_url
-            return redirect(showing_feedback_url(feedback_task))
+            destination = showing_feedback_url(feedback_task)
+            return_url = self.get_return_url()
+            if return_url != reverse("workday"):
+                destination = f"{reverse('showing_detail', args=[feedback_task])}?{urlencode({'next': return_url})}#owner-feedback"
+            return redirect(destination)
         return super().dispatch(request, *args, **kwargs)
 
     def form_valid(self, form):
@@ -370,10 +381,21 @@ class ShowingUpdateView(WorkdayFormMixin, UpdateView):
     context_object_name = "showing"
 
     def get_queryset(self):
-        return Showing.objects.filter(owner=self.request.user).select_related("deal", "deal__client", "deal__property")
+        membership = membership_for(self.request.user)
+        visible = Q(owner=self.request.user)
+        if membership and membership.role in {"owner", "manager"}:
+            visible |= Q(agency=membership.agency)
+        elif membership:
+            visible |= Q(agency=membership.agency, owner_feedback_tasks__owner=self.request.user)
+        return Showing.objects.filter(visible).distinct().select_related("deal", "deal__client", "deal__property")
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        membership = membership_for(self.request.user)
+        context["can_edit_showing"] = self.object.owner_id == self.request.user.pk or bool(
+            membership and membership.role in {"owner", "manager"} and self.object.agency_id == membership.agency_id
+        )
+        context["can_plan_feedback"] = self.object.owner_id == self.request.user.pk
         if self.object.status == "completed" and Showing.objects.filter(pk=self.object.pk, status="completed").exists():
             context["show_owner_feedback"] = True
             links = list(PropertyOwnerLink.objects.filter(property=self.object.deal.property).select_related("client"))
@@ -382,6 +404,7 @@ class ShowingUpdateView(WorkdayFormMixin, UpdateView):
             }
             for link in links:
                 link.feedback_task = tasks.get(link.client_id)
+                link.feedback_can_complete = bool(link.feedback_task and link.feedback_task.owner_id == self.request.user.pk)
             context["owner_feedback_links"] = links
             context["owner_feedback_pending"] = any(
                 not link.feedback_task or link.feedback_task.cancelled_at or not link.feedback_task.is_done
@@ -391,6 +414,10 @@ class ShowingUpdateView(WorkdayFormMixin, UpdateView):
         return context
 
     def form_valid(self, form):
+        membership = membership_for(self.request.user)
+        if self.object.owner_id != self.request.user.pk and not (
+                membership and membership.role in {"owner", "manager"} and self.object.agency_id == membership.agency_id):
+            raise Http404
         try:
             require_resource_action(self.request.user, self.object, Operation.EDIT_CRM)
         except TariffDenied as error:

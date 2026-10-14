@@ -12,7 +12,7 @@
   <div class="lead-workspace__layout deal-workspace__layout">
     <div class="lead-workspace__list deal-workspace__list">
 {% if analytics_board_filtered %}<div class="analytics-drilldown"><span>Аналитика · {{ analytics_scope_label }}{% if analytics_stage_filter %} · этап «{{ analytics_stage_label }}»{% endif %}</span><a href="{% url 'deal_board' %}">Сбросить фильтр</a></div>{% endif %}
-<p class="detail-muted mb-2" data-deal-active-count data-count="{{ active_count }}">{% if analytics_stage_filter %}Сделок на этапе: {{ active_count }}{% else %}Активных сделок: {{ active_count }}{% endif %}</p>
+{% if has_deals %}<p class="detail-muted mb-2" data-deal-active-count data-count="{{ active_count }}">{% if analytics_stage_filter %}Сделок на этапе: {{ active_count }}{% elif active_count %}Активных сделок: {{ active_count }}{% else %}Активных сделок нет{% endif %}</p>
 <div class="board-desktop-hint board-onboarding-hint" data-board-hint="deals" hidden><span>Перетащите карточку, чтобы изменить этап. Это также можно сделать в самой сделке.</span><button class="btn btn-text btn-sm" type="button" data-board-hint-dismiss>Понятно</button></div>
 <div class="alert alert-danger d-none mb-3" role="alert" data-deal-board-error></div>
 <p class="visually-hidden" role="status" aria-live="polite" data-deal-board-status></p>
@@ -23,8 +23,9 @@
     {% for column in columns %}<option value="{{ column.key }}">{{ column.label }} · {{ column.count }}</option>{% endfor %}
   </select>
 </div>
-<div class="client-board deal-board{% if analytics_stage_filter %} deal-board--analytics-filtered{% endif %}" aria-label="Воронка сделок" data-deal-board data-mobile-board>
+<div class="client-board deal-board{% if analytics_stage_filter %} deal-board--analytics-filtered{% endif %}{% if not active_count %} deal-board--no-active{% endif %}{% if not active_count and closed_count and not analytics_stage_filter %} deal-board--closed-focus{% endif %}" aria-label="Воронка сделок" data-deal-board data-mobile-board>
   {% for column in columns %}
+    {% if column.key == 'won' %}<p class="deal-board__closed-heading">Завершённые сделки</p>{% endif %}
     <section class="client-board__column deal-board__column is-{{ column.key }}" aria-labelledby="deal-board-{{ column.key }}" data-deal-stage="{{ column.key }}" data-active-stage="{% if column.key in active_stages %}true{% else %}false{% endif %}"{% if analytics_stage_filter and analytics_stage_filter != column.key %} hidden{% endif %}>
       <header class="client-board__heading"><h2 id="deal-board-{{ column.key }}">{{ column.label }}</h2><span class="client-board__count" aria-label="Сделок на этапе: {{ column.count }}">{{ column.count }}</span></header>
       <div class="client-board__items">
@@ -44,6 +45,7 @@
     </section>
   {% endfor %}
 </div>
+{% else %}<section class="empty-state deal-board-empty" aria-labelledby="empty-deals-title"><span class="empty-state__icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-briefcase"></use></svg></span><h2 class="empty-state__title" id="empty-deals-title">{% if analytics_board_filtered %}По выбранным условиям сделок нет{% else %}Сделок пока нет{% endif %}</h2><p class="empty-state__text">{% if analytics_board_filtered %}Измените фильтр, чтобы увидеть другие сделки.{% else %}Первую сделку можно добавить кнопкой вверху страницы.{% endif %}</p></section>{% endif %}
     </div>
     {% include "properties/includes/deal_panel_slot.html" %}
   </div>

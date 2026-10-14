@@ -13,14 +13,17 @@
   </div>
 </header>
 
-{% if owner_mode %}
-  {% include "properties/includes/owner_workspace_nav.html" with active="owners" %}
-{% else %}
-<nav class="nav nav-pills workspace-tabs ui-switch detail-tabs billing-workspace-tabs" aria-label="Тип контактов">
-  <a class="nav-link ui-switch__option{% if not owner_mode %} active{% endif %}" href="{% url 'client_list' %}"{% if not owner_mode %} aria-current="page"{% endif %}>Клиенты</a>
-  <a class="nav-link ui-switch__option{% if owner_mode %} active{% endif %}" href="{% url 'client_list' %}?role=owner"{% if owner_mode %} aria-current="page"{% endif %}>Собственники</a>
-</nav>
-{% endif %}
+<div class="client-list-navigation">
+  {% if owner_mode %}
+    {% include "properties/includes/owner_workspace_nav.html" with active="owners" %}
+  {% else %}
+  <nav class="nav nav-pills workspace-tabs ui-switch detail-tabs billing-workspace-tabs" aria-label="Тип контактов">
+    <a class="nav-link ui-switch__option active" href="{% url 'client_list' %}" aria-current="page">Клиенты</a>
+    <a class="nav-link ui-switch__option" href="{% url 'client_list' %}?role=owner">Собственники</a>
+  </nav>
+  {% endif %}
+  <button class="btn btn-icon btn-neutral client-filter-trigger{% if active_filters %} has-active-filters{% endif %}" type="button" data-client-filter-toggle aria-label="Поиск и фильтры" data-tooltip="Поиск и фильтры" aria-controls="client-toolbar" aria-expanded="false"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-filter"></use></svg></button>
+</div>
 
 {% include "properties/includes/client_workspace.html" %}
 <script src="{% static 'js/client-workspace.js' %}"></script>

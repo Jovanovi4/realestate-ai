@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% load crm_display %}
+{% block title %}История команды · RealtorAI{% endblock %}
+{% block content %}
+<header class="ui-page-header"><div><p class="ui-page-header__eyebrow">Команда</p><h1 class="ui-page-header__title">История изменений</h1><p class="ui-page-header__description">{{ agency.name }}</p></div><div class="ui-page-header__actions"><a class="btn btn-neutral" href="{{ back_url }}">{% if archive_id %}К архиву{% else %}К журналу{% endif %}</a></div></header>
+<section class="detail-section"><div class="detail-section__heading"><div><span class="detail-kicker">Журнал</span><h2>Все события</h2></div></div>
+  {% for event in page %}<div class="agency-row agency-history-row"><div class="agency-history-row__content"><span class="agency-history-row__summary">{{ event.summary }}</span>{% if event.display_fields %}<span class="agency-history-row__fields">{{ event.display_fields|join:", " }}</span>{% endif %}</div><span class="agency-history-row__meta">{% if event.actor %}{{ event.actor|staff_name }}{% else %}Система или посетитель{% endif %} · <time datetime="{{ event.created_at|date:'c' }}">{{ event.created_at|date:"d.m.Y H:i" }}</time></span></div>{% empty %}<p class="detail-muted mb-0">Пока нет изменений.</p>{% endfor %}
+  {% if page.has_other_pages %}<nav class="mt-3" aria-label="Страницы истории изменений"><ul class="pagination pagination-sm agency-history-pagination">{% if page.has_previous %}<li class="page-item"><a class="page-link" href="?{% if archive_id %}archive={{ archive_id }}&amp;{% endif %}page={{ page.previous_page_number }}" aria-label="Предыдущая страница">‹</a></li>{% endif %}<li class="page-item active"><span class="page-link" aria-current="page">{{ page.number }} / {{ page.paginator.num_pages }}</span></li>{% if page.has_next %}<li class="page-item"><a class="page-link" href="?{% if archive_id %}archive={{ archive_id }}&amp;{% endif %}page={{ page.next_page_number }}" aria-label="Следующая страница">›</a></li>{% endif %}</ul></nav>{% endif %}
+</section>
+{% endblock %}

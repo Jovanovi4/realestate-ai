@@ -80,6 +80,60 @@ class LeadProcessingTests(TestCase):
         self.assertContains(response, 'id="lead-panel-discard"')
         self.assertContains(response, "Есть несохранённые изменения")
 
+    def test_lead_filters_group_search_and_queues_behind_one_control(self):
+        response = self.client.get(reverse("lead_list"), {"q": "Анна"})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context["lead_filter_count"], 1)
+        html = response.content.decode()
+        self.assertIn('data-bs-target="#lead-filter-panel"', html)
+        self.assertIn('aria-expanded="false" aria-controls="lead-filter-panel"', html)
+        self.assertLess(html.index('id="lead-filter-panel"'), html.index('id="lead-search-query"'))
+        self.assertLess(html.index('id="lead-search-query"'), html.index('aria-label="Рабочие группы заявок"'))
+        self.assertLess(html.index('aria-label="Рабочие группы заявок"'), html.index('id="leads-results"'))
+        self.assertContains(response, self.lead.name)
+
+    def test_lead_list_without_filters_shows_all_work_groups(self):
+        contacted = Lead.objects.create(
+            property=self.property, name="Борис", phone="+79990000444",
+        )
+        Lead.objects.filter(pk=contacted.pk).update(first_contacted_at=timezone.now())
+
+        response = self.client.get(reverse("lead_list"))
+
+        self.assertEqual(response.context["selected_queue"], "")
+        self.assertEqual(response.context["lead_filter_count"], 0)
+        self.assertEqual({lead.pk for lead in response.context["leads"]}, {self.lead.pk, contacted.pk})
+        self.assertIn("queue=all", response.context["lead_panel_query"])
+
+        awaiting = self.client.get(reverse("lead_list"), {"queue": "needs_response"})
+        self.assertEqual(awaiting.context["selected_queue"], "needs_response")
+        self.assertEqual([lead.pk for lead in awaiting.context["leads"]], [self.lead.pk])
+
+    def test_opening_lead_keeps_explicit_all_queue_after_filters_are_cleared(self):
+        answered = Lead.objects.create(
+            property=self.property, name="Ответ получен", phone="+79990000444",
+        )
+        Lead.objects.filter(pk=answered.pk).update(first_contacted_at=timezone.now())
+        url = reverse("lead_list")
+
+        listing = self.client.get(url, {"queue": "all"})
+        self.assertEqual(listing.context["selected_queue"], "")
+        self.assertEqual({lead.pk for lead in listing.context["leads"]}, {self.lead.pk, answered.pk})
+        self.assertIn("queue=all", listing.context["lead_panel_query"])
+        self.assertIn("queue=all", listing.context["pagination_query"])
+        self.assertContains(listing, f"&amp;lead={answered.pk}")
+
+        opened = self.client.get(url, {"queue": "all", "page": 1, "lead": answered.pk})
+        self.assertEqual(opened.context["selected_queue"], "")
+        self.assertEqual({lead.pk for lead in opened.context["leads"]}, {self.lead.pk, answered.pk})
+        self.assertEqual(opened.context["selected_lead"].pk, answered.pk)
+        self.assertContains(opened, 'aria-label="Закрыть заявку"')
+        self.assertIn("queue=all", opened.context["lead_panel_query"])
+
+        searched = self.client.get(url, {"queue": "all", "q": "Ответ"})
+        self.assertIn("queue=all", searched.context["clear_search_url"])
+
     def test_panel_offers_next_visible_lead_and_refreshes_queue_counts(self):
         other = Lead.objects.create(property=self.property, name="Борис", phone="+79990000222")
         url = reverse("lead_list")
@@ -149,6 +203,22 @@ class LeadProcessingTests(TestCase):
         self.assertContains(response, "Задача просрочена")
         self.assertContains(response, "Первый ответ просрочен")
 
+    def test_lead_panel_shows_one_warning_for_deadlines_in_same_minute(self):
+        response_due = timezone.now().replace(second=30, microsecond=0) - timedelta(hours=1)
+        for offset_seconds, primary_warning, duplicate_warning in (
+            (20, "Первый ответ просрочен", "Задача просрочена"),
+            (-20, "Задача просрочена", "Первый ответ просрочен"),
+        ):
+            with self.subTest(offset_seconds=offset_seconds):
+                Lead.objects.filter(pk=self.lead.pk).update(
+                    created_at=response_due - timedelta(minutes=30),
+                    next_action_due_at=response_due + timedelta(seconds=offset_seconds),
+                )
+                response = self.client.get(reverse("lead_list"), {"lead": self.lead.pk})
+                panel = response.content.decode().split('<aside class="lead-panel" id="lead-panel"', 1)[1].split("</aside>", 1)[0]
+                self.assertEqual(panel.count(primary_warning), 1)
+                self.assertNotIn(duplicate_warning, panel)
+
     def test_panel_deep_link_preserves_filters_and_full_card_link(self):
         url = reverse("lead_list")
         response = self.client.get(url, {"q": "Анна", "status": "new", "page": "1", "lead": self.lead.pk})
@@ -185,13 +255,13 @@ class LeadProcessingTests(TestCase):
     def test_panel_invalid_contact_shows_field_error_and_keeps_list_query(self):
         response = self.client.post(reverse("lead_process", args=[self.lead.pk]), {
             **self.processing_data(next_action_due_at="2020-01-01T10:00"),
-            "panel_context": "lead_list", "panel_list_query": "q=%D0%90%D0%BD%D0%BD%D0%B0&page=2",
+            "panel_context": "lead_list", "panel_list_query": "queue=all&q=%D0%90%D0%BD%D0%BD%D0%B0&page=2",
         }, HTTP_HX_REQUEST="true")
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, 'id="lead-panel"')
         self.assertContains(response, "Укажите время в будущем")
-        self.assertContains(response, 'q=%D0%90%D0%BD%D0%BD%D0%B0&amp;page=2')
+        self.assertContains(response, 'queue=all&amp;q=%D0%90%D0%BD%D0%BD%D0%B0&amp;page=2')
         self.assertContains(response, 'data-unsaved="true"')
         self.assertNotContains(response, 'id="lead-workspace"')
         self.lead.refresh_from_db()
@@ -223,7 +293,8 @@ class LeadProcessingTests(TestCase):
         self.assertEqual(self.lead.outcome, "declined")
         declined_list = self.client.get(reverse("lead_list"), {"lead": self.lead.pk})
         self.assertContains(declined_list, 'lead-outcome-badge--declined')
-        self.assertContains(declined_list, 'lead-outcome-text--declined')
+        self.assertContains(declined_list, "Клиент отказался")
+        self.assertNotContains(declined_list, 'lead-outcome-text--declined')
 
     def test_panel_keeps_plan_editor_after_first_contact(self):
         self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data())
@@ -255,9 +326,8 @@ class LeadProcessingTests(TestCase):
         self.assertEqual(self.lead.outcome_deal, deal)
         self.assertFalse(ClientReminder.objects.filter(lead=self.lead, is_done=False).exists())
         panel = self.client.get(reverse("lead_list"), {"lead": self.lead.pk}, HTTP_HX_REQUEST="true")
-        self.assertContains(panel, "Итог обработки")
         self.assertContains(panel, 'lead-outcome-badge--converted')
-        self.assertContains(panel, 'lead-outcome-text--converted')
+        self.assertNotContains(panel, 'lead-outcome-text--converted')
         self.assertNotContains(panel, "Записать итог</span>")
 
     def test_panel_archive_updates_lead_and_normal_post_still_redirects(self):
@@ -437,7 +507,7 @@ class LeadProcessingTests(TestCase):
         )
         Lead.objects.filter(pk=archived.pk).update(status="archived")
 
-        response = self.client.get(reverse("lead_list"))
+        response = self.client.get(reverse("lead_list"), {"queue": "all"})
         self.assertEqual(
             [lead.pk for lead in response.context["leads"]],
             [self.lead.pk, overdue_action.pk, awaiting.pk, planned.pk, archived.pk],
@@ -456,7 +526,7 @@ class LeadProcessingTests(TestCase):
         url = reverse("lead_list")
         response = self.client.get(url, {"q": "Лесная", "status": "new"})
         self.assertEqual([lead.pk for lead in response.context["leads"]], [matched.pk])
-        self.assertEqual(response.context["status_tabs"][0]["url"], f"{url}?q=%D0%9B%D0%B5%D1%81%D0%BD%D0%B0%D1%8F")
+        self.assertEqual(response.context["status_tabs"][0]["url"], f"{url}?queue=all&q=%D0%9B%D0%B5%D1%81%D0%BD%D0%B0%D1%8F")
         self.assertIn("q=", response.context["pagination_query"])
         self.assertContains(response, 'name="q" value="Лесная"')
         self.assertContains(response, "Сбросить поиск")

@@ -119,6 +119,40 @@ class DealPanelTests(TestCase):
         self.assertContains(second, "Просрочено ·")
         self.assertContains(second, reverse("task_detail", args=[task.pk]))
 
+    def test_closed_deal_shows_outcome_before_follow_up_work(self):
+        self.deal.stage = "won"
+        self.deal.outcome_note = "Договор подписан"
+        self.deal.save(update_fields=["stage", "outcome_note"])
+        task = ClientReminder.objects.create(
+            owner=self.user, deal=self.deal, text="Передать документы", due_at=timezone.now() + timedelta(days=1),
+        )
+
+        full = self.client.get(reverse("deal_detail", args=[self.deal.pk]))
+        panel = self.client.get(self.board_url, {"deal": self.deal.pk}, HTTP_X_DEAL_PANEL="1")
+        full_focus = full.content.decode().split('<div class="deal-focus__next">', 1)[1].split("</div>", 1)[0]
+        focus = panel.content.decode().split('<section class="lead-panel__focus" aria-label="Итог сделки">', 1)[1].split("</section>", 1)[0]
+
+        self.assertIn("Итог сделки", full_focus)
+        self.assertIn("Договор подписан", full_focus)
+        self.assertIn("Добавить задачу", full_focus)
+        self.assertNotIn("Ближайшее действие", full_focus)
+        self.assertNotIn("Запланировать действие", full_focus)
+        self.assertIn("Договор подписан", focus)
+        self.assertIn("Открытая задача:", focus)
+        self.assertLess(focus.index("Договор подписан"), focus.index("Передать документы"))
+        self.assertContains(panel, reverse("task_detail", args=[task.pk]))
+        self.assertContains(panel, f'href="{reverse("task_create")}?deal={self.deal.pk}"')
+        self.assertNotContains(panel, "Запланируйте действие")
+        self.assertNotContains(panel, "Назначить показ")
+
+        self.deal.stage = "lost"
+        self.deal.outcome_note = "Клиент выбрал другой объект"
+        self.deal.save(update_fields=["stage", "outcome_note"])
+        refused = self.client.get(self.board_url, {"deal": self.deal.pk}, HTTP_X_DEAL_PANEL="1")
+        self.assertContains(refused, "Клиент выбрал другой объект")
+        self.assertContains(refused, 'aria-label="Итог сделки"')
+        self.assertNotContains(refused, "Запланируйте действие")
+
     def test_private_deal_cannot_be_opened_from_another_account(self):
         stranger = User.objects.create_user("deal-panel-stranger", password="password")
         self.client.force_login(stranger)

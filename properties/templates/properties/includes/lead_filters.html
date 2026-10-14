@@ -1,27 +1,37 @@
+<div class="lead-filter-controls">
+  {% if nav_agency_membership %}<nav class="lead-assignee-filter" aria-label="Чьи заявки показывать"><div class="ui-switch" role="group" aria-label="Ответственный"><a class="ui-switch__option{% if not selected_assigned %} is-active{% endif %}" href="{{ all_assigned_url }}" hx-get="{{ all_assigned_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"{% if not selected_assigned %} aria-current="page"{% endif %}>Все заявки</a><a class="ui-switch__option{% if selected_assigned %} is-active{% endif %}" href="{{ mine_assigned_url }}" hx-get="{{ mine_assigned_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"{% if selected_assigned %} aria-current="page"{% endif %}>Мои заявки</a></div></nav>{% endif %}
+  <button class="btn btn-icon btn-neutral property-filter-trigger" type="button" data-lead-filter-toggle data-bs-toggle="collapse" data-bs-target="#lead-filter-panel" aria-expanded="false" aria-controls="lead-filter-panel" data-tooltip="Поиск и фильтры{% if lead_filter_count %} · Активных условий: {{ lead_filter_count }}{% endif %}" aria-label="Поиск и фильтры{% if lead_filter_count %}, активных условий: {{ lead_filter_count }}{% endif %}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-filter"></use></svg><span class="property-filter-trigger__count"{% if not lead_filter_count %} hidden{% endif %} aria-hidden="true">{{ lead_filter_count }}</span></button>
+</div>
+<section class="collapse lead-filter-panel" id="lead-filter-panel" aria-label="Поиск и фильтры заявок"><div class="lead-filter-panel__content">
 <form class="lead-search" method="get" action="{% url 'lead_list' %}" hx-get="{% url 'lead_list' %}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true" role="search">
   {% for key, value in analytics_params.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
   {% if selected_status %}<input type="hidden" name="status" value="{{ selected_status }}">{% endif %}
+  {% if selected_queue %}<input type="hidden" name="queue" value="{{ selected_queue }}">{% elif not selected_status and not analytics_params %}<input type="hidden" name="queue" value="all">{% endif %}
   {% if selected_assigned %}<input type="hidden" name="assigned" value="mine">{% endif %}
   <label class="visually-hidden" for="lead-search-query">Поиск заявки</label>
-  <input class="form-control" id="lead-search-query" type="search" name="q" value="{{ selected_q }}" placeholder="Имя, телефон, объект или адрес">
+  <input class="form-control" id="lead-search-query" type="search" name="q" value="{{ selected_q }}" placeholder="Имя, телефон, пожелания или объект">
   <button class="btn btn-neutral" type="submit">Найти</button>
   {% if selected_q %}<a class="btn btn-text lead-search__reset" href="{{ clear_search_url }}" hx-get="{{ clear_search_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true" aria-label="Сбросить поиск"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg><span>Сбросить поиск</span></a>{% endif %}
 </form>
 <div class="lead-filter-rail">
-<nav class="lead-status-filter" aria-label="Фильтр заявок по статусу">
-  <span class="lead-status-filter__label">Статус</span>
+<nav class="lead-status-filter" aria-label="Рабочие группы заявок">
   <div class="lead-status-filter__options ui-switch">
-    {% for tab in status_tabs %}
-      <a class="lead-status-filter__option ui-switch__option {% if tab.value == selected_status %}is-active{% endif %}"
+    {% for tab in queue_tabs %}
+      <a class="lead-status-filter__option ui-switch__option {% if tab.value == selected_queue %}is-active{% endif %}"
          href="{{ tab.url }}"
          hx-get="{{ tab.url }}"
          hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"
-         {% if tab.value == selected_status %}aria-current="page"{% endif %}>
+         {% if tab.value == selected_queue %}aria-current="page"{% endif %}>
         {{ tab.label }} <span class="lead-status-filter__count">{{ tab.count }}</span>
       </a>
     {% endfor %}
   </div>
   <span class="htmx-indicator lead-status-filter__loading" role="status">Обновляем…</span>
 </nav>
-{% if nav_agency_membership %}<div class="lead-assignee-filter"><div class="ui-switch" role="group" aria-label="Ответственный"><a class="ui-switch__option{% if not selected_assigned %} is-active{% endif %}" href="{{ all_assigned_url }}" hx-get="{{ all_assigned_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"{% if not selected_assigned %} aria-current="page"{% endif %}>Все заявки</a><a class="ui-switch__option{% if selected_assigned %} is-active{% endif %}" href="{{ mine_assigned_url }}" hx-get="{{ mine_assigned_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"{% if selected_assigned %} aria-current="page"{% endif %}>Мои заявки</a></div></div>{% endif %}
+<nav class="lead-secondary-filter" aria-label="Дополнительные признаки заявок">
+  <a class="lead-secondary-filter__link{% if not selected_queue and not selected_status %} is-active{% endif %}" href="{{ all_leads_url }}" hx-get="{{ all_leads_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"{% if not selected_queue and not selected_status %} aria-current="page"{% endif %}>Все обращения</a>
+  <a class="lead-secondary-filter__link{% if selected_status == 'new' %} is-active{% endif %}" href="{{ unread_leads_url }}" hx-get="{{ unread_leads_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"{% if selected_status == 'new' %} aria-current="page"{% endif %}>Не прочитаны</a>
+  <a class="lead-secondary-filter__link{% if selected_status == 'archived' %} is-active{% endif %}" href="{{ archive_leads_url }}" hx-get="{{ archive_leads_url }}" hx-target="#lead-workspace" hx-swap="outerHTML" hx-push-url="true"{% if selected_status == 'archived' %} aria-current="page"{% endif %}>Архив</a>
+</nav>
 </div>
+</div></section>

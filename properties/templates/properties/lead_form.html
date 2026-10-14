@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Новая заявка на подбор{% endblock %}
+{% block content %}
+<div class="app-form-page app-form-page--narrow">
+  <header class="ui-page-header"><div>{% url 'lead_list' as breadcrumb_href %}{% include "properties/includes/detail_breadcrumb.html" with href=breadcrumb_href parent="Заявки" current="Новая заявка" %}<h1 class="ui-page-header__title">Подбор недвижимости</h1><p class="ui-page-header__description">Запишите запрос клиента. Объект можно выбрать позже.</p></div></header>
+  <form method="post" class="app-form app-form-panel" novalidate>{% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+    <h2 class="h6 mb-3">Контакт</h2>
+    <div class="app-form-grid">
+      <div class="app-field">{% include "includes/form_field.html" with field=form.name %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.phone %}</div>
+    </div>
+    <h2 class="h6 mt-4 mb-3">Запрос</h2>
+    <div class="app-form-grid">
+      <div class="app-field">{% include "includes/form_field.html" with field=form.interest_type %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.source %}</div>
+      <div class="app-field is-wide">{% include "includes/form_field.html" with field=form.source_detail %}</div>
+      <div class="app-field is-wide">{% include "includes/form_field.html" with field=form.message %}</div>
+    </div>
+    <h2 class="h6 mt-4 mb-3">Обработка</h2>
+    <div class="app-form-grid">
+      <div class="app-field">{% include "includes/form_field.html" with field=form.workspace %}</div>
+      <div class="app-field">{% include "includes/form_field.html" with field=form.assigned_to %}</div>
+      <div class="app-field is-wide">{% include "includes/form_field.html" with field=form.next_action %}</div>
+    </div>
+    <p class="form-text mb-0">Первый ответ — в течение 30 минут после сохранения заявки.</p>
+    <div class="app-form-actions"><button class="btn btn-primary" type="submit">Добавить заявку</button></div>
+  </form>
+</div>
+<script>
+  (() => {
+    const scope = document.getElementById('id_workspace');
+    const assignee = document.getElementById('id_assigned_to');
+    if (!scope || !assignee) return;
+    const ownerId = '{{ request.user.pk }}';
+    const update = () => {
+      const personal = scope.value === 'personal';
+      for (const option of assignee.options) option.disabled = personal && option.value !== ownerId;
+      if (personal) assignee.value = ownerId;
+    };
+    scope.addEventListener('change', update);
+    update();
+  })();
+</script>
+{% endblock %}

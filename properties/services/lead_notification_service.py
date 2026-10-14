@@ -19,10 +19,10 @@ class LeadNotificationService:
     def _message(lead, lead_url):
         lines = [
             "Новая заявка с лендинга" if lead.source == "landing" else f"Новая заявка: {lead.get_source_display()}",
-            f"Объект: {lead.property.title}",
+            f"Запрос: {lead.property.title if lead.property_id else 'Подбор недвижимости'}",
             f"Клиент: {lead.name}",
             f"Телефон: {lead.phone}",
-            f"Повод: {lead.get_contact_purpose_display()}",
+            f"Повод: {lead.get_contact_purpose_display() if lead.property_id else 'Подбор недвижимости'}",
         ]
         if lead.message:
             lines.append(f"Сообщение: {lead.message[:800]}")

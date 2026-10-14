@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Разобрать письмо{% endblock %}
+{% block content %}
+<div class="app-form-page app-form-page--narrow">
+  <header class="ui-page-header"><div>{% url 'inbound_email_list' as breadcrumb_href %}{% include "properties/includes/detail_breadcrumb.html" with href=breadcrumb_href parent="Входящая почта" current="Разобрать письмо" %}<h1 class="ui-page-header__title">Разобрать письмо</h1><p class="ui-page-header__description">Проверьте тип обращения и телефон. Исходное письмо останется связано с созданной записью.</p></div></header>
+  <section class="detail-section mb-3"><div class="detail-section__heading"><div><span class="detail-kicker">Получено {{ event.received_at|date:"d.m.Y H:i" }}</span><h2>{{ event.subject|default:"Без темы" }}</h2></div></div><p class="detail-muted">{{ event.sender }}</p><div class="inbound-email-body">{{ event.body|default:"Текст письма отсутствует." }}</div></section>
+  <form method="post" class="app-form app-form-panel" novalidate>{% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+    <div class="app-form-grid"><div class="app-field">{% include "includes/form_field.html" with field=form.kind %}</div><div class="app-field">{% include "includes/form_field.html" with field=form.name %}</div><div class="app-field">{% include "includes/form_field.html" with field=form.phone %}</div><div class="app-field" data-inbound-kind="search">{% include "includes/form_field.html" with field=form.interest_type %}</div><div class="app-field" data-inbound-kind="owner">{% include "includes/form_field.html" with field=form.deal_type %}</div><div class="app-field" data-inbound-kind="owner">{% include "includes/form_field.html" with field=form.address %}</div><div class="app-field" data-inbound-kind="owner">{% include "includes/form_field.html" with field=form.expected_price %}</div><div class="app-field is-wide">{% include "includes/form_field.html" with field=form.message %}</div></div>
+    <div class="app-form-actions"><a href="{% url 'inbound_email_list' %}" class="btn btn-neutral">Назад</a><button class="btn btn-primary" type="submit">Создать обращение</button></div>
+  </form>
+  <form method="post" class="mt-2">{% csrf_token %}<button class="btn btn-neutral btn-sm" name="action" value="ignore" type="submit">Не относится к CRM</button></form>
+</div>
+<script>document.addEventListener('DOMContentLoaded', () => { const kind = document.getElementById('id_kind'); if (!kind) return; const update = () => document.querySelectorAll('[data-inbound-kind]').forEach((item) => { item.hidden = item.dataset.inboundKind !== kind.value; }); kind.addEventListener('change', update); update(); });</script>
+{% endblock %}

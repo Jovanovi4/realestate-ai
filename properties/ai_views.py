@@ -343,9 +343,16 @@ class AIContentDeleteView(AIEnabledMixin, LoginRequiredMixin, View):
 class AILeadReplyView(AIEnabledMixin, LoginRequiredMixin, View):
     def post(self, request, pk):
         lead = get_object_or_404(
-            workspace_queryset(Lead.objects.select_related("property"), request.user, prefix="property__"),
+            workspace_queryset(Lead.objects.select_related("property"), request.user),
             pk=pk,
         )
+        if not lead.property_id:
+            if is_htmx(request):
+                return render(request, "properties/includes/lead_ai_reply.html", {
+                    "lead": lead, "error": "Для ответа по объекту сначала привяжите объект к заявке.",
+                }, status=400)
+            messages.error(request, "Для ответа по объекту сначала привяжите объект к заявке.")
+            return redirect("lead_detail", pk=lead.pk)
         form = AILeadReplyForm(request.POST)
         if not form.is_valid():
             if is_htmx(request):

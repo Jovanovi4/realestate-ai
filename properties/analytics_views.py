@@ -1,12 +1,16 @@
+import csv
 from datetime import date, timedelta
 from urllib.parse import urlencode
 
 from django.contrib.auth.mixins import LoginRequiredMixin
+from django.http import HttpResponse
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import TemplateView
 
 from .agency_access import membership_for
+from .services.csv_security import spreadsheet_safe_cell
+from .services.crm_extended_analytics_service import build_extended_report
 from .services.crm_analytics_service import (
     ANALYTICS_TZ, AnalyticsPeriod, build_report, resolve_scope, team_member_rows,
 )
@@ -46,6 +50,7 @@ class AnalyticsView(LoginRequiredMixin, TemplateView):
             period = AnalyticsPeriod.ending_now(now=now)
 
         report = build_report(scope, period)
+        extended = build_extended_report(scope, period, base_report=report)
         date_params = {"date_from": period.first_day.isoformat(), "date_to": period.last_day.isoformat()}
         scope_params = {"scope": scope.kind}
         if scope.member_id and membership and membership.role != "agent":
@@ -92,6 +97,11 @@ class AnalyticsView(LoginRequiredMixin, TemplateView):
         )
         context.update({
             "report": report,
+            "extended": extended,
+            "export_urls": {
+                kind: f"{reverse('analytics_export')}?{urlencode({**scope_params, **date_params, 'report': kind})}"
+                for kind in ("properties", "channels", "owners", "comparison")
+            },
             "period_error": period_error,
             "membership": membership,
             "member_choices": member_choices,
@@ -113,3 +123,48 @@ class AnalyticsView(LoginRequiredMixin, TemplateView):
             "deal_url": reverse("deal_board") + ("?" + urlencode(drilldown_scope) if drilldown_scope else ""),
         })
         return context
+
+
+class AnalyticsExportView(AnalyticsView):
+    """Export the same scoped figures shown in the analytics screen."""
+
+    def get(self, request, *args, **kwargs):
+        kind = request.GET.get("report", "")
+        if kind not in {"properties", "channels", "owners", "comparison"}:
+            return HttpResponse("Неизвестный отчёт", status=400)
+        context = self.get_context_data()
+        if context["period_error"]:
+            return HttpResponse(context["period_error"], status=400)
+        extended = context["extended"]
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="analytics-{kind}.csv"'
+        response.write("\ufeff")
+        writer = csv.writer(response, quoting=csv.QUOTE_ALL)
+        writer.writerow(["Период", f'{context["report"]["period"].first_day} — {context["report"]["period"].last_day}', "Москва"])
+        if kind == "properties":
+            writer.writerow(["Объект", "Первая публикация", "Просмотры лендинга", "Заявки", "Целевые", "Переведены в сделку", "Показы проведены", "Telegram доставлено"])
+            for row in extended["properties"]:
+                writer.writerow([
+                    spreadsheet_safe_cell(row["property"].title),
+                    row["property"].first_published_at.astimezone(ANALYTICS_TZ).date() if row["property"].first_published_at else "",
+                    row["views"], row["leads"], row["qualified"], row["converted"], row["showings"], row["telegram_delivered"],
+                ])
+        elif kind == "channels":
+            writer.writerow(["Источник", "Заявки", "Целевые", "Переведены в сделку"])
+            for row in extended["channels"]:
+                writer.writerow([spreadsheet_safe_cell(row["label"]), row["received"], row["qualified"], row["converted"]])
+            writer.writerow(["Telegram: доставлено объявлений", extended["telegram_delivered"]])
+            writer.writerow(["Telegram: откликов через бота", extended["telegram_responses"]])
+        elif kind == "owners":
+            writer.writerow(["Показатель", "Значение"])
+            for label, key in (
+                ("Поступило обращений", "received"), ("Первые разговоры", "contacted"),
+                ("Согласованы из поступивших", "agreed_cohort"), ("Объект создан из поступивших", "linked_cohort"),
+                ("Просрочены сейчас", "overdue_now"),
+            ):
+                writer.writerow([label, extended["owners"][key]])
+        else:
+            writer.writerow(["Показатель", "Текущий период", "Предыдущий период", "Разница"])
+            for row in extended["comparison"]:
+                writer.writerow([row["label"], row["current"], row["previous"], row["delta"]])
+        return response

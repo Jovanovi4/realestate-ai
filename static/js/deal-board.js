@@ -66,7 +66,9 @@
       - Number(source.dataset.activeStage === 'true');
     const totalActive = Math.max(0, Number(activeCount.dataset.count) + activeDifference);
     activeCount.dataset.count = String(totalActive);
-    activeCount.textContent = `${filteredStage ? 'Сделок на этапе' : 'Активных сделок'}: ${totalActive}`;
+    board.classList.toggle('deal-board--no-active', totalActive === 0);
+    board.classList.toggle('deal-board--closed-focus', !filteredStage && totalActive === 0);
+    activeCount.textContent = filteredStage ? `Сделок на этапе: ${totalActive}` : totalActive ? `Активных сделок: ${totalActive}` : 'Активных сделок нет';
     status.textContent = 'Этап сделки сохранён.';
     document.dispatchEvent(new Event('board-move-saved'));
   };
@@ -80,6 +82,9 @@
     const freshBoard = page.querySelector('[data-deal-board]');
     if (!freshBoard) return;
     board.innerHTML = freshBoard.innerHTML;
+    for (const name of ['deal-board--no-active', 'deal-board--closed-focus']) {
+      board.classList.toggle(name, freshBoard.classList.contains(name));
+    }
     document.dispatchEvent(new Event('deal-board-refreshed'));
     const freshActiveCount = page.querySelector('[data-deal-active-count]');
     if (freshActiveCount) {

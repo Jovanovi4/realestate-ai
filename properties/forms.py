@@ -1,5 +1,6 @@
 import json
 import re
+import uuid
 from datetime import timedelta
 
 from django import forms
@@ -10,7 +11,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.utils import timezone
 from .agency_access import agency_for, may_manage_agency, workspace_queryset
-from .models import AIContent, Client, ClientInteraction, ClientPropertySuggestion, ClientReminder, Deal, LandingStylePreset, Lead, OwnerInquiry, Property, PropertyOwnerLink, RealtorProfile, Showing, same_workspace
+from .models import AIContent, Client, ClientInteraction, ClientPropertySuggestion, ClientReminder, Deal, LandingStylePreset, Lead, OwnerInquiry, Property, PropertyOwnerLink, RealtorProfile, Showing, default_realtor_benefits, same_workspace
 from .services.image_upload_service import prepare_image_upload
 from .services.staff_display import staff_display_name
 from .landing_colors import normalize_hex
@@ -128,7 +129,7 @@ class PropertyForm(forms.ModelForm):
             "short_description": forms.Textarea(attrs={"rows": 3}),
             "description": forms.Textarea(attrs={"rows": 6}),
             "landing_subtitle": forms.Textarea(attrs={"rows": 3}),
-            "landing_trust_about": forms.Textarea(attrs={"rows": 3, "placeholder": "Например: Сопровождаем сделку от первого просмотра до передачи ключей."}),
+            "landing_trust_about": forms.Textarea(attrs={"rows": 3, "placeholder": "Укажите конкретные факты о работе риелтора с этим объектом."}),
             "seo_description": forms.Textarea(attrs={"rows": 2}),
             "amenities": forms.Textarea(attrs={"rows": 3}),
             "available_from": forms.DateInput(attrs={"type": "date"}),
@@ -137,18 +138,22 @@ class PropertyForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop("user", None)
         super().__init__(*args, **kwargs)
-        order = self.instance.landing_block_order or [key for key, _ in Property.LANDING_BLOCKS]
-        valid_keys = {key for key, _ in Property.LANDING_BLOCKS}
-        if set(order) != valid_keys or len(order) != len(valid_keys):
-            order = [key for key, _ in Property.LANDING_BLOCKS]
+        valid_order = [key for key, _ in Property.LANDING_BLOCKS]
+        valid_keys = set(valid_order)
+        saved_order = self.instance.landing_block_order or valid_order
+        order = []
+        for key in saved_order:
+            if key in valid_keys and key not in order:
+                order.append(key)
+        order.extend(key for key in valid_order if key not in order)
         self._default_landing_block_order = order
         self.initial["landing_block_order"] = json.dumps(order)
         block_labels = dict(Property.LANDING_BLOCKS)
-        enabled = self.instance.landing_enabled_blocks or {key: True for key, _ in Property.LANDING_BLOCKS}
+        enabled = self.instance.landing_enabled_blocks or {}
         self._default_landing_enabled_blocks = {
-            key: bool(enabled.get(key, True)) for key, _ in Property.LANDING_BLOCKS
+            key: bool(enabled.get(key, key != "alternative_requests")) for key, _ in Property.LANDING_BLOCKS
         }
-        self.landing_blocks = [(key, block_labels[key], bool(enabled.get(key, True))) for key in order]
+        self.landing_blocks = [(key, block_labels[key], self._default_landing_enabled_blocks[key]) for key in order]
         self.initial["landing_enabled_blocks"] = json.dumps(self._default_landing_enabled_blocks)
         for field in self.fields.values():
             if isinstance(field.widget, forms.CheckboxInput):
@@ -181,6 +186,8 @@ class PropertyForm(forms.ModelForm):
             "inputmode": "text", "aria-label": "Шестизначный код цвета",
         })
         benefits = self.instance.landing_benefits or []
+        if benefits == default_realtor_benefits():
+            benefits = []
         for index in range(1, 4):
             benefit = benefits[index - 1] if len(benefits) >= index else {}
             for key in ("icon", "title", "description"):
@@ -215,14 +222,16 @@ class PropertyForm(forms.ModelForm):
 
     def save(self, commit=True):
         property = super().save(commit=False)
-        property.landing_benefits = [
-            {
-                "icon": self.cleaned_data.get(f"landing_benefit_{index}_icon") or "◆",
-                "title": self.cleaned_data.get(f"landing_benefit_{index}_title") or "Преимущество",
-                "description": self.cleaned_data.get(f"landing_benefit_{index}_description") or "",
-            }
-            for index in range(1, 4)
-        ]
+        property.landing_benefits = []
+        for index in range(1, 4):
+            title = (self.cleaned_data.get(f"landing_benefit_{index}_title") or "").strip()
+            description = (self.cleaned_data.get(f"landing_benefit_{index}_description") or "").strip()
+            if title or description:
+                property.landing_benefits.append({
+                    "icon": self.cleaned_data.get(f"landing_benefit_{index}_icon") or "◆",
+                    "title": title,
+                    "description": description,
+                })
         if commit:
             property.save()
             self.save_m2m()
@@ -338,6 +347,7 @@ class RealtorProfileForm(forms.ModelForm):
 
 
 class LeadForm(forms.ModelForm):
+    request_id = forms.UUIDField(required=False, widget=forms.HiddenInput)
     website = forms.CharField(required=False, widget=forms.TextInput(attrs={"autocomplete": "off", "tabindex": "-1"}))
     personal_data_consent = forms.BooleanField(
         required=True,
@@ -355,6 +365,8 @@ class LeadForm(forms.ModelForm):
 
     def __init__(self, *args, property=None, **kwargs):
         super().__init__(*args, **kwargs)
+        if not self.is_bound:
+            self.initial.setdefault("request_id", uuid.uuid4())
         for field in self.fields.values():
             if isinstance(field.widget, forms.Select):
                 field.widget.attrs["class"] = "form-select"
@@ -368,6 +380,143 @@ class LeadForm(forms.ModelForm):
 
     def clean_phone(self):
         return normalize_phone(self.cleaned_data["phone"])
+
+
+class PublicRequestForm(forms.Form):
+    request_id = forms.UUIDField(widget=forms.HiddenInput)
+    website = forms.CharField(required=False, widget=forms.TextInput(attrs={"autocomplete": "off", "tabindex": "-1"}))
+    source_detail = forms.CharField(required=False, max_length=255, widget=forms.HiddenInput)
+    name = forms.CharField(label="Имя", max_length=150)
+    phone = forms.CharField(label="Телефон", max_length=30, widget=forms.TelInput(attrs=PHONE_MASK_ATTRS))
+    personal_data_consent = forms.BooleanField(
+        required=True, label="Согласие на обработку персональных данных",
+        error_messages={"required": "Для отправки обращения необходимо согласие на обработку данных."},
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs.setdefault(
+                "class", "form-check-input" if isinstance(field.widget, forms.CheckboxInput) else "form-control",
+            )
+        mark_invalid_fields(self)
+
+    def clean_phone(self):
+        return normalize_phone(self.cleaned_data["phone"])
+
+
+class PublicSearchRequestForm(PublicRequestForm):
+    interest_type = forms.ChoiceField(label="Что ищете", choices=Lead.INTEREST_CHOICES)
+    message = forms.CharField(
+        label="Пожелания", max_length=2000,
+        widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Район, бюджет и важные детали"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["interest_type"].widget.attrs["class"] = "form-select"
+
+
+class PublicOwnerRequestForm(PublicRequestForm):
+    deal_type = forms.ChoiceField(label="Что хотите сделать", choices=Property.DEAL_TYPE_CHOICES)
+    address = forms.CharField(label="Адрес", max_length=255, required=False)
+    description = forms.CharField(label="Описание недвижимости", required=False, max_length=2000,
+                                  widget=forms.Textarea(attrs={"rows": 3}))
+    expected_price = forms.DecimalField(label="Ожидаемая цена, ₽", required=False, min_value=0,
+                                         max_digits=12, decimal_places=2)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["deal_type"].widget.attrs["class"] = "form-select"
+
+    def clean(self):
+        data = super().clean()
+        if not (data.get("address") or "").strip() and not (data.get("description") or "").strip():
+            self.add_error("address", "Укажите адрес или описание недвижимости.")
+        return data
+
+
+class InboundEmailConvertForm(forms.Form):
+    kind = forms.ChoiceField(label="Тип обращения", choices=[("search", "Подбор недвижимости"), ("owner", "Хочу продать / сдать")])
+    name = forms.CharField(label="Имя", max_length=150)
+    phone = forms.CharField(label="Телефон", max_length=30, widget=forms.TelInput(attrs=PHONE_MASK_ATTRS))
+    interest_type = forms.ChoiceField(label="Интерес", choices=Lead.INTEREST_CHOICES, required=False)
+    deal_type = forms.ChoiceField(label="Продажа или аренда", choices=Property.DEAL_TYPE_CHOICES, required=False)
+    address = forms.CharField(label="Адрес", max_length=255, required=False)
+    expected_price = forms.DecimalField(label="Ожидаемая цена", required=False, min_value=0, max_digits=12, decimal_places=2)
+    message = forms.CharField(label="Содержание обращения", max_length=20000, widget=forms.Textarea(attrs={"rows": 5}))
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            field.widget.attrs["class"] = "form-select" if isinstance(field.widget, forms.Select) else "form-control"
+        mark_invalid_fields(self)
+
+    def clean_phone(self):
+        return normalize_phone(self.cleaned_data["phone"])
+
+    def clean(self):
+        data = super().clean()
+        if data.get("kind") == "search" and not data.get("interest_type"):
+            self.add_error("interest_type", "Укажите интерес клиента.")
+        if data.get("kind") == "owner" and not data.get("deal_type"):
+            self.add_error("deal_type", "Укажите, что хочет сделать собственник.")
+        return data
+
+
+class ManualLeadForm(forms.Form):
+    name = forms.CharField(label="Имя клиента", max_length=150)
+    phone = forms.CharField(label="Телефон", max_length=30, widget=forms.TelInput(attrs=PHONE_MASK_ATTRS))
+    message = forms.CharField(label="Что ищет клиент", widget=forms.Textarea(attrs={"rows": 3, "placeholder": "Район, бюджет и важные пожелания"}))
+    interest_type = forms.ChoiceField(label="Цель", choices=Lead.INTEREST_CHOICES)
+    source = forms.ChoiceField(label="Источник", choices=[item for item in Lead.SOURCE_CHOICES if item[0] not in {"landing", "telegram_bot"}])
+    source_detail = forms.CharField(label="Откуда именно", required=False, max_length=255)
+    workspace = forms.ChoiceField(label="Пространство", choices=[("personal", "Личное пространство")])
+    assigned_to = forms.ModelChoiceField(label="Ответственный", queryset=User.objects.none())
+    next_action = forms.CharField(label="Следующее действие", max_length=255, initial="Связаться с клиентом")
+
+    def __init__(self, *args, user, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.user = user
+        agency = agency_for(user)
+        if agency:
+            self.fields["workspace"].choices.append(("team", f"Команда · {agency.name}"))
+        if agency and may_manage_agency(user):
+            from .models import AgencyMembership
+            members = User.objects.filter(pk__in=AgencyMembership.objects.filter(agency=agency).values("user_id"))
+        else:
+            members = User.objects.filter(pk=user.pk)
+        self.fields["assigned_to"].queryset = members.select_related("realtor_profile").order_by("username")
+        self.fields["assigned_to"].label_from_instance = deal_responsible_label
+        self.fields["assigned_to"].initial = user.pk
+        self.fields["source"].initial = "manual"
+        for field in self.fields.values():
+            field.widget.attrs.setdefault("class", "form-select" if isinstance(field.widget, forms.Select) else "form-control")
+        mark_invalid_fields(self)
+
+    def clean_phone(self):
+        return normalize_phone(self.cleaned_data["phone"])
+
+    def clean(self):
+        data = super().clean()
+        if data.get("workspace") == "personal" and data.get("assigned_to") != self.user:
+            self.add_error("assigned_to", "В личном пространстве ответственным можете быть только вы.")
+        if not (data.get("message") or "").strip():
+            self.add_error("message", "Опишите пожелания клиента.")
+        return data
+
+
+class LeadPropertyForm(forms.Form):
+    property = forms.ModelChoiceField(label="Объект", queryset=Property.objects.none())
+
+    def __init__(self, *args, lead, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["property"].queryset = (
+            Property.objects.filter(agency_id=lead.agency_id) if lead.agency_id else
+            Property.objects.filter(agency__isnull=True, owner_id=lead.owner_id)
+        ).exclude(status="archived").order_by("title")
+        self.fields["property"].widget.attrs["class"] = "form-select"
+        mark_invalid_fields(self)
 
 
 class LeadProcessingForm(forms.Form):
@@ -502,7 +651,7 @@ class OwnerInquiryCreateForm(forms.ModelForm):
     class Meta:
         model = OwnerInquiry
         fields = ("client", "deal_type", "address", "description", "expected_price", "currency", "source",
-                  "assigned_to", "first_response_due_at")
+                  "source_detail", "assigned_to", "first_response_due_at")
         widgets = {
             "description": forms.Textarea(attrs={"rows": 3}),
             "first_response_due_at": forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
@@ -790,7 +939,7 @@ class DealForm(forms.ModelForm):
         self.owner = owner
         self.fields["client"].queryset = workspace_queryset(Client.objects, owner).order_by("name")
         self.fields["property"].queryset = workspace_queryset(Property.objects, owner).order_by("title")
-        self.fields["lead"].queryset = workspace_queryset(Lead.objects.filter(client__isnull=False), owner, prefix="property__")
+        self.fields["lead"].queryset = workspace_queryset(Lead.objects.filter(client__isnull=False, property__isnull=False), owner)
         agency = agency_for(owner)
         if agency and may_manage_agency(owner):
             self.fields["responsible"].queryset = User.objects.filter(
@@ -852,6 +1001,12 @@ class DealForm(forms.ModelForm):
 
 
 class ClientInteractionForm(forms.ModelForm):
+    next_action = forms.CharField(label="Следующий шаг", max_length=255, required=False)
+    next_action_due_at = forms.DateTimeField(
+        label="Когда выполнить", required=False,
+        widget=forms.DateTimeInput(attrs={"type": "datetime-local"}, format="%Y-%m-%dT%H:%M"),
+    )
+
     class Meta:
         model = ClientInteraction
         fields = ("interaction_type", "text")
@@ -864,6 +1019,16 @@ class ClientInteractionForm(forms.ModelForm):
         ]
         self.fields["interaction_type"].widget.attrs["class"] = "form-select"
         self.fields["text"].widget.attrs["class"] = "form-control"
+        self.fields["next_action"].widget.attrs.update({"class": "form-control", "placeholder": "Например, отправить подборку"})
+        self.fields["next_action_due_at"].widget.attrs["class"] = "form-control"
+
+    def clean(self):
+        data = super().clean()
+        if data.get("next_action") and not data.get("next_action_due_at"):
+            self.add_error("next_action_due_at", "Укажите срок следующего шага.")
+        if data.get("next_action_due_at") and not data.get("next_action"):
+            self.add_error("next_action", "Укажите, что нужно сделать.")
+        return data
 
 
 class OwnerInteractionForm(ClientInteractionForm):

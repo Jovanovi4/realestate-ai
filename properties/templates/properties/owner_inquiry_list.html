@@ -16,7 +16,7 @@
   {% for inquiry in inquiries %}
     <article class="workday-item owner-inquiry-row">
       <div class="workday-item__time{% if inquiry.is_overdue %} lead-deadline--overdue{% endif %}"><time datetime="{{ inquiry.attention_due_at|date:'c' }}">{{ inquiry.attention_due_at|date:"d.m · H:i" }}</time></div>
-      <div class="workday-item__body"><a href="{% url 'owner_inquiry_detail' inquiry.pk %}"><strong>{{ inquiry.client.name }} · {% if inquiry.deal_type == 'rent' %}Сдать{% else %}Продать{% endif %}</strong></a><span>{{ inquiry.address|default:inquiry.description|truncatechars:72 }} · {{ inquiry.get_result_display }}{% if inquiry.is_overdue %} · Просрочено{% endif %}</span></div>
+      <div class="workday-item__body"><a href="{% url 'owner_inquiry_detail' inquiry.pk %}"><strong>{{ inquiry.client.name }} · {% if inquiry.deal_type == 'rent' %}Сдать{% else %}Продать{% endif %}</strong></a><span>{{ inquiry.address|default:inquiry.description|truncatechars:72 }} · {{ inquiry.get_result_display }}{% if inquiry.status == 'archived' %} · Архив{% elif inquiry.is_overdue %} · Просрочено{% endif %}</span></div>
       <span class="small text-muted">{{ inquiry.assigned_to|staff_name }}</span>
     </article>
   {% empty %}<p class="detail-muted mb-0">По выбранному состоянию обращений нет.</p>{% endfor %}

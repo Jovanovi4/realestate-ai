@@ -1,5 +1,5 @@
 {% load crm_display %}
-<aside class="lead-panel client-panel" id="client-panel" role="dialog" aria-labelledby="client-panel-title" tabindex="-1" hx-history="false">
+<aside class="lead-panel client-panel" id="client-panel" role="region" aria-labelledby="client-panel-title" tabindex="-1" hx-history="false">
   <header class="lead-panel__header">
     <div class="lead-panel__heading"><span class="detail-kicker">{% if selected_client.contact_role == 'owner' %}Собственник{% else %}Клиент{% endif %}</span><h2 id="client-panel-title">{{ selected_client.name }}</h2></div>
     <div class="lead-panel__header-actions">
@@ -36,7 +36,7 @@
     <section class="lead-panel__focus{% if panel_priority_lead or not panel_priority_owner_inquiry and panel_next_reminder.lead_id %} client-panel__focus-card{% endif %}" aria-label="Ближайшее действие">
       <span class="detail-kicker">Ближайшее действие</span>
       {% if panel_priority_lead %}
-        <strong><a class="client-panel__focus-link" href="{% url 'lead_detail' panel_priority_lead.pk %}?contact=1#lead-edit">Записать первый контакт</a></strong><span class="lead-panel__property">{{ panel_priority_lead.property.title }}</span>
+        <strong><a class="client-panel__focus-link" href="{% url 'lead_detail' panel_priority_lead.pk %}?contact=1#lead-edit">Записать первый контакт</a></strong><span class="lead-panel__property">{% if panel_priority_lead.property_id %}{{ panel_priority_lead.property.title }}{% else %}Подбор недвижимости{% endif %}</span>
         <p class="lead-panel__deadline{% if panel_priority_lead.first_response_overdue %} is-overdue{% endif %}">Первый ответ {% if panel_priority_lead.first_response_overdue %}просрочен{% else %}до{% endif %} <time datetime="{{ panel_priority_lead.first_response_due_at|date:'c' }}">{{ panel_priority_lead.first_response_due_at|date:"d.m.Y · H:i" }}</time></p>
       {% elif panel_priority_owner_inquiry %}
         <strong>{% if panel_priority_owner_inquiry.first_contacted_at %}{{ panel_priority_owner_inquiry.next_action }}{% else %}Ответить собственнику{% endif %}</strong>

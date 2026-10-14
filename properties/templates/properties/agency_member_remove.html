@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% load crm_display %}
+{% block title %}Передача работы · RealtorAI{% endblock %}
+{% block content %}
+<header class="ui-page-header">
+  <div><p class="ui-page-header__eyebrow">Команда</p><h1 class="ui-page-header__title">Передача работы</h1><p class="ui-page-header__description">{{ target.user|staff_name }} · {{ target.get_role_display }}</p></div>
+  <div class="ui-page-header__actions"><a href="{% url 'agency_dashboard' %}" class="btn btn-neutral">К команде</a></div>
+</header>
+
+<section class="detail-section agency-transfer-preview">
+  <div class="detail-section__heading"><div><span class="detail-kicker">Перед исключением</span><h2>Текущие назначения</h2></div></div>
+  {% if error %}<p class="app-form-error-summary" role="alert">{{ error }}</p>{% endif %}
+  <div class="agency-transfer-preview__counts">
+    <div><span>Открытые заявки</span><strong>{{ counts.active_leads }}</strong></div>
+    <div><span>Незавершённые задачи</span><strong>{{ counts.open_tasks }}</strong></div>
+    <div><span>Активные сделки</span><strong>{{ counts.active_deals }}</strong></div>
+    <div><span>Обращения собственников</span><strong>{{ counts.open_inquiries }}</strong></div>
+    <div><span>Запланированные показы</span><strong>{{ counts.planned_showings }}</strong></div>
+    <div><span>Неназначенные заявки команды</span><strong>{{ counts.unassigned_team_leads }}</strong></div>
+  </div>
+  <p class="detail-muted agency-transfer-preview__note">Задача по заявке может входить в оба первых числа. Неназначенные заявки команды тоже получит выбранный сотрудник. Вместе с активной работой ему перейдут связанные командные объекты, контакты и история. Личные записи исключаемого сотрудника останутся у него.</p>
+  <form method="post" class="agency-transfer-preview__form">{% csrf_token %}<input type="hidden" name="preview_token" value="{{ preview_token }}"><input type="hidden" name="confirm" value="transfer_and_remove">
+    <div><label for="replacement" class="form-label">Кому передать работу</label><select id="replacement" name="replacement" class="form-select" required><option value="">Выберите сотрудника</option>{% for member in replacements %}<option value="{{ member.user_id }}"{% if selected_replacement == member.user_id|stringformat:'s' %} selected{% endif %}>{{ member.user|staff_name }} · {{ member.get_role_display }}</option>{% endfor %}</select></div>
+    <div class="agency-transfer-preview__actions"><a href="{% url 'agency_dashboard' %}" class="btn btn-neutral">Отмена</a><button type="submit" class="btn btn-danger">Передать и исключить</button></div>
+  </form>
+</section>
+{% endblock %}

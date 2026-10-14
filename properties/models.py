@@ -12,11 +12,11 @@ from django.utils import timezone
 
 
 def default_landing_block_order():
-    return ["hero", "facts", "description", "gallery", "mortgage", "trust", "contact"]
+    return ["hero", "facts", "description", "gallery", "mortgage", "trust", "contact", "alternative_requests"]
 
 
 def default_landing_enabled_blocks():
-    return {key: True for key in ["hero", "facts", "description", "gallery", "mortgage", "trust", "contact"]}
+    return {key: key != "alternative_requests" for key in default_landing_block_order()}
 
 
 def default_realtor_benefits():
@@ -38,7 +38,52 @@ def same_workspace(left, right):
     return left.owner_id == right.owner_id
 
 
-class Property(models.Model):
+class CRMChangeTracked:
+    """Write field transitions with internal IDs, without contact details."""
+
+    analytics_fields = {}
+    analytics_initial = {}
+
+    def analytics_scope_ids(self):
+        agency_id = getattr(self, "agency_id", None)
+        return agency_id, None if agency_id else self.owner_id
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get("update_fields")
+        tracked = {
+            stored: label for stored, label in self.analytics_fields.items()
+            if update_fields is None or stored in update_fields or stored.removesuffix("_id") in update_fields
+        }
+        with transaction.atomic():
+            previous = (
+                type(self).objects.select_for_update().filter(pk=self.pk).values(*tracked).first()
+                if self.pk and tracked else None
+            )
+            result = super().save(*args, **kwargs)
+            for stored, label in tracked.items():
+                current = getattr(self, stored)
+                if previous is None:
+                    if current not in self.analytics_initial.get(stored, ()):
+                        continue
+                    old_value = ""
+                else:
+                    prior = previous[stored]
+                    if prior == current:
+                        continue
+                    old_value = str(prior) if prior is not None else ""
+                agency_id, personal_user_id = self.analytics_scope_ids()
+                CRMChangeEvent.objects.create(
+                    agency_id=agency_id, personal_user_id=personal_user_id,
+                    resource_type=self._meta.model_name, resource_id=self.pk,
+                    field_name=label, old_value=old_value,
+                    new_value=str(current) if current is not None else "",
+                )
+            return result
+
+
+class Property(CRMChangeTracked, models.Model):
+    analytics_fields = {"status": "status", "landing_published": "landing_published", "telegram_published": "telegram_published"}
+    analytics_initial = {"status": {"published", "available", "showing"}, "landing_published": {True}, "telegram_published": {True}}
     PROPERTY_TYPES = [
         ("apartment", "Квартира"),
         ("house", "Дом"),
@@ -150,6 +195,7 @@ class Property(models.Model):
         ("mortgage", "Калькулятор ипотеки"),
         ("trust", "Преимущества риелтора"),
         ("contact", "Заявка и контакты"),
+        ("alternative_requests", "Подбор и обращение собственника"),
     ]
 
     owner = models.ForeignKey(
@@ -202,6 +248,7 @@ class Property(models.Model):
         verbose_name="Статус",
     )
     archived_at = models.DateTimeField(null=True, blank=True, editable=False, db_index=True, verbose_name="Дата архивирования")
+    first_published_at = models.DateTimeField(null=True, blank=True, editable=False, verbose_name="Первая публикация объекта")
     status_before_archive = models.CharField(max_length=20, blank=True, editable=False, verbose_name="Статус до архива")
 
     avito_export = models.BooleanField(default=False, verbose_name="Включить в экспорт Avito")
@@ -421,6 +468,11 @@ class Property(models.Model):
         writes_status = fields is None or "status" in fields
         effective_status = self.status if writes_status or not old else old["status"]
         lifecycle_fields = set()
+        if (writes_status and effective_status in {"published", "available", "showing"}
+                and not self.first_published_at
+                and (not old or old["status"] not in {"published", "available", "showing"})):
+            self.first_published_at = timezone.now()
+            lifecycle_fields.add("first_published_at")
         if effective_status == "archived":
             self.archived_at = old["archived_at"] if old and old["status"] == "archived" and old["archived_at"] else timezone.now()
             self.status_before_archive = old["status"] if old and old["status"] != "archived" else (old["status_before_archive"] if old else "draft")
@@ -648,8 +700,14 @@ class AccountEmailRequest(models.Model):
 
 class Agency(models.Model):
     name = models.CharField(max_length=150, verbose_name="Название агентства")
-    owner = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="owned_agency")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="owned_agencies")
     created_at = models.DateTimeField(auto_now_add=True)
+    closed_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    closed_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="closed_agencies")
+    closure_snapshot = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["owner"], condition=Q(closed_at__isnull=True), name="unique_active_agency_owner")]
 
     def __str__(self):
         return self.name
@@ -663,6 +721,8 @@ class AgencyMembership(models.Model):
     joined_at = models.DateTimeField(auto_now_add=True)
 
     def clean(self):
+        if self.agency_id and self.agency.closed_at:
+            raise ValidationError("Закрытая команда не принимает участников.")
         if self.role == "owner" and self.agency_id and self.user_id != self.agency.owner_id:
             raise ValidationError({"role": "Владельцем может быть только создатель агентства."})
         if self.agency_id and self.user_id == self.agency.owner_id and self.role != "owner":
@@ -674,6 +734,82 @@ class AgencyMembership(models.Model):
 
     def __str__(self):
         return f"{self.user} · {self.agency}"
+
+
+class PublicIntakeLink(models.Model):
+    """Stable, revocable public entry point for exactly one CRM workspace."""
+
+    owner = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, null=True, blank=True,
+        related_name="personal_intake_link",
+    )
+    agency = models.OneToOneField(
+        Agency, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="public_intake_link",
+    )
+    code = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.CheckConstraint(
+            condition=(Q(owner__isnull=False, agency__isnull=True) | Q(owner__isnull=True, agency__isnull=False)),
+            name="public_intake_one_workspace",
+        )]
+
+    def clean(self):
+        if bool(self.owner_id) == bool(self.agency_id):
+            raise ValidationError("Укажите одно рабочее пространство.")
+
+    @property
+    def responsible(self):
+        return self.agency.owner if self.agency_id else self.owner
+
+
+class InboundEvent(models.Model):
+    """One source delivery can create at most one CRM request."""
+
+    CHANNEL_CHOICES = [
+        ("landing", "Лендинг"),
+        ("public_form", "Публичная форма"),
+        ("email", "Почта"),
+        ("avito", "Avito"),
+        ("cian", "Циан"),
+    ]
+    link = models.ForeignKey(PublicIntakeLink, on_delete=models.PROTECT, related_name="inbound_events")
+    channel = models.CharField(max_length=20, choices=CHANNEL_CHOICES)
+    external_id = models.CharField(max_length=255)
+    lead = models.ForeignKey("Lead", on_delete=models.PROTECT, null=True, blank=True, related_name="inbound_events")
+    owner_inquiry = models.ForeignKey(
+        "OwnerInquiry", on_delete=models.PROTECT, null=True, blank=True, related_name="inbound_events",
+    )
+    sender = models.CharField(max_length=255, blank=True)
+    subject = models.CharField(max_length=255, blank=True)
+    body = models.TextField(blank=True)
+    received_at = models.DateTimeField(null=True, blank=True)
+    ignored_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=["link", "channel", "external_id"], name="unique_inbound_event_per_link",
+        )]
+
+
+class InboundMailboxCursor(models.Model):
+    """Resume one dedicated IMAP folder without skipping an unseen message."""
+
+    link = models.ForeignKey(PublicIntakeLink, on_delete=models.PROTECT)
+    mailbox = models.CharField(max_length=255)
+    folder = models.CharField(max_length=255)
+    uid_validity = models.CharField(max_length=40, blank=True)
+    last_uid = models.PositiveBigIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(
+            fields=["link", "mailbox", "folder"], name="unique_inbound_mailbox_cursor",
+        )]
 
 
 class LandingStylePreset(models.Model):
@@ -718,12 +854,14 @@ class AgencyInvitation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     expires_at = models.DateTimeField()
     accepted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="accepted_agency_invitations")
+    revoked_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.agency} · {self.role}"
 
 
-class Client(models.Model):
+class Client(CRMChangeTracked, models.Model):
+    analytics_fields = {"status": "status"}
     CONTACT_ROLE_CHOICES = [
         ("seeker", "Клиент"),
         ("owner", "Собственник"),
@@ -745,8 +883,11 @@ class Client(models.Model):
     ]
     SOURCE_CHOICES = [
         ("landing", "Лендинг"),
+        ("public_form", "Публичная форма"),
+        ("email", "Почта"),
         ("telegram_bot", "Telegram-бот"),
         ("avito", "Avito"),
+        ("cian", "Циан"),
         ("recommendation", "Рекомендация"),
         ("manual", "Добавлен вручную"),
         ("other", "Другое"),
@@ -815,6 +956,24 @@ class Client(models.Model):
         super().save(*args, **kwargs)
 
 
+class ClientMergeRecord(models.Model):
+    """Keep a reviewable trace after the duplicate contact is removed."""
+
+    target = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="merge_records")
+    source_id = models.PositiveBigIntegerField()
+    source_name = models.CharField(max_length=150)
+    source_phone = models.CharField(max_length=30)
+    source_snapshot = models.JSONField(default=dict)
+    moved_counts = models.JSONField(default=dict)
+    merged_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Объединение контактов"
+        verbose_name_plural = "Объединения контактов"
+
+
 class PropertyOwnerLink(models.Model):
     ROLE_CHOICES = [
         ("owner", "Собственник"),
@@ -854,7 +1013,13 @@ class PropertyOwnerLink(models.Model):
             )
 
 
-class OwnerInquiry(models.Model):
+class OwnerInquiry(CRMChangeTracked, models.Model):
+    analytics_fields = {"result": "result", "status": "status", "assigned_to_id": "assigned_to"}
+    STATUS_CHOICES = [
+        ("new", "Новая"),
+        ("read", "В работе"),
+        ("archived", "Архив"),
+    ]
     RESULT_CHOICES = [
         ("pending", "Нужен разговор"),
         ("follow_up", "Продолжить обсуждение"),
@@ -874,8 +1039,13 @@ class OwnerInquiry(models.Model):
     currency = models.CharField(max_length=3, choices=Property.CURRENCY_CHOICES, default="RUB", verbose_name="Валюта")
     source = models.CharField(max_length=30, choices=Client.SOURCE_CHOICES,
                               default="manual", verbose_name="Источник")
+    source_detail = models.CharField(max_length=255, blank=True, verbose_name="Уточнение источника")
+    personal_data_consent_at = models.DateTimeField(null=True, blank=True, verbose_name="Согласие на обработку данных получено")
+    personal_data_consent_version = models.CharField(max_length=32, blank=True, verbose_name="Версия согласия")
     first_response_due_at = models.DateTimeField(default=default_lead_next_action_due_at, db_index=True, verbose_name="Срок первого ответа")
     first_contacted_at = models.DateTimeField(null=True, blank=True, verbose_name="Первый контакт")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", db_index=True, verbose_name="Статус обработки")
+    archived_at = models.DateTimeField(null=True, blank=True, editable=False, db_index=True, verbose_name="Дата архивирования")
     result = models.CharField(max_length=20, choices=RESULT_CHOICES, default="pending", db_index=True, verbose_name="Результат разговора")
     result_note = models.TextField(blank=True, verbose_name="Итог разговора")
     next_action = models.CharField(max_length=255, blank=True, default="Связаться с собственником", verbose_name="Следующее действие")
@@ -898,7 +1068,7 @@ class OwnerInquiry(models.Model):
 
     @builtins.property
     def is_overdue(self):
-        return self.result != "declined" and not self.property_id and self.attention_due_at < timezone.now()
+        return self.status != "archived" and self.result != "declined" and not self.property_id and self.attention_due_at < timezone.now()
 
     def clean(self):
         errors = {}
@@ -926,6 +1096,11 @@ class OwnerInquiry(models.Model):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        fields = kwargs.get("update_fields")
+        if fields is None or "status" in fields:
+            self.archived_at = (self.archived_at or timezone.now()) if self.status == "archived" else None
+            if fields is not None:
+                kwargs["update_fields"] = set(fields) | {"archived_at"}
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -996,7 +1171,8 @@ class ClientPropertySuggestion(models.Model):
         return f"{self.client.name} · {self.property.title}"
 
 
-class ClientReminder(models.Model):
+class ClientReminder(CRMChangeTracked, models.Model):
+    analytics_fields = {"owner_id": "owner"}
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="crm_tasks")
     agency = models.ForeignKey(Agency, on_delete=models.PROTECT, null=True, blank=True, related_name="tasks")
     client = models.ForeignKey(Client, on_delete=models.PROTECT, null=True, blank=True, related_name="reminders", verbose_name="Клиент")
@@ -1038,7 +1214,7 @@ class ClientReminder(models.Model):
             if self.property_id and self.property_id != self.deal.property_id:
                 errors["property"] = "Объект должен совпадать с объектом сделки."
         if self.lead_id:
-            if self.owner_id and not same_workspace(self, self.lead.property):
+            if self.owner_id and not same_workspace(self, self.lead):
                 errors["lead"] = "Заявка находится в другом рабочем пространстве."
             if self.client_id and self.lead.client_id and self.client_id != self.lead.client_id:
                 errors["client"] = "Клиент должен совпадать с клиентом заявки."
@@ -1082,7 +1258,11 @@ class ClientReminder(models.Model):
         super().save(*args, **kwargs)
 
 
-class Lead(models.Model):
+class Lead(CRMChangeTracked, models.Model):
+    analytics_fields = {"status": "status", "qualification": "qualification", "outcome": "outcome", "assigned_to_id": "assigned_to"}
+
+    def analytics_scope_ids(self):
+        return self.agency_id, None if self.agency_id else self.owner_id
     OUTCOME_CHOICES = [
         ("open", "В работе"),
         ("converted", "Переведена в сделку"),
@@ -1090,6 +1270,8 @@ class Lead(models.Model):
     ]
     SOURCE_CHOICES = [
         ("landing", "Лендинг"),
+        ("public_form", "Публичная форма"),
+        ("email", "Почта"),
         ("telegram_bot", "Telegram-бот"),
         ("avito", "Avito"),
         ("cian", "Циан"),
@@ -1114,11 +1296,13 @@ class Lead(models.Model):
     ]
     STATUS_CHOICES = [
         ("new", "Новая"),
-        ("read", "Прочитана"),
+        ("read", "В работе"),
         ("archived", "Архив"),
     ]
 
-    property = models.ForeignKey(Property, on_delete=models.PROTECT, related_name="leads")
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="leads")
+    agency = models.ForeignKey(Agency, on_delete=models.PROTECT, null=True, blank=True, related_name="leads")
+    property = models.ForeignKey(Property, on_delete=models.PROTECT, null=True, blank=True, related_name="leads")
     assigned_to = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="assigned_leads", verbose_name="Ответственный")
     client = models.ForeignKey(Client, on_delete=models.PROTECT, null=True, blank=True, related_name="leads")
     telegram_subscriber = models.ForeignKey("TelegramSubscriber", on_delete=models.SET_NULL, null=True, blank=True, related_name="leads")
@@ -1133,6 +1317,7 @@ class Lead(models.Model):
     message = models.TextField(blank=True, verbose_name="Комментарий")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="new", verbose_name="Статус обработки")
     source = models.CharField(max_length=30, choices=SOURCE_CHOICES, default="landing", verbose_name="Источник обращения")
+    source_detail = models.CharField(max_length=255, blank=True, verbose_name="Уточнение источника")
     first_contacted_at = models.DateTimeField(null=True, blank=True, verbose_name="Первый контакт")
     qualification = models.CharField(max_length=20, choices=QUALIFICATION_CHOICES, default="pending", verbose_name="Результат квалификации")
     outcome = models.CharField(max_length=20, choices=OUTCOME_CHOICES, default="open", db_index=True, verbose_name="Итог обработки")
@@ -1189,21 +1374,28 @@ class Lead(models.Model):
             errors["outcome_deal"] = "Укажите сделку по заявке."
         if self.outcome_deal_id and (self.outcome_deal.client_id != self.client_id or self.outcome_deal.property_id != self.property_id):
             errors["outcome_deal"] = "Сделка должна относиться к клиенту и объекту заявки."
-        if self.client_id and self.property_id and not same_workspace(self.client, self.property):
+        if self.agency_id and self.owner_id and not AgencyMembership.objects.filter(agency_id=self.agency_id, user_id=self.owner_id).exists():
+            errors["owner"] = "Владелец записи не состоит в агентстве."
+        if self.property_id and not same_workspace(self, self.property):
+            errors["property"] = "Объект находится в другом рабочем пространстве."
+        if self.client_id and not same_workspace(self.client, self):
             errors["client"] = "Клиент находится в другом рабочем пространстве."
-        if self.assigned_to_id and self.property_id:
-            if self.property.agency_id:
-                allowed = AgencyMembership.objects.filter(agency_id=self.property.agency_id, user_id=self.assigned_to_id).exists()
+        if self.assigned_to_id:
+            if self.agency_id:
+                allowed = AgencyMembership.objects.filter(agency_id=self.agency_id, user_id=self.assigned_to_id).exists()
             else:
-                allowed = self.assigned_to_id == self.property.owner_id
+                allowed = self.assigned_to_id == self.owner_id
             if not allowed:
                 errors["assigned_to"] = "Ответственный не имеет доступа к заявке."
         if errors:
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
-        if not self.assigned_to_id and self.property_id:
-            self.assigned_to_id = self.property.owner_id
+        if self.property_id and not self.owner_id:
+            self.owner_id = self.property.owner_id
+            self.agency_id = self.property.agency_id
+        if not self.assigned_to_id:
+            self.assigned_to_id = self.owner_id
         fields = kwargs.get("update_fields")
         if fields is None or "outcome" in fields:
             self.outcome_at = (self.outcome_at or timezone.now()) if self.outcome != "open" else None
@@ -1231,7 +1423,7 @@ class Lead(models.Model):
             return
         expected = {
             "owner_id": self.assigned_to_id,
-            "agency_id": self.property.agency_id,
+            "agency_id": self.agency_id,
             "client_id": self.client_id,
             "text": self.next_action,
             "due_at": self.next_action_due_at,
@@ -1246,7 +1438,8 @@ class Lead(models.Model):
             task.save(update_fields=changed)
 
 
-class Deal(models.Model):
+class Deal(CRMChangeTracked, models.Model):
+    analytics_fields = {"stage": "stage", "responsible_id": "responsible"}
     STAGE_CHOICES = [
         ("new", "Новая"),
         ("in_progress", "В работе"),
@@ -1338,7 +1531,8 @@ class Deal(models.Model):
         return f"{self.client} · {self.property}"
 
 
-class Showing(models.Model):
+class Showing(CRMChangeTracked, models.Model):
+    analytics_fields = {"status": "status", "owner_id": "owner"}
     STATUS_CHOICES = [
         ("planned", "Запланирован"),
         ("completed", "Проведён"),
@@ -1353,6 +1547,7 @@ class Showing(models.Model):
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="planned", verbose_name="Статус")
     location = models.CharField(max_length=255, blank=True, verbose_name="Место встречи")
     outcome_note = models.TextField(blank=True, verbose_name="Итог показа")
+    completed_at = models.DateTimeField(null=True, blank=True, db_index=True, verbose_name="Фактически проведён")
     follow_up_task = models.ForeignKey(ClientReminder, on_delete=models.SET_NULL, null=True, blank=True, related_name="follow_up_showings", verbose_name="Следующее действие")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1383,6 +1578,18 @@ class Showing(models.Model):
             self.agency_id = self.deal.agency_id
         if not self.owner_id and self.deal_id:
             self.owner = self.deal.owner
+        fields = kwargs.get("update_fields")
+        if fields is None or "status" in fields:
+            previous = type(self).objects.filter(pk=self.pk).values("status", "completed_at").first() if self.pk else None
+            if self.status == "completed":
+                self.completed_at = (
+                    previous["completed_at"] if previous and previous["status"] == "completed"
+                    else timezone.now()
+                )
+            else:
+                self.completed_at = None
+            if fields is not None:
+                kwargs["update_fields"] = set(fields) | {"completed_at"}
         self.full_clean()
         super().save(*args, **kwargs)
 
@@ -1517,3 +1724,41 @@ class TelegramDelivery(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["publication", "subscriber"], name="unique_telegram_publication_delivery")]
+
+
+class CRMChangeEvent(models.Model):
+    """Forward-only CRM changes with internal IDs and no contact text."""
+
+    agency_id = models.PositiveBigIntegerField(null=True, blank=True)
+    personal_user_id = models.PositiveBigIntegerField(null=True, blank=True)
+    resource_type = models.CharField(max_length=32)
+    resource_id = models.PositiveBigIntegerField()
+    field_name = models.CharField(max_length=32)
+    old_value = models.CharField(max_length=64, blank=True)
+    new_value = models.CharField(max_length=64, blank=True)
+    occurred_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-occurred_at", "-pk"]
+        indexes = [
+            models.Index(fields=["agency_id", "occurred_at"], name="crm_event_agency_time_idx"),
+            models.Index(fields=["personal_user_id", "occurred_at"], name="crm_event_user_time_idx"),
+            models.Index(fields=["resource_type", "resource_id", "field_name"], name="crm_event_resource_idx"),
+        ]
+        verbose_name = "Событие CRM"
+        verbose_name_plural = "События CRM"
+
+
+class LandingDailyView(models.Model):
+    """Aggregate public landing GETs by Moscow day without visitor identifiers."""
+
+    property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name="landing_daily_views")
+    day = models.DateField()
+    views = models.PositiveBigIntegerField(default=0)
+
+    class Meta:
+        ordering = ["-day", "property_id"]
+        constraints = [models.UniqueConstraint(fields=["property", "day"], name="unique_landing_view_day")]
+        indexes = [models.Index(fields=["day"], name="landing_view_day_idx")]
+        verbose_name = "Просмотры лендинга за день"
+        verbose_name_plural = "Просмотры лендингов за день"

@@ -6,7 +6,7 @@
   <div>
     <p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="home" %}Объект · {{ property.get_property_type_display }}</p>
     <h1 class="ui-page-header__title">{{ property.marketing_headline|default:property.title }}</h1>
-    <div class="detail-page-header__meta"><span>{{ property.address|default:"Адрес не указан" }}</span>{% include "properties/includes/property_status_badge.html" %}</div>
+    <div class="detail-page-header__meta"><span>{{ property.address|default:"Адрес не указан" }}</span>{% include "properties/includes/property_status_badge.html" with status_context="detail" %}<span class="badge text-bg-{% if property.landing_published %}success{% else %}light{% endif %}">Лендинг: {% if property.landing_published %}опубликован{% else %}не опубликован{% endif %}</span><span class="badge text-bg-light">Карточка: {{ readiness_completed }}/{{ readiness_total }}</span></div>
   </div>
   <div class="ui-page-header__actions"><a href="{% url 'edit_property' property.pk %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg>Редактировать</a></div>
 </header>
@@ -35,16 +35,16 @@
               <div><dt>Площадь</dt><dd>{% if property.area %}{{ property.area_display }} м²{% else %}—{% endif %}</dd></div>
               {% if property.is_commercial %}<div><dt>Назначение</dt><dd>{{ property.commercial_purpose|default:"—" }}</dd></div>{% else %}<div><dt>Комнаты</dt><dd>{{ property.rooms|default:"—" }}</dd></div>{% endif %}
               <div><dt>Этаж</dt><dd>{% if property.floor %}{{ property.floor }}{% if property.floors_total %} / {{ property.floors_total }}{% endif %}{% else %}—{% endif %}</dd></div>
-              {% if property.is_commercial %}<div><dt>Доступ</dt><dd>{{ property.get_access_mode_display|default:"—" }}</dd></div>{% else %}<div><dt>Участок</dt><dd>{% if property.land_area %}{{ property.land_area }} м²{% else %}—{% endif %}</dd></div>{% endif %}
+              {% if property.is_commercial %}<div><dt>Доступ</dt><dd>{{ property.get_access_mode_display|default:"—" }}</dd></div>{% elif property.land_area %}<div><dt>Участок</dt><dd>{{ property.land_area }} м²</dd></div>{% endif %}
             </dl>
           </div>
         </div>
         {% if property.short_description or property.description %}<section class="detail-section detail-section--plain"><h2>Кратко об объекте</h2><p class="detail-prose">{{ property.short_description|default:property.description|truncatechars:600|linebreaksbr }}</p></section>{% endif %}
       </div>
       {% if property.status == 'archived' %}<aside class="detail-section detail-next"><span class="detail-kicker">Архив</span><h2>История объекта сохранена</h2><p class="detail-muted">Заявки, сделки, показы и задачи доступны в CRM. Восстановление объекта не меняет их статусы.</p>{% if can_delete %}<form method="post" action="{% url 'restore_property' property.pk %}">{% csrf_token %}<button class="btn btn-neutral" type="submit"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-undo"></use></svg>Восстановить объект</button></form>{% endif %}</aside>{% else %}<aside class="detail-section detail-next" aria-labelledby="property-readiness-title">
-        <div class="detail-section__heading"><h2 id="property-readiness-title">Готовность к публикации</h2><span class="detail-count">{{ readiness_completed }} / {{ readiness_total }}</span></div>
-        <div class="detail-progress" role="progressbar" aria-label="Готовность объекта" aria-valuenow="{{ readiness_completed }}" aria-valuemin="0" aria-valuemax="{{ readiness_total }}"><span style="width:{% widthratio readiness_completed readiness_total 100 %}%"></span></div>
-        {% if readiness_tasks %}<div class="detail-action-list">{% for task in readiness_tasks %}<a href="{{ task.url }}" class="detail-action-list__item {% if forloop.first %}is-next{% endif %}"><span>{{ task.text }}</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endfor %}</div>{% else %}<p class="detail-next__ready">Объект готов к публикации. Можно продвигать его и принимать заявки.</p>{% endif %}
+        <div class="detail-section__heading"><h2 id="property-readiness-title">Заполнение карточки</h2><span class="detail-count">{{ readiness_completed }} / {{ readiness_total }}</span></div>
+        <div class="detail-progress" role="progressbar" aria-label="Заполнение карточки объекта" aria-valuenow="{{ readiness_completed }}" aria-valuemin="0" aria-valuemax="{{ readiness_total }}"><span style="width:{% widthratio readiness_completed readiness_total 100 %}%"></span></div>
+        {% if readiness_tasks %}<div class="detail-action-list">{% for task in readiness_tasks %}<a href="{{ task.url }}" class="detail-action-list__item {% if forloop.first %}is-next{% endif %}"><span>{{ task.text }}</span><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endfor %}</div>{% else %}<p class="detail-next__ready">Данные карточки заполнены. Статус лендинга указан отдельно.</p>{% endif %}
       </aside>{% endif %}
     </div>
   </section>
@@ -130,7 +130,7 @@
             <h2>Объект в архиве</h2><p class="detail-muted">Восстановите объект для дальнейшей работы. Лендинг и экспорт можно включить отдельно после проверки.</p>
             <form method="post" action="{% url 'restore_property' property.pk %}">{% csrf_token %}<button class="btn btn-neutral" type="submit"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-undo"></use></svg>Восстановить объект</button></form>
           {% else %}
-            <h2>Архив объекта</h2><p class="detail-muted">Уберите объект из рабочего списка, сохранив фотографии, заявки и сделки. Лендинг будет снят с публикации. Объект можно восстановить.</p>
+            <div class="billing-heading-with-help"><h2>Архив объекта</h2>{% include "billing/includes/help.html" with label="Архив объекта" text="Уберите объект из рабочего списка, сохранив фотографии, заявки и сделки. Лендинг будет снят с публикации. Объект можно восстановить." only %}</div>
             <form method="post" action="{% url 'delete_property' property.pk %}" data-confirm="Перенести объект в архив и снять лендинг с публикации? Фотографии, заявки и сделки будут сохранены." data-confirm-title="Архивировать объект?" data-confirm-button="В архив" data-confirm-variant="neutral">{% csrf_token %}<button class="btn btn-neutral" type="submit"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-archive"></use></svg>В архив</button></form>
           {% endif %}
         </aside>

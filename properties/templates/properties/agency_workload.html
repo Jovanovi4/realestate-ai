@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% load crm_display %}
+{% block title %}Работа команды · RealtorAI{% endblock %}
+{% block content %}
+<header class="ui-page-header">
+  <div><p class="ui-page-header__eyebrow">Команда</p><h1 class="ui-page-header__title">Работа команды</h1><p class="ui-page-header__description">Открытые заявки и самостоятельные задачи по ответственным.</p></div>
+  <div class="ui-page-header__actions"><a href="{% url 'agency_dashboard' %}" class="btn btn-neutral">К команде</a></div>
+</header>
+
+<div class="agency-workload-filters">
+  <nav class="ui-switch" aria-label="Состояние дел">{% for value, label, url in state_links %}<a class="ui-switch__option{% if state == value %} active{% endif %}" href="{{ url }}"{% if state == value %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
+  <nav class="ui-switch" aria-label="Тип дела">{% for value, label, url in kind_links %}<a class="ui-switch__option{% if kind == value %} active{% endif %}" href="{{ url }}"{% if kind == value %} aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>
+  <div class="agency-workload-member"><span>Сотрудник</span><select class="form-select form-select-sm" aria-label="Показать дела сотрудника" onchange="window.location.href=this.value"><option value="{{ all_members_url }}"{% if not member_id %} selected{% endif %}>Вся команда</option>{% for member, url in member_links %}<option value="{{ url }}"{% if member_id == member.user_id|stringformat:'s' %} selected{% endif %}>{{ member.user|staff_name }}</option>{% endfor %}</select></div>
+</div>
+
+{% if kind != 'task' %}
+<section class="detail-section agency-workload-section" aria-labelledby="agency-workload-leads">
+  <div class="detail-section__heading"><h2 id="agency-workload-leads">Заявки <span class="detail-muted">{{ lead_page.paginator.count }}</span></h2></div>
+  {% for lead in lead_page %}<article class="agency-workload-row">
+    <div class="agency-workload-row__main"><a href="{% url 'lead_detail' lead.pk %}"><strong>{{ lead.name }}</strong></a><span class="detail-muted">{% if lead.property_id %}{{ lead.property.title }}{% else %}Подбор недвижимости{% endif %} · {% if lead.assigned_to %}{{ lead.assigned_to|staff_name }}{% else %}Без ответственного{% endif %}</span></div>
+    <div class="agency-workload-row__due{% if lead.is_overdue %} agency-workload-row__due--urgent{% endif %}"><span>{% if not lead.first_contacted_at %}Первый ответ{% else %}Следующее действие{% endif %}</span><time datetime="{{ lead.attention_due_at|date:'c' }}">{{ lead.attention_due_at|date:"d.m · H:i" }}</time></div>
+    <form method="post" action="{% url 'agency_work_assign' %}" class="agency-workload-row__assign">{% csrf_token %}<input type="hidden" name="kind" value="lead"><input type="hidden" name="record_id" value="{{ lead.pk }}"><input type="hidden" name="next" value="{{ current_url }}"><select name="assigned_to" class="form-select form-select-sm" aria-label="Ответственный за заявку {{ lead.name }}" required><option value=""{% if not lead.assigned_to_id %} selected{% endif %}>Выберите сотрудника</option>{% for member in members %}<option value="{{ member.user_id }}"{% if lead.assigned_to_id == member.user_id %} selected{% endif %}>{{ member.user|staff_name }}</option>{% endfor %}</select><button type="submit" class="btn btn-sm btn-neutral">Назначить</button></form>
+  </article>{% empty %}<p class="detail-muted mb-0">По этим условиям заявок нет.</p>{% endfor %}
+  {% if lead_page.has_other_pages %}<nav class="agency-workload-pages" aria-label="Страницы заявок">{% if lead_previous_url %}<a href="{{ lead_previous_url }}">← Назад</a>{% endif %}<span>{{ lead_page.number }} / {{ lead_page.paginator.num_pages }}</span>{% if lead_next_url %}<a href="{{ lead_next_url }}">Дальше →</a>{% endif %}</nav>{% endif %}
+</section>
+{% endif %}
+
+{% if kind != 'lead' and state != 'unanswered' and state != 'unassigned' %}
+<section class="detail-section agency-workload-section" aria-labelledby="agency-workload-tasks">
+  <div class="detail-section__heading"><h2 id="agency-workload-tasks">Задачи <span class="detail-muted">{{ task_page.paginator.count }}</span></h2></div>
+  {% for task in task_page %}<article class="agency-workload-row">
+    <div class="agency-workload-row__main"><a href="{% url 'task_detail' task.pk %}?next={{ current_url|urlencode }}"><strong>{{ task.text }}</strong></a><span class="detail-muted">{{ task.owner|staff_name }}{% if task.client %} · {{ task.client.name }}{% endif %}</span></div>
+    <div class="agency-workload-row__due{% if task.due_at and task.due_at < now %} agency-workload-row__due--urgent{% endif %}"><span>Срок</span>{% if task.due_at %}<time datetime="{{ task.due_at|date:'c' }}">{{ task.due_at|date:"d.m · H:i" }}</time>{% else %}<strong>Не указан</strong>{% endif %}</div>
+    <form method="post" action="{% url 'agency_work_assign' %}" class="agency-workload-row__assign">{% csrf_token %}<input type="hidden" name="kind" value="task"><input type="hidden" name="record_id" value="{{ task.pk }}"><input type="hidden" name="next" value="{{ current_url }}"><select name="assigned_to" class="form-select form-select-sm" aria-label="Ответственный за задачу {{ task.text }}" required>{% for member in members %}<option value="{{ member.user_id }}"{% if task.owner_id == member.user_id %} selected{% endif %}>{{ member.user|staff_name }}</option>{% endfor %}</select><button type="submit" class="btn btn-sm btn-neutral">Назначить</button></form>
+  </article>{% empty %}<p class="detail-muted mb-0">По этим условиям задач нет.</p>{% endfor %}
+  {% if task_page.has_other_pages %}<nav class="agency-workload-pages" aria-label="Страницы задач">{% if task_previous_url %}<a href="{{ task_previous_url }}">← Назад</a>{% endif %}<span>{{ task_page.number }} / {{ task_page.paginator.num_pages }}</span>{% if task_next_url %}<a href="{{ task_next_url }}">Дальше →</a>{% endif %}</nav>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

@@ -64,6 +64,20 @@ class LandingDraftPreviewTests(TestCase):
         self.assertContains(response, "Заголовок в предпросмотре")
         self.assertFalse(Property.objects.exists())
 
+    def test_preview_shows_unsaved_alternative_block_without_accepting_requests(self):
+        property = Property.objects.create(owner=self.owner, title="Объект")
+        enabled = {key: key == "alternative_requests" for key, _ in Property.LANDING_BLOCKS}
+        response = self.client.post(
+            reverse("property_landing_draft_preview", args=[property.pk]),
+            self.editor_data(landing_enabled_blocks=json.dumps(enabled)),
+        )
+        self.assertContains(response, "Подобрать другую недвижимость")
+        self.assertContains(response, "В предпросмотре форма не отправляется")
+        self.assertNotContains(response, 'name="intake_kind"')
+        property.refresh_from_db()
+        self.assertFalse(property.landing_enabled_blocks["alternative_requests"])
+        self.assertFalse(Lead.objects.exists())
+
     def test_uploaded_logo_appears_in_preview_without_being_stored(self):
         property = Property.objects.create(owner=self.owner, title="Объект")
         pixels = BytesIO()

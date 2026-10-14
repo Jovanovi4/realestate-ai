@@ -1,0 +1,24 @@
+{% if landing_enabled.alternative_requests %}
+<section class="section alternative-intake alternative-intake--{{ property.landing_template }}" id="alternative-requests" style="order:{{ landing_order.alternative_requests }}" aria-labelledby="alternative-requests-title">
+  <div class="container">
+    <div class="alternative-intake__intro">
+      <p class="eyebrow">Другие запросы</p>
+      <h2 id="alternative-requests-title">Поможем с вашим следующим шагом</h2>
+      <p>Если этот объект не подходит, расскажите, что ищете. Если хотите продать или сдать свою недвижимость, свяжем вас с риелтором.</p>
+    </div>
+    {% if sent_intake_kind %}<div class="alternative-intake__notice" role="status">Спасибо! Ваше обращение отправлено риелтору.</div>{% endif %}
+    {% if intake_available %}
+      <div class="alternative-intake__choices">
+        <details class="alternative-intake__card" name="alternative-intake"{% if intake_form_error_kind == "search" %} open{% endif %}>
+          <summary><span><strong>Подобрать другую недвижимость</strong><small>Расскажите, что вам нужно</small></span></summary>
+          {% if preview %}<p class="alternative-intake__notice">В предпросмотре форма не отправляется.</p>{% else %}{% include "properties/includes/landing_alternative_form.html" with intake_form=search_form kind="search" %}{% endif %}
+        </details>
+        <details class="alternative-intake__card" name="alternative-intake"{% if intake_form_error_kind == "owner" %} open{% endif %}>
+          <summary><span><strong>Продать или сдать свой объект</strong><small>Опишите вашу недвижимость</small></span></summary>
+          {% if preview %}<p class="alternative-intake__notice">В предпросмотре форма не отправляется.</p>{% else %}{% include "properties/includes/landing_alternative_form.html" with intake_form=owner_form kind="owner" %}{% endif %}
+        </details>
+      </div>
+    {% else %}<p class="alternative-intake__notice">Приём новых обращений временно приостановлен.</p>{% endif %}
+  </div>
+</section>
+{% endif %}

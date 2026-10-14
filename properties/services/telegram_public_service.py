@@ -18,7 +18,7 @@ from django.utils.crypto import constant_time_compare, salted_hmac
 from billing.enforcement import TariffDenied, require_new_action
 from billing.rules import Operation
 from ..models import (
-    AgencyMembership, Client, ClientInteraction, Lead, Property, RealtorProfile, TelegramConversation, TelegramDelivery,
+    Agency, AgencyMembership, Client, ClientInteraction, Lead, Property, RealtorProfile, TelegramConversation, TelegramDelivery,
     TelegramFeed, TelegramInboundUpdate, TelegramPublication, TelegramSubscriber,
 )
 from .client_import_service import canonical_phone
@@ -76,7 +76,12 @@ def feed_link(feed):
 
 
 def is_visible(property):
-    return property.telegram_published and property.status in VISIBLE_STATUSES and not property.is_demo
+    return (property.telegram_published and property.status in VISIBLE_STATUSES and not property.is_demo
+            and (not property.agency_id or property.agency.closed_at is None))
+
+
+def feed_is_active(feed):
+    return not feed.agency_id or feed.agency.closed_at is None
 
 
 def feed_for(property):
@@ -92,6 +97,8 @@ def feed_matches_property(feed, property):
 
 
 def latest_visible_property(feed):
+    if not feed_is_active(feed):
+        return None
     scope = {"agency_id": feed.agency_id} if feed.agency_id else {
         "agency__isnull": True, "owner_id": feed.owner_id,
     }
@@ -263,6 +270,8 @@ def _display_name(user):
 
 
 def _subscribe(feed, chat_id, user):
+    if not feed_is_active(feed):
+        return None
     subscriber, _ = TelegramSubscriber.objects.update_or_create(
         feed=feed, chat_id=chat_id,
         defaults={"user_id": user["id"], "display_name": _display_name(user), "active": True},
@@ -271,10 +280,11 @@ def _subscribe(feed, chat_id, user):
 
 
 def _create_lead(property, subscriber, phone):
+    agency = Agency.objects.select_for_update().get(pk=property.agency_id) if property.agency_id else None
     responsible = property.owner
     if property.agency_id and not AgencyMembership.objects.filter(agency=property.agency, user=responsible).exists():
         responsible = property.agency.owner
-    require_new_action(responsible, Operation.EDIT_CRM, agency=property.agency)
+    require_new_action(responsible, Operation.EDIT_CRM, agency=agency)
     lookup = {"agency": property.agency, "phone": phone}
     if not property.agency_id:
         lookup["owner"] = responsible
@@ -438,7 +448,7 @@ def process_update(update):
                 return [("sendMessage", {"chat_id": chat_id, "text": "Эта ссылка на объект устарела. Попросите риелтора прислать новую."})]
             if re.fullmatch(r"f[0-9a-fA-F]{32}", token):
                 feed = TelegramFeed.objects.filter(code=uuid.UUID(hex=token[1:])).first()
-                if feed:
+                if feed and feed_is_active(feed):
                     _subscribe(feed, chat_id, user)
                     latest = latest_visible_property(feed)
                     message = _subscription_message(feed)
@@ -446,6 +456,8 @@ def process_update(update):
                         return [("sendMessage", {"chat_id": chat_id, "text": message}),
                                 ("listing", {"chat_id": chat_id, "property_id": latest.pk, "feed_id": feed.pk})]
                     return [("sendMessage", {"chat_id": chat_id, "text": message + " Пока объявлений нет — пришлём новые после публикации."})]
+                if feed:
+                    return [("sendMessage", {"chat_id": chat_id, "text": "Эта лента больше не доступна."})]
             if not token:
                 if _active_subscriptions(chat_id, user["id"]).exists():
                     return [_subscriptions_panel(chat_id, user["id"])]

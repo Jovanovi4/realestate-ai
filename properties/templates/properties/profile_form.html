@@ -13,6 +13,7 @@
   <span><strong>Тариф и расход</strong></span>
   <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg>
 </a>
+{% if closed_agencies %}<section class="detail-section mb-4"><div class="detail-section__heading"><div><span class="detail-kicker">Сохранённые данные</span><h2>Архив команд</h2></div></div>{% for agency in closed_agencies %}<div class="agency-row"><div><strong>{{ agency.name }}</strong><span class="detail-muted d-block">Закрыта {{ agency.closed_at|date:"d.m.Y H:i" }}</span></div><a class="btn btn-sm btn-neutral" href="{% url 'agency_archive' agency.pk %}">Открыть архив</a></div>{% endfor %}</section>{% endif %}
 
 <div class="profile-form-layout">
   <section class="app-form-panel" aria-labelledby="profile-form-title" x-data="{ preview: {% if form.instance.photo %}'{{ form.instance.photo.url|escapejs }}'{% else %}null{% endif %}, fileName: '', selectPhoto(event) { const file = event.target.files[0]; if (file) { this.preview = URL.createObjectURL(file); this.fileName = file.name; } } }">

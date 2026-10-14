@@ -1,5 +1,5 @@
 {% load crm_display %}
-<aside class="lead-panel" id="lead-panel" role="dialog" aria-labelledby="lead-panel-title" tabindex="-1" hx-history="false">
+<aside class="lead-panel" id="lead-panel" role="region" aria-labelledby="lead-panel-title" tabindex="-1" hx-history="false">
   <header class="lead-panel__header">
     <div class="lead-panel__heading">
       <span class="detail-kicker">Заявка</span>
@@ -22,7 +22,7 @@
     {% if panel_error %}<div class="alert alert-danger" role="alert">{{ panel_error }}</div>{% endif %}
     <div class="lead-panel__identity">
       <a class="lead-panel__phone" href="tel:{{ lead.phone }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-phone"></use></svg><span>{{ lead.phone }}</span></a>
-      <span class="lead-panel__property">{{ lead.property.title }}</span>
+      <span class="lead-panel__property">{% if lead.property_id %}{{ lead.property.title }}{% else %}Подбор недвижимости{% if lead.message %} · {{ lead.message|truncatechars:72 }}{% endif %}{% endif %}</span>
       <div class="lead-panel__meta"><span>Ответственный: <strong>{% if lead.assigned_to %}{{ lead.assigned_to|staff_name }}{% else %}не назначен{% endif %}</strong></span>{% include "properties/includes/lead_status_badge.html" %}</div>
     </div>
 
@@ -31,7 +31,11 @@
         <span class="detail-kicker">Ближайший срок</span>
         <strong>{% if panel_first_response_is_next %}Ответить клиенту{% else %}{{ lead.next_action }}{% endif %}</strong>
         <p class="lead-panel__deadline{% if panel_deadline_overdue %} is-overdue{% endif %}">{% if panel_first_response_is_next %}Первый ответ {% if panel_deadline_overdue %}просрочен{% else %}до{% endif %}{% else %}Задача {% if panel_deadline_overdue %}просрочена{% else %}до{% endif %}{% endif %} <time datetime="{{ panel_deadline|date:'c' }}">{{ panel_deadline|date:"d.m.Y · H:i" }}</time></p>
-        {% if lead.first_response_overdue and not panel_first_response_is_next %}<p class="lead-panel__overdue" role="status">Первый ответ просрочен · {{ lead.first_response_due_at|date:"d.m.Y · H:i" }}</p>{% elif lead.next_action_due_at < queue_now and panel_first_response_is_next %}<p class="lead-panel__overdue" role="status">Задача просрочена · {{ lead.next_action_due_at|date:"d.m.Y · H:i" }}</p>{% endif %}
+        {% with response_minute=lead.first_response_due_at|date:"YmdHi" action_minute=lead.next_action_due_at|date:"YmdHi" %}
+          {% if response_minute != action_minute %}
+            {% if lead.first_response_overdue and not panel_first_response_is_next %}<p class="lead-panel__overdue" role="status">Первый ответ просрочен · {{ lead.first_response_due_at|date:"d.m.Y · H:i" }}</p>{% elif lead.next_action_due_at < queue_now and panel_first_response_is_next %}<p class="lead-panel__overdue" role="status">Задача просрочена · {{ lead.next_action_due_at|date:"d.m.Y · H:i" }}</p>{% endif %}
+          {% endif %}
+        {% endwith %}
       </section>
 
       <div class="lead-panel__actions" role="group" aria-label="Действия с заявкой">
@@ -80,7 +84,7 @@
 
       {% if can_convert %}
         {% if linked_deal and linked_deal.stage != 'won' and linked_deal.stage != 'lost' %}<form method="post" action="{% url 'lead_outcome' lead.pk %}" hx-post="{% url 'lead_outcome' lead.pk %}" hx-target="#lead-panel" hx-swap="outerHTML">{% csrf_token %}{% include "properties/includes/lead_panel_form_context.html" %}<input type="hidden" name="deal_id" value="{{ linked_deal.pk }}"><button class="lead-overview__outcome-action" type="submit" name="action" value="convert_existing"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Привязать к сделке</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></button></form>{% else %}<a class="lead-overview__outcome-action" href="{% url 'deal_create' %}?lead={{ lead.pk }}"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Перевести в сделку</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endif %}
-      {% else %}<div class="lead-panel__unavailable"><span class="lead-overview__outcome-action lead-panel__action-unavailable" aria-disabled="true"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Перевести в сделку</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></span><small>{% if not lead.client %}Сначала свяжите заявку с клиентом.{% elif not lead.first_contacted_at %}После первого контакта и квалификации.{% else %}Отметьте «Целевой клиент».{% endif %}</small></div>{% endif %}
+      {% else %}<div class="lead-panel__unavailable"><span class="lead-overview__outcome-action lead-panel__action-unavailable" aria-disabled="true"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Перевести в сделку</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></span><small>{% if not lead.property_id %}Привяжите объект в полной карточке заявки.{% elif not lead.client %}Сначала свяжите заявку с клиентом.{% elif not lead.first_contacted_at %}После первого контакта и квалификации.{% else %}Отметьте «Целевой клиент».{% endif %}</small></div>{% endif %}
 
       <details class="lead-panel__action lead-panel__decline" {% if decline_form.is_bound %}open{% endif %}>
         <summary class="lead-overview__outcome-action"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></span><span>Закрыть без сделки</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
@@ -88,7 +92,7 @@
       </details>
       </div>
     {% else %}
-      <div class="lead-panel__finished"><span class="detail-kicker">{% if lead.status == 'archived' %}Статус{% else %}Итог обработки{% endif %}</span><strong{% if lead.outcome != 'open' %} class="lead-outcome-text--{{ lead.outcome }}"{% endif %}>{% if lead.status == 'archived' %}В архиве{% else %}{{ lead.get_outcome_display }}{% endif %}</strong>{% if lead.outcome_reason %}<p>{{ lead.outcome_reason|linebreaksbr }}</p>{% endif %}</div>
+      {% if lead.outcome_reason %}<div class="lead-panel__finished"><span class="detail-kicker">Причина</span><p>{{ lead.outcome_reason|linebreaksbr }}</p></div>{% endif %}
       {% if lead.outcome == 'declined' and lead.status != 'archived' %}<form class="lead-panel__reopen" method="post" action="{% url 'lead_outcome' lead.pk %}" hx-post="{% url 'lead_outcome' lead.pk %}" hx-target="#lead-panel" hx-swap="outerHTML">{% csrf_token %}{% include "properties/includes/lead_panel_form_context.html" %}<button class="btn btn-neutral btn-sm" type="submit" name="action" value="reopen">Возобновить работу</button></form>{% endif %}
     {% endif %}
   </div>

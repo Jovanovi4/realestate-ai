@@ -16,15 +16,23 @@
     </details>
   </div>
   <div class="deal-focus__next">
-    <span class="detail-kicker">Ближайшее действие</span>
-    {% if deal_next_task %}
+    {% if object.stage == 'won' or object.stage == 'lost' %}
+      <span class="detail-kicker">Итог сделки</span>
+      <strong>{{ object.get_stage_display }}</strong>
+      {% if object.outcome_note %}<p class="deal-outcome-note">{{ object.outcome_note|truncatechars:240|linebreaksbr }}</p>{% endif %}
+      {% if object.closed_at %}<time datetime="{{ object.closed_at|date:'c' }}">Закрыта {{ object.closed_at|date:"d.m.Y · H:i" }}</time>{% endif %}
+      <a href="{% url 'task_create' %}?deal={{ object.pk }}" class="deal-focus__plan">Добавить задачу</a>
+    {% else %}
+      <span class="detail-kicker">Ближайшее действие</span>
+      {% if deal_next_task %}
       {% if deal_next_task.owner_id == request.user.pk %}<a href="{% url 'task_detail' deal_next_task.pk %}"><strong>{{ deal_next_task.text }}</strong></a>{% else %}<strong>{{ deal_next_task.text }}</strong>{% endif %}
       {% if deal_next_task.due_at %}<time{% if deal_next_overdue %} class="is-overdue"{% endif %} datetime="{{ deal_next_task.due_at|date:'c' }}">{% if deal_next_overdue %}Просрочено · {% else %}До {% endif %}{{ deal_next_task.due_at|date:"d.m.Y · H:i" }}</time>{% else %}<span>Без срока</span>{% endif %}
-    {% elif deal_next_showing %}
+      {% elif deal_next_showing %}
       {% if deal_next_showing.owner_id == request.user.pk %}<a href="{% url 'showing_detail' deal_next_showing.pk %}"><strong>Показ объекта</strong></a>{% else %}<strong>Показ объекта</strong>{% endif %}
       <time datetime="{{ deal_next_showing.starts_at|date:'c' }}">{{ deal_next_showing.starts_at|date:"d.m.Y · H:i" }}</time>
-    {% else %}
+      {% else %}
       <a href="{% url 'task_create' %}?deal={{ object.pk }}" class="deal-focus__plan">Запланировать действие</a>
+      {% endif %}
     {% endif %}
   </div>
 </section>

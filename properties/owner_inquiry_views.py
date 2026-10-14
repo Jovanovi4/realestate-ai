@@ -32,9 +32,9 @@ class OwnerInquiryListView(LoginRequiredMixin, View):
         if filter_client:
             inquiries = inquiries.filter(client=filter_client)
         if status == "active":
-            inquiries = inquiries.exclude(result="declined").filter(property__isnull=True)
+            inquiries = inquiries.exclude(result="declined").exclude(status="archived").filter(property__isnull=True)
         elif status == "completed":
-            inquiries = inquiries.filter(result="declined") | inquiries.filter(property__isnull=False)
+            inquiries = (inquiries.filter(result="declined") | inquiries.filter(property__isnull=False)).exclude(status="archived")
         page = Paginator(inquiries.order_by("-created_at"), 20).get_page(request.GET.get("page"))
         return render(request, "properties/owner_inquiry_list.html", {
             "page_obj": page, "inquiries": page.object_list, "status": status, "filter_client": filter_client,
@@ -107,6 +107,9 @@ class OwnerInquiryProcessView(LoginRequiredMixin, View):
             inquiry = get_object_or_404(workspace_queryset(
                 OwnerInquiry.objects.select_for_update().select_related("client", "property"), request.user,
             ), pk=pk)
+            if inquiry.status == "archived":
+                messages.error(request, "Обращение находится в архиве. Верните его в работу через список заявок.")
+                return redirect("owner_inquiry_detail", pk=pk)
             if inquiry.property_id:
                 messages.info(request, "Объект уже создан из этого обращения.")
                 return redirect("owner_inquiry_detail", pk=pk)
@@ -125,6 +128,8 @@ class OwnerInquiryProcessView(LoginRequiredMixin, View):
             now = timezone.now()
             first_conversation = inquiry.first_contacted_at is None
             inquiry.first_contacted_at = inquiry.first_contacted_at or now
+            if inquiry.status == "new":
+                inquiry.status = "read"
             inquiry.result = form.cleaned_data["result"]
             inquiry.result_note = form.cleaned_data["result_note"].strip()
             inquiry.next_action = form.cleaned_data.get("next_action", "").strip()
@@ -145,7 +150,7 @@ class OwnerInquiryAssignView(LoginRequiredMixin, View):
             raise Http404
         with transaction.atomic():
             inquiry = get_object_or_404(workspace_queryset(OwnerInquiry.objects.select_for_update(), request.user), pk=pk)
-            if not inquiry.agency_id:
+            if not inquiry.agency_id or inquiry.status == "archived":
                 raise Http404
             assignee_id = request.POST.get("assigned_to", "")
             if not assignee_id.isdigit():

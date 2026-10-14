@@ -45,13 +45,7 @@
   const syncPanel = ({ moveFocus = false } = {}) => {
     const openPanel = panel();
     const selectedId = slot()?.dataset.dealId || null;
-    const roomy = workspace.getBoundingClientRect().width >= 1280;
-    workspace.classList.toggle('deal-workspace--roomy', roomy);
     workspace.classList.toggle('deal-workspace--open', !!openPanel);
-    const overlay = !!openPanel && !roomy;
-    workspace.querySelector('.deal-workspace__list').inert = overlay;
-    document.querySelectorAll('.app-sidebar, .mobile-header, .deal-board-page-header').forEach((item) => { item.inert = overlay; });
-    document.body.classList.toggle('lead-panel-overlay-open', overlay);
     board.querySelectorAll('[data-deal-card]').forEach((card) => {
       const selected = card.dataset.dealId === selectedId;
       card.classList.toggle('is-open', selected);
@@ -61,11 +55,13 @@
     });
     if (openPanel) {
       lastOpenedId = selectedId;
-      openPanel.setAttribute('aria-modal', String(overlay));
       syncReason();
       rememberForm();
       syncStageSave();
-      if (moveFocus) openPanel.focus({ preventScroll: true });
+      if (moveFocus) {
+        openPanel.focus({ preventScroll: true });
+        if (workspace.getBoundingClientRect().width < 704) slot()?.scrollIntoView?.({ block: 'start' });
+      }
     } else if (moveFocus && lastOpenedId) {
       board.querySelector(`[data-deal-card][data-deal-id="${lastOpenedId}"] [data-deal-panel-open]`)?.focus({ preventScroll: true });
     }
@@ -197,6 +193,5 @@
     }
   });
   document.addEventListener('deal-board-refreshed', () => { currentPanelUrl = location.href; syncPanel(); });
-  new ResizeObserver(() => syncPanel()).observe(workspace);
   syncPanel();
 })();

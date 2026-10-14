@@ -70,6 +70,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'properties.agency_write_guard.AgencyWriteGuardMiddleware',
     'properties.security_middleware.AccountSecurityMiddleware',
     'properties.audit.AuditActorMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -145,7 +146,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'ru'
 
-TIME_ZONE = os.getenv("TIME_ZONE", "Europe/Lisbon")
+TIME_ZONE = os.getenv("TIME_ZONE", "Europe/Moscow")
 
 USE_I18N = True
 

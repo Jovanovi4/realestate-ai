@@ -4,14 +4,14 @@ from django.db.models.signals import post_delete, post_save, pre_delete, pre_sav
 
 from .models import (
     AIContent, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientInteraction,
-    ClientReminder, Deal, Lead, Property, PropertyImage, RealtorProfile, Showing,
+    ClientReminder, Deal, Lead, OwnerInquiry, Property, PropertyImage, RealtorProfile, Showing,
 )
 
 
 _actor = ContextVar("audit_actor", default=None)
 TRACKED_MODELS = (
     Property, PropertyImage, Client, ClientInteraction, ClientReminder, Lead,
-    Deal, Showing, AIContent, RealtorProfile, AgencyMembership, AgencyInvitation,
+    Deal, Showing, OwnerInquiry, AIContent, RealtorProfile, AgencyMembership, AgencyInvitation,
 )
 
 
@@ -32,7 +32,7 @@ class AuditActorMiddleware:
 
 
 def _scope(instance):
-    if isinstance(instance, (PropertyImage, AIContent, Lead)):
+    if isinstance(instance, (PropertyImage, AIContent)):
         record = instance.property
     elif isinstance(instance, ClientInteraction):
         record = instance.client

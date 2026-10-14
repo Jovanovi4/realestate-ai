@@ -145,12 +145,14 @@ class DealBoardView(LoginRequiredMixin, TemplateView):
             anchor_prefix="deal-board",
         )
         context["columns"] = columns
+        context["has_deals"] = bool(context.get("selected_deal")) or any(column["count"] for column in columns)
         context["active_stages"] = Deal.ACTIVE_STAGES
         context["active_count"] = (
             sum(column["count"] for column in columns)
             if context["analytics_stage_filter"] else
             sum(column["count"] for column in columns if column["key"] in Deal.ACTIVE_STAGES)
         )
+        context["closed_count"] = sum(column["count"] for column in columns if column["key"] in Deal.CLOSED_STAGES)
         return context
 
 
@@ -236,7 +238,7 @@ class DealCreateView(DealFormMixin, CreateView):
         lead_id = self.request.GET.get("lead", "")
         if lead_id.isdigit():
             lead = get_object_or_404(
-                workspace_queryset(Lead.objects.select_related("client"), self.request.user, prefix="property__"),
+                workspace_queryset(Lead.objects.select_related("client"), self.request.user),
                 pk=lead_id,
             )
             if lead.client_id:
@@ -264,7 +266,7 @@ class DealCreateView(DealFormMixin, CreateView):
             lead = form.cleaned_data.get("lead")
             if lead:
                 lead = get_object_or_404(
-                    workspace_queryset(Lead.objects.select_for_update(), self.request.user, prefix="property__"), pk=lead.pk,
+                    workspace_queryset(Lead.objects.select_for_update(), self.request.user), pk=lead.pk,
                 )
                 if lead.status == "archived" or lead.outcome != "open" or lead.qualification != "qualified" or not lead.first_contacted_at:
                     form.add_error("lead", "Заявка уже завершена либо не прошла первый контакт и квалификацию.")
@@ -320,13 +322,17 @@ class DealUpdateView(DealFormMixin, UpdateView):
             previous = Deal.objects.select_for_update().only("stage", "responsible_id").get(pk=self.object.pk)
             response = super().form_valid(form)
             if previous.responsible_id != self.object.responsible_id and self.object.responsible_id:
-                self.object.tasks.filter(
+                for task in self.object.tasks.filter(
                     owner_id=previous.responsible_id, is_done=False, cancelled_at__isnull=True,
                     lead__isnull=True,
-                ).update(owner_id=self.object.responsible_id)
-                self.object.showings.filter(
+                ).select_for_update():
+                    task.owner_id = self.object.responsible_id
+                    task.save(update_fields=["owner"])
+                for showing in self.object.showings.filter(
                     owner_id=previous.responsible_id, status="planned",
-                ).update(owner_id=self.object.responsible_id)
+                ).select_for_update():
+                    showing.owner_id = self.object.responsible_id
+                    showing.save(update_fields=["owner"])
                 ClientInteraction.objects.create(
                     client=self.object.client,
                     lead=self.object.lead,

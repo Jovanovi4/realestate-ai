@@ -229,8 +229,8 @@ class BillingOverviewTests(TestCase):
         self.assertContains(response, 'aria-label="Пояснение: Ресурсы"')
         self.assertNotContains(response, 'aria-label="Пояснение: Ожидаемый расход ИИ"')
         self.assertNotContains(response, "billing-help--end")
-        self.assertContains(response, 'class="billing-help" type="button" data-ui-help')
-        self.assertContains(response, 'class="billing-help__content" hidden')
+        self.assertContains(response, 'class="ui-help-trigger" type="button" data-ui-help')
+        self.assertContains(response, 'class="ui-help-content" hidden')
         self.assertContains(response, 'href="#ui-icon-info"')
         self.assertContains(response, "Тарифные ограничения пока не применяются")
 

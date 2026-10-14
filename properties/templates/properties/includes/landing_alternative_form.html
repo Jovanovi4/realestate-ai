@@ -1,0 +1,21 @@
+<form method="post" action="#alternative-requests" class="alternative-intake__form" novalidate>
+  {% csrf_token %}
+  <input type="hidden" name="intake_kind" value="{{ kind }}">
+  {{ intake_form.request_id }}{{ intake_form.source_detail }}
+  <div class="visually-hidden" aria-hidden="true"><label for="{{ intake_form.website.id_for_label }}">Не заполняйте это поле</label>{{ intake_form.website }}</div>
+  {% if intake_form.non_field_errors %}<div class="alert alert-danger mb-0" role="alert">{{ intake_form.non_field_errors|striptags }}</div>{% endif %}
+  <div class="alternative-intake__field"><label for="{{ intake_form.name.id_for_label }}">{{ intake_form.name.label }}</label>{{ intake_form.name }}{% if intake_form.name.errors %}<div class="text-danger small mt-1">{{ intake_form.name.errors|striptags }}</div>{% endif %}</div>
+  <div class="alternative-intake__field"><label for="{{ intake_form.phone.id_for_label }}">{{ intake_form.phone.label }}</label>{{ intake_form.phone }}{% if intake_form.phone.errors %}<div class="text-danger small mt-1">{{ intake_form.phone.errors|striptags }}</div>{% endif %}</div>
+  {% if kind == "search" %}
+    <div class="alternative-intake__field"><label for="{{ intake_form.interest_type.id_for_label }}">{{ intake_form.interest_type.label }}</label>{{ intake_form.interest_type }}{% if intake_form.interest_type.errors %}<div class="text-danger small mt-1">{{ intake_form.interest_type.errors|striptags }}</div>{% endif %}</div>
+    <div class="alternative-intake__field"><label for="{{ intake_form.message.id_for_label }}">{{ intake_form.message.label }}</label>{{ intake_form.message }}{% if intake_form.message.errors %}<div class="text-danger small mt-1">{{ intake_form.message.errors|striptags }}</div>{% endif %}</div>
+  {% else %}
+    <div class="alternative-intake__field"><label for="{{ intake_form.deal_type.id_for_label }}">{{ intake_form.deal_type.label }}</label>{{ intake_form.deal_type }}{% if intake_form.deal_type.errors %}<div class="text-danger small mt-1">{{ intake_form.deal_type.errors|striptags }}</div>{% endif %}</div>
+    <div class="alternative-intake__field"><label for="{{ intake_form.address.id_for_label }}">{{ intake_form.address.label }}</label>{{ intake_form.address }}{% if intake_form.address.errors %}<div class="text-danger small mt-1">{{ intake_form.address.errors|striptags }}</div>{% endif %}</div>
+    <div class="alternative-intake__field"><label for="{{ intake_form.description.id_for_label }}">{{ intake_form.description.label }}</label>{{ intake_form.description }}{% if intake_form.description.errors %}<div class="text-danger small mt-1">{{ intake_form.description.errors|striptags }}</div>{% endif %}</div>
+    <div class="alternative-intake__field"><label for="{{ intake_form.expected_price.id_for_label }}">{{ intake_form.expected_price.label }}</label>{{ intake_form.expected_price }}{% if intake_form.expected_price.errors %}<div class="text-danger small mt-1">{{ intake_form.expected_price.errors|striptags }}</div>{% endif %}</div>
+  {% endif %}
+  <div class="form-check alternative-intake__consent">{{ intake_form.personal_data_consent }}<label class="form-check-label" for="{{ intake_form.personal_data_consent.id_for_label }}">Даю <a href="{% url 'personal_data_consent' %}" target="_blank" rel="noopener">согласие на обработку персональных данных</a> и ознакомился(-ась) с <a href="{% url 'privacy_policy' %}" target="_blank" rel="noopener">политикой</a>.</label>{% if intake_form.personal_data_consent.errors %}<div class="text-danger small mt-1">{{ intake_form.personal_data_consent.errors|striptags }}</div>{% endif %}</div>
+  {% if turnstile_enabled %}<div class="cf-turnstile" data-sitekey="{{ turnstile_site_key }}"></div>{% endif %}
+  <button class="btn btn-primary alternative-intake__submit" type="submit">Отправить обращение</button>
+</form>

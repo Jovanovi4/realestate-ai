@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Лендинги{% endblock %}
 {% block content %}
-<header class="ui-page-header"><div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="home" %}Недвижимость</p><h1 class="ui-page-header__title">Лендинги</h1><p class="ui-page-header__description">Страницы объектов: настройка, публикация и публичные ссылки.</p></div><div class="ui-page-header__actions"><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></header>
+<header class="ui-page-header"><div><p class="ui-page-header__eyebrow ui-page-header__eyebrow--icon">{% include "includes/page_section_icon.html" with icon="home" %}Недвижимость</p><h1 class="ui-page-header__title">Лендинги</h1><p class="ui-page-header__description">Дополнительные формы включаются в настройках лендинга.</p></div><div class="ui-page-header__actions"><a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a></div></header>
 <nav class="lead-status-filter landing-status-filter" aria-label="Фильтр лендингов по статусу">
   <span class="lead-status-filter__label">Статус</span>
   <div class="lead-status-filter__options ui-switch">
@@ -48,11 +48,11 @@
 <section class="empty-state" aria-labelledby="empty-landings-title"><div>
   <span class="empty-state__icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-layout"></use></svg></span>
   {% if selected_status == 'draft' or selected_status == 'published' %}
-    <h2 class="empty-state__title" id="empty-landings-title">По выбранному статусу лендингов нет</h2>
+    <h2 class="empty-state__title" id="empty-landings-title">По выбранному статусу лендингов объектов нет</h2>
     <p class="empty-state__text mb-3">Выберите другой статус или посмотрите все лендинги.</p>
     <a href="{% url 'landing_list' %}" class="btn btn-neutral">Показать все лендинги</a>
   {% else %}
-    <h2 class="empty-state__title" id="empty-landings-title">Лендингов пока нет</h2>
+    <h2 class="empty-state__title" id="empty-landings-title">Лендингов объектов пока нет</h2>
     <p class="empty-state__text mb-3">Создайте объект и настройте для него страницу в разделе «Лендинг».</p>
     <a href="{% url 'create_property' %}" class="btn btn-primary"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg>Создать объект</a>
   {% endif %}

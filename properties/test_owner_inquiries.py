@@ -1,4 +1,5 @@
-from datetime import timedelta
+from datetime import datetime, time, timedelta
+from unittest.mock import patch
 from uuid import uuid4
 
 from django.contrib.auth.models import User
@@ -35,7 +36,9 @@ class OwnerInquiryTests(TestCase):
         return data
 
     def test_create_without_property_and_show_in_tasks(self):
-        response = self.client.post(reverse("owner_inquiry_create"), self.create_data())
+        fixed_now = timezone.make_aware(datetime.combine(timezone.localdate(), time(12, 0)))
+        with patch("django.utils.timezone.now", return_value=fixed_now):
+            response = self.client.post(reverse("owner_inquiry_create"), self.create_data())
         self.assertEqual(response.status_code, 302, response.context["form"].errors if response.context else "")
         inquiry = OwnerInquiry.objects.get()
         self.assertIsNone(inquiry.property_id)
@@ -44,7 +47,8 @@ class OwnerInquiryTests(TestCase):
         self.assertEqual(inquiry.source, "recommendation")
         self.assertEqual(Property.objects.count(), 0)
         self.assertContains(self.client.get(reverse("owner_inquiry_list")), "Мария")
-        self.assertContains(self.client.get(reverse("workday")), "Ответить собственнику")
+        with patch("django.utils.timezone.now", return_value=fixed_now):
+            self.assertContains(self.client.get(reverse("workday")), "Ответить собственнику")
         self.assertContains(self.client.get(reverse("work_items") + "?kind=owner"), "Ответить собственнику")
 
     def test_owner_inquiry_uses_readable_price_and_assignee_name(self):
@@ -121,6 +125,7 @@ class OwnerInquiryTests(TestCase):
         self.assertEqual(response.status_code, 302)
         inquiry.refresh_from_db()
         self.assertIsNotNone(inquiry.first_contacted_at)
+        self.assertEqual(inquiry.status, "read")
         self.assertEqual(inquiry.result, "agreed")
         self.assertEqual(inquiry.next_action, "Подготовить объект")
         self.assertTrue(ClientInteraction.objects.filter(client=inquiry.client, text__contains="Согласовали").exists())
@@ -148,6 +153,13 @@ class OwnerInquiryTests(TestCase):
         retry = self.client.post(reverse("create_property"), {**property_data, "request_key": str(uuid4())})
         self.assertEqual(retry.status_code, 409)
         self.assertEqual(Property.objects.count(), 1)
+        self.client.post(reverse("lead_bulk_status_update"), {
+            "action": "status", "status": "archived", "owner_inquiry_ids": [inquiry.pk],
+        })
+        self.assertContains(
+            self.client.get(reverse("owner_inquiry_detail", args=[inquiry.pk])),
+            reverse("property_detail", args=[inquiry.property_id]),
+        )
 
     def test_incomplete_result_cannot_convert(self):
         self.client.post(reverse("owner_inquiry_create"), self.create_data())
@@ -196,15 +208,18 @@ class OwnerInquiryTests(TestCase):
         self.assertEqual(self.client.get(reverse("create_property") + f"?owner_inquiry={inquiry.pk}").status_code, 404)
 
     def test_team_assignee_can_process_shared_inquiry(self):
+        fixed_now = timezone.make_aware(datetime.combine(timezone.localdate(), time(12, 0)))
         agency = Agency.objects.create(owner=self.user, name="Команда")
         AgencyMembership.objects.create(agency=agency, user=self.user, role="owner")
         AgencyMembership.objects.create(agency=agency, user=self.other, role="agent")
-        response = self.client.post(reverse("owner_inquiry_create"), self.create_data(assigned_to=self.other.pk))
+        with patch("django.utils.timezone.now", return_value=fixed_now):
+            response = self.client.post(reverse("owner_inquiry_create"), self.create_data(assigned_to=self.other.pk))
         self.assertEqual(response.status_code, 302, response.context["form"].errors if response.context else "")
         inquiry = OwnerInquiry.objects.get()
         self.assertEqual(inquiry.agency, agency)
         self.client.force_login(self.other)
-        self.assertContains(self.client.get(reverse("workday")), "Ответить собственнику")
+        with patch("django.utils.timezone.now", return_value=fixed_now):
+            self.assertContains(self.client.get(reverse("workday")), "Ответить собственнику")
         self.assertEqual(self.client.post(reverse("owner_inquiry_assign", args=[inquiry.pk]), {
             "assigned_to": self.user.pk,
         }).status_code, 404)
@@ -220,6 +235,11 @@ class OwnerInquiryTests(TestCase):
         self.assertEqual(inquiry.assigned_to, self.user)
         self.client.post(reverse("owner_inquiry_assign", args=[inquiry.pk]), {"assigned_to": self.other.pk})
         membership = AgencyMembership.objects.get(agency=agency, user=self.other)
-        self.assertEqual(self.client.post(reverse("agency_member_remove", args=[membership.pk])).status_code, 302)
+        remove_url = reverse("agency_member_remove", args=[membership.pk])
+        preview = self.client.get(remove_url)
+        self.assertEqual(self.client.post(remove_url, {
+            "replacement": self.user.pk, "preview_token": preview.context["preview_token"],
+            "confirm": "transfer_and_remove",
+        }).status_code, 302)
         inquiry.refresh_from_db()
         self.assertEqual(inquiry.assigned_to, self.user)

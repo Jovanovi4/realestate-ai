@@ -1,8 +1,7 @@
 {% load crm_display %}
 <div id="deal-panel-slot" class="deal-panel-slot{% if selected_deal %} is-open{% endif %}"{% if selected_deal %} data-deal-id="{{ selected_deal.pk }}"{% endif %}>
 {% if selected_deal %}
-  <a class="lead-workspace__backdrop deal-panel__backdrop" href="?{{ deal_panel_query }}#deal-board-{{ selected_deal.stage }}" data-deal-panel-close aria-label="Закрыть карточку сделки" tabindex="-1"></a>
-  <aside class="lead-panel deal-panel" id="deal-panel" role="dialog" aria-labelledby="deal-panel-title" tabindex="-1">
+  <aside class="lead-panel deal-panel" id="deal-panel" role="region" aria-labelledby="deal-panel-title" tabindex="-1">
     <header class="lead-panel__header">
       <div class="lead-panel__heading"><span class="detail-kicker">Сделка</span><h2 id="deal-panel-title">{{ selected_deal.client.name }}</h2></div>
       <div class="lead-panel__header-actions">
@@ -34,19 +33,31 @@
           </details>
         </div>
       </section>
-      <section class="lead-panel__focus{% if deal_panel_showing_first and deal_panel_showing.owner_id == request.user.pk %} deal-panel__focus-card{% endif %}" aria-label="Ближайшее действие">
-        <span class="detail-kicker">Ближайшее действие</span>
-        {% if deal_panel_showing_first %}
+      <section class="lead-panel__focus{% if selected_deal.stage != 'won' and selected_deal.stage != 'lost' and deal_panel_showing_first and deal_panel_showing.owner_id == request.user.pk %} deal-panel__focus-card{% endif %}" aria-label="{% if selected_deal.stage == 'won' or selected_deal.stage == 'lost' %}Итог сделки{% else %}Ближайшее действие{% endif %}">
+        {% if selected_deal.stage == 'won' or selected_deal.stage == 'lost' %}
+          <span class="detail-kicker">Итог сделки</span>
+          <strong>{{ selected_deal.get_stage_display }}</strong>
+          {% if selected_deal.outcome_note %}<p class="deal-outcome-note">{{ selected_deal.outcome_note|truncatechars:240|linebreaksbr }}</p>{% endif %}
+          {% if selected_deal.closed_at %}<p class="lead-panel__deadline">Закрыта <time datetime="{{ selected_deal.closed_at|date:'c' }}">{{ selected_deal.closed_at|date:"d.m.Y · H:i" }}</time></p>{% endif %}
+          {% if deal_panel_task %}<p class="lead-panel__deadline deal-panel__follow-up">Открытая задача: {% if deal_panel_task.owner_id == request.user.pk %}<a class="deal-panel__focus-link" href="{% url 'task_detail' deal_panel_task.pk %}">{{ deal_panel_task.text }}</a>{% else %}{{ deal_panel_task.text }}{% endif %}</p>{% endif %}
+        {% else %}
+          <span class="detail-kicker">Ближайшее действие</span>
+          {% if deal_panel_showing_first %}
           <strong>{% if deal_panel_showing.owner_id == request.user.pk %}<a class="deal-panel__focus-link" href="{% url 'showing_detail' deal_panel_showing.pk %}">Показ объекта</a>{% else %}Показ объекта{% endif %}</strong><p class="lead-panel__deadline">{{ deal_panel_showing.starts_at|date:"d.m.Y · H:i" }}</p>
-        {% elif deal_panel_task %}
+          {% elif deal_panel_task %}
           <strong>{{ deal_panel_task.text }}</strong><p class="lead-panel__deadline{% if deal_panel_task.due_at and deal_panel_task.due_at < deal_panel_now %} is-overdue{% endif %}">{% if deal_panel_task.due_at %}{% if deal_panel_task.due_at < deal_panel_now %}Просрочено · {% else %}До {% endif %}{{ deal_panel_task.due_at|date:"d.m.Y · H:i" }}{% else %}Без срока{% endif %}</p>
           {% if deal_panel_task.owner_id == request.user.pk %}<a class="btn btn-neutral btn-sm deal-panel__task-link" href="{% url 'task_detail' deal_panel_task.pk %}">Открыть задачу</a>{% endif %}
-        {% else %}<strong>Запланируйте действие</strong>{% endif %}
+          {% else %}<strong>Запланируйте действие</strong>{% endif %}
+        {% endif %}
       </section>
+      {% if selected_deal.stage == 'won' or selected_deal.stage == 'lost' %}
+      <a class="btn btn-text btn-sm deal-panel__task-link" href="{% url 'task_create' %}?deal={{ selected_deal.pk }}">Добавить задачу</a>
+      {% else %}
       <div class="lead-panel__actions deal-panel__quick-actions" role="group" aria-label="Действия со сделкой">
         <a class="lead-overview__outcome-action" href="{% url 'task_create' %}?deal={{ selected_deal.pk }}"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-plus"></use></svg></span><span>Добавить задачу</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>
         <a class="lead-overview__outcome-action" href="{% url 'showing_create' %}?deal={{ selected_deal.pk }}"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-calendar"></use></svg></span><span>Назначить показ</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>
       </div>
+      {% endif %}
       <details class="client-panel__overview"><summary>О сделке<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary><div class="client-panel__overview-body"><dl><div><dt>Клиент</dt><dd><a href="{% url 'client_detail' selected_deal.client.pk %}">Открыть карточку</a></dd></div>{% if selected_deal.expected_commission %}<div><dt>Комиссия</dt><dd>{{ selected_deal.expected_commission|money:selected_deal.property.currency }}</dd></div>{% endif %}{% if selected_deal.lead_id %}<div><dt>Заявка</dt><dd><a href="{% url 'lead_detail' selected_deal.lead_id %}">Открыть</a></dd></div>{% endif %}</dl>{% if selected_deal.outcome_note %}<p>{{ selected_deal.outcome_note|linebreaksbr }}</p>{% endif %}</div></details>
     </div>
   </aside>

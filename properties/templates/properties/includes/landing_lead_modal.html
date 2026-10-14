@@ -10,7 +10,7 @@
         {% if turnstile_enabled %}<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{% endif %}
         <form method="post">
           {% csrf_token %}
-          <div class="position-absolute start-0 top-0 overflow-hidden" style="width:1px;height:1px;clip:rect(0,0,0,0);" aria-hidden="true"><label for="{{ form.website.id_for_label }}">Не заполняйте это поле</label>{{ form.website }}</div>
+          {{ form.request_id }}<div class="position-absolute start-0 top-0 overflow-hidden" style="width:1px;height:1px;clip:rect(0,0,0,0);" aria-hidden="true"><label for="{{ form.website.id_for_label }}">Не заполняйте это поле</label>{{ form.website }}</div>
           {% if form.non_field_errors %}<div class="alert alert-danger small py-2">{{ form.non_field_errors|striptags }}</div>{% endif %}
           <div class="mb-3"><label class="form-label" for="{{ form.contact_purpose.id_for_label }}">Что вас интересует</label>{{ form.contact_purpose }}{% if form.contact_purpose.errors %}<div class="text-danger small mt-1">{{ form.contact_purpose.errors|striptags }}</div>{% endif %}</div>
           <div class="row g-3"><div class="col-md-6"><label class="form-label" for="{{ form.name.id_for_label }}">{{ form.name.label }}</label>{{ form.name }}{% if form.name.errors %}<div class="text-danger small mt-1">{{ form.name.errors|striptags }}</div>{% endif %}</div><div class="col-md-6"><label class="form-label" for="{{ form.phone.id_for_label }}">{{ form.phone.label }}</label>{{ form.phone }}{% if form.phone.errors %}<div class="text-danger small mt-1">{{ form.phone.errors|striptags }}</div>{% endif %}</div></div>

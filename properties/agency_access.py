@@ -6,7 +6,7 @@ from .models import AgencyMembership
 def membership_for(user):
     if not user.is_authenticated:
         return None
-    return AgencyMembership.objects.select_related("agency").filter(user=user).first()
+    return AgencyMembership.objects.select_related("agency").filter(user=user, agency__closed_at__isnull=True).first()
 
 
 def agency_for(user):

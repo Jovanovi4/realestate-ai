@@ -6,12 +6,14 @@ const vm = require('node:vm');
 
 const code = fs.readFileSync(path.join(__dirname, '../../static/js/deal-panel.js'), 'utf8');
 
-function setup({ open = false, fetchReply, initialStage = 'new' } = {}) {
+function setup({ open = false, fetchReply, initialStage = 'new', width = 1400 } = {}) {
   const listeners = new Map();
   const dispatched = [];
   const requests = [];
   const classes = new Set();
+  const bodyClasses = new Set();
   let focused = 0;
+  let scrolled = 0;
   let currentPanel = null;
   class FakeElement {}
   const field = { hidden: true, querySelector: () => form.outcome };
@@ -38,6 +40,7 @@ function setup({ open = false, fetchReply, initialStage = 'new' } = {}) {
   };
   const slot = {
     dataset: open ? { dealId: '1' } : {},
+    scrollIntoView() { scrolled += 1; },
     set outerHTML(html) {
       currentPanel = html === 'OPEN' ? panel : null;
       this.dataset = currentPanel ? { dealId: '1' } : {};
@@ -49,12 +52,12 @@ function setup({ open = false, fetchReply, initialStage = 'new' } = {}) {
   const board = { querySelectorAll() { return [card]; }, querySelector() { return link; } };
   const list = { inert: false };
   const workspace = {
-    getBoundingClientRect() { return { width: 1400 }; },
+    getBoundingClientRect() { return { width }; },
     classList: { toggle() {} }, querySelector() { return list; },
   };
   const warning = { hidden: true, querySelector: () => ({ focus() {} }) };
   const document = {
-    body: { classList: { toggle() {} } },
+    body: { classList: { toggle(name, active) { if (active) bodyClasses.add(name); else bodyClasses.delete(name); } } },
     getElementById(id) {
       return { 'deal-workspace': workspace, 'deal-panel-slot': slot, 'deal-panel': currentPanel, 'deal-panel-discard': warning }[id] || null;
     },
@@ -97,7 +100,7 @@ function setup({ open = false, fetchReply, initialStage = 'new' } = {}) {
     listeners.get('click')({ target, button: 0, preventDefault() { prevented = true; } });
     return prevented;
   };
-  return { listeners, dispatched, requests, classes, card, form, field, button, error, warning, location, click, makeLink, FakeElement, focused: () => focused };
+  return { listeners, dispatched, requests, classes, bodyClasses, list, card, form, field, button, error, warning, location, click, makeLink, FakeElement, focused: () => focused, scrolled: () => scrolled };
 }
 
 test('deal panel opens from the board and warns before discarding a changed stage', async () => {
@@ -122,6 +125,17 @@ test('deal panel opens from the board and warns before discarding a changed stag
   assert.equal(ui.location.href, close.href);
   assert.equal(ui.classes.has('is-open'), false);
   assert.equal(ui.requests.length, 2);
+});
+
+test('opening a deal in a narrow workspace scrolls to the in-page card', async () => {
+  const ui = setup({ width: 700 });
+  const open = ui.makeLink('https://example.test/deals/?deal=1', '[data-deal-panel-open]');
+  assert.equal(ui.click(open), true);
+  await new Promise(setImmediate);
+  assert.equal(ui.focused(), 1);
+  assert.equal(ui.scrolled(), 1);
+  assert.equal(ui.list.inert, false);
+  assert.equal(ui.bodyClasses.has('lead-panel-overlay-open'), false);
 });
 
 test('stage form requires a refusal reason and reports a saved stage to the board', async () => {

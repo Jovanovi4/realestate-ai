@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load crm_display %}
 {% block title %}{% if object %}Показ · {{ object.deal.property.title }}{% else %}Новый показ{% endif %}{% endblock %}
 {% block content %}
 <header class="ui-page-header">
@@ -13,6 +14,7 @@
 {% endif %}
 <section class="app-form-panel">
   <div class="app-form-panel__heading"><div class="billing-heading-with-help"><h2>Данные показа</h2>{% include "billing/includes/help.html" with label="Данные показа" text="Для одной сделки можно назначить несколько показов и переносов." only %}</div></div>
+  {% if not object or can_edit_showing %}
   <form method="post" class="app-form" novalidate>{% csrf_token %}<input type="hidden" name="next" value="{{ return_url }}">
     {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
     <div class="detail-form-grid">
@@ -33,6 +35,7 @@
     </div>
     <div class="detail-form-actions"><button class="btn btn-primary" type="submit">{% if object %}Сохранить показ{% else %}Назначить показ{% endif %}</button></div>
   </form>
+  {% else %}<p class="detail-muted mb-0">Показ ведёт {{ object.owner|staff_name }}. Ниже доступна назначенная вам обратная связь собственнику.</p>{% endif %}
 </section>
 {% if show_owner_feedback and owner_feedback_links %}
 <section class="detail-section detail-section--spaced" id="owner-feedback-details" aria-labelledby="owner-feedback-title">
@@ -43,7 +46,7 @@
       <div class="workday-item__body"><strong>{{ link.client.name }}</strong><span>{{ link.get_role_display }}{% if link.feedback_task and not link.feedback_task.cancelled_at %} · {% if link.feedback_task.is_done %}Сообщено {{ link.feedback_task.completed_at|date:"d.m.Y H:i" }}{% else %}Задача до {{ link.feedback_task.due_at|date:"d.m.Y H:i" }}{% endif %}{% endif %}</span></div>
       {% if link.feedback_task and link.feedback_task.is_done %}
         <span class="small text-muted">Обратная связь записана</span>
-      {% elif link.feedback_task and not link.feedback_task.cancelled_at %}
+      {% elif link.feedback_task and not link.feedback_task.cancelled_at and link.feedback_can_complete %}
         <details class="client-context__editor"><summary>Записать сообщение</summary>
           <form method="post" action="{% url 'owner_feedback_complete' object.pk link.feedback_task.pk %}" class="app-form mt-2">{% csrf_token %}
             <label class="form-label" for="owner-feedback-method-{{ link.pk }}">Способ связи</label><select class="form-select form-select-sm" id="owner-feedback-method-{{ link.pk }}" name="method"><option value="call">Звонок</option><option value="message">Сообщение</option></select>
@@ -51,11 +54,15 @@
             <button class="btn btn-neutral btn-sm mt-2" type="submit">Отметить, что сообщили</button>
           </form>
         </details>
-      {% else %}
+      {% elif link.feedback_task and not link.feedback_task.cancelled_at %}
+        <span class="detail-muted small">Ответственный: {{ link.feedback_task.owner|staff_name }}</span>
+      {% elif not link.feedback_task or link.feedback_task.cancelled_at %}
+        {% if can_plan_feedback %}
         <form method="post" action="{% url 'owner_feedback_plan' object.pk link.pk %}" class="d-flex flex-wrap align-items-end gap-2">{% csrf_token %}
           <div><label class="form-label" for="owner-feedback-due-{{ link.pk }}">Когда сообщить</label><input class="form-control form-control-sm" id="owner-feedback-due-{{ link.pk }}" type="datetime-local" name="due_at" value="{{ owner_feedback_due }}" required></div>
           <button class="btn btn-neutral btn-sm" type="submit">Добавить задачу</button>
         </form>
+        {% endif %}
       {% endif %}
     </article>
   {% endfor %}

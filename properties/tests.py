@@ -21,7 +21,7 @@ from django.urls import resolve, reverse
 from django.utils import timezone
 from PIL import Image
 
-from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientReminder, Deal, Lead, Property, PropertyImage, RealtorProfile, Showing, UserLegalAcceptance
+from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, CRMChangeEvent, Client, ClientReminder, Deal, Lead, Property, PropertyImage, RealtorProfile, Showing, UserLegalAcceptance
 from .forms import AIContentEditForm, AIRequestForm
 from .ai_views import get_ai_history_context
 from .services.ai_service import AIService, AIServiceError
@@ -124,7 +124,7 @@ class NavigationStructureTests(TestCase):
         self.assertContains(response, '<section class="empty-state" aria-labelledby="empty-landings-title">')
         self.assertContains(response, 'class="empty-state__icon"')
         self.assertContains(response, 'class="empty-state__title" id="empty-landings-title"')
-        self.assertContains(response, "Лендингов пока нет")
+        self.assertContains(response, "Лендингов объектов пока нет")
         self.assertNotContains(response, '<div class="fs-3 mb-2">▱</div>')
 
     def test_landing_cards_share_property_layout_and_keep_publication_actions(self):
@@ -239,7 +239,7 @@ class AgencyWorkflowTests(TestCase):
         self.deal.refresh_from_db()
         self.assertEqual((self.property.agency, self.client_record.agency, self.deal.agency), (agency, agency, agency))
         invitation = self.invite_and_join()
-        self.assertContains(self.client.get(reverse("agency_dashboard")), "История изменений")
+        self.assertContains(self.client.get(reverse("agency_dashboard") + "?tab=journal"), "История изменений")
         self.assertEqual(invitation.role, "agent")
         self.assertEqual(AgencyMembership.objects.get(user=self.agent).agency, agency)
         self.assertEqual(self.client.get(reverse("property_detail", args=[self.property.pk])).status_code, 200)
@@ -356,6 +356,8 @@ class AgencyWorkflowTests(TestCase):
         self.assertEqual(completed_task.owner, self.founder)
         self.assertEqual(planned_showing.owner, self.agent)
         self.assertEqual(completed_showing.owner, self.founder)
+        self.assertTrue(CRMChangeEvent.objects.filter(resource_type="clientreminder", resource_id=moved_task.pk, field_name="owner", old_value=str(self.founder.pk), new_value=str(self.agent.pk)).exists())
+        self.assertTrue(CRMChangeEvent.objects.filter(resource_type="showing", resource_id=planned_showing.pk, field_name="owner", old_value=str(self.founder.pk), new_value=str(self.agent.pk)).exists())
         self.assertContains(self.client.get(url), "agency-agent")
         self.assertContains(self.client.get(reverse("client_detail", args=[self.client_record.pk])), "Ответственный: agency-agent")
         self.assertNotContains(self.client.get(reverse("workday")), "Обсудить условия сделки")
@@ -487,7 +489,12 @@ class AgencyWorkflowTests(TestCase):
         self.client.force_login(self.founder)
         self.client.post(reverse("lead_assign", args=[self.lead.pk]), {"assigned_to": self.agent.pk})
         member = AgencyMembership.objects.get(user=self.agent)
-        response = self.client.post(reverse("agency_member_remove", args=[member.pk]))
+        remove_url = reverse("agency_member_remove", args=[member.pk])
+        preview = self.client.get(remove_url)
+        response = self.client.post(remove_url, {
+            "replacement": self.founder.pk, "preview_token": preview.context["preview_token"],
+            "confirm": "transfer_and_remove",
+        })
         self.assertRedirects(response, reverse("agency_dashboard"))
         self.lead.refresh_from_db()
         employee_property.refresh_from_db()
@@ -509,29 +516,26 @@ class AgencyWorkflowTests(TestCase):
         self.assertIn("Отношения с клиентом", event.changed_fields)
         self.assertNotIn(self.client_record.phone, str(event.changed_fields))
 
-    def test_audit_history_is_paginated_after_ten_entries(self):
+    def test_dashboard_journal_and_full_history_are_paginated(self):
         agency = self.create_agency()
         AuditEvent.objects.filter(agency=agency).delete()
-        for number in range(10):
+        for number in range(25):
             AuditEvent.objects.create(agency=agency, model_name="Тест", object_pk=str(number), action="created")
 
-        response = self.client.get(reverse("agency_dashboard"))
-        self.assertEqual(len(response.context["audit_events"]), 10)
-        self.assertNotContains(response, 'aria-label="Страницы истории изменений"')
+        response = self.client.get(reverse("agency_dashboard") + "?tab=journal")
+        self.assertEqual(len(response.context["audit_page"]), 20)
+        self.assertContains(response, 'aria-label="Страницы журнала команды"')
+        self.assertContains(response, '?tab=journal&amp;page=2')
+        self.assertEqual(len(self.client.get(reverse("agency_dashboard") + "?tab=journal&page=2").context["audit_page"]), 5)
 
-        newest = AuditEvent.objects.create(agency=agency, model_name="Тест", object_pk="10", action="created")
-        response = self.client.get(reverse("agency_dashboard"))
-        self.assertEqual(len(response.context["audit_events"]), 10)
-        self.assertEqual(response.context["audit_events"][0].pk, newest.pk)
-        self.assertContains(response, 'href="?history_page=2#agency-history"')
-        self.assertContains(response, 'class="page-link" aria-current="page">1 / 2</span>')
-        self.assertContains(response, '--bs-pagination-active-bg:var(--ui-accent)')
-
-        response = self.client.get(reverse("agency_dashboard") + "?history_page=2")
-        self.assertEqual(response.context["audit_events"].number, 2)
-        self.assertEqual(len(response.context["audit_events"]), 1)
-        self.assertContains(response, 'href="?history_page=1#agency-history"')
-        self.assertContains(response, 'class="page-link" aria-current="page">2 / 2</span>')
+        newest = AuditEvent.objects.create(agency=agency, model_name="Тест", object_pk="25", action="created")
+        response = self.client.get(reverse("agency_history"))
+        self.assertEqual(len(response.context["page"]), 25)
+        self.assertEqual(response.context["page"][0].pk, newest.pk)
+        self.assertContains(response, 'href="?page=2"')
+        response = self.client.get(reverse("agency_history") + "?page=2")
+        self.assertEqual(len(response.context["page"]), 1)
+        self.assertContains(response, 'href="?page=1"')
 
     def test_team_agent_cannot_delete_shared_property(self):
         self.create_agency()
@@ -1364,6 +1368,9 @@ class AccountAndPropertyAccessTests(TestCase):
         self.assertContains(response, reverse("property_presentation_pdf", args=[property.pk]))
         self.assertContains(response, reverse("property_presentation_docx", args=[property.pk]))
         self.assertContains(response, 'data-confirm-title="Архивировать объект?"')
+        self.assertContains(response, 'aria-label="Пояснение: Архив объекта"')
+        self.assertContains(response, 'class="ui-help-content" hidden>Уберите объект из рабочего списка')
+        self.assertNotContains(response, '<p class="detail-muted">Уберите объект из рабочего списка')
         self.assertNotContains(response, "Восстановить объект нельзя")
 
     def test_lead_detail_keeps_client_and_property_navigation(self):
@@ -2041,16 +2048,18 @@ class WorkdayTests(TestCase):
             client=self.client_record, deal=self.deal, text="Позвонить Анне", due_at=timezone.now() - timedelta(days=1),
         )
         local_today = timezone.localdate()
-        starts_at = timezone.make_aware(datetime.combine(local_today, time(15, 0)))
+        fixed_now = timezone.make_aware(datetime.combine(local_today, time(12, 0)))
+        starts_at = fixed_now + timedelta(hours=3)
         Showing.objects.create(owner=self.owner, deal=self.deal, starts_at=starts_at)
         other_client = Client.objects.create(owner=self.other, name="Чужой клиент", phone="+79990000022")
         ClientReminder.objects.create(client=other_client, text="Чужая задача", due_at=timezone.now() - timedelta(days=1))
 
-        response = self.client.get(reverse("workday"))
+        with patch("properties.workday_views.timezone.now", return_value=fixed_now):
+            response = self.client.get(reverse("workday"))
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Позвонить Анне")
-        self.assertContains(response, "Показы сегодня")
+        self.assertContains(response, "Предстоящие показы")
         self.assertNotContains(response, "Чужая задача")
         self.assertEqual(response.context["overdue_tasks"].count(), 1)
         self.assertEqual(response.context["today_showings"].count(), 1)

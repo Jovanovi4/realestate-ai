@@ -6,14 +6,15 @@ from datetime import date, datetime, time, timedelta
 from statistics import median
 from zoneinfo import ZoneInfo
 
-from django.db.models import Count, F, Q
-from django.db.models.functions import TruncDate
+from django.conf import settings
+from django.db.models import Case, Count, DateTimeField, ExpressionWrapper, F, Min, Q, When
+from django.db.models.functions import Least, TruncDate
 from django.utils import timezone
 
 from ..models import AgencyMembership, ClientReminder, Deal, Lead, Showing
 
 
-ANALYTICS_TZ = ZoneInfo("Europe/Moscow")
+ANALYTICS_TZ = ZoneInfo(settings.TIME_ZONE)
 MAX_PERIOD_DAYS = 366
 
 
@@ -64,15 +65,15 @@ def resolve_scope(user, *, requested_scope="personal", requested_member=None, me
 
 
 def _real_leads(scope):
-    qs = Lead.objects.filter(is_demo=False, property__is_demo=False).filter(
+    qs = Lead.objects.filter(is_demo=False).filter(Q(property__isnull=True) | Q(property__is_demo=False)).filter(
         Q(client__isnull=True) | Q(client__is_demo=False),
     )
     if scope.agency_id:
-        qs = qs.filter(property__agency_id=scope.agency_id)
+        qs = qs.filter(agency_id=scope.agency_id)
         if scope.member_id:
             qs = qs.filter(assigned_to_id=scope.member_id)
     else:
-        qs = qs.filter(property__agency__isnull=True, property__owner_id=scope.user_id)
+        qs = qs.filter(agency__isnull=True, owner_id=scope.user_id)
     return qs
 
 
@@ -93,7 +94,7 @@ def _real_tasks(scope):
     qs = ClientReminder.objects.filter(
         Q(client__isnull=True) | Q(client__is_demo=False),
         Q(deal__isnull=True) | Q(deal__is_demo=False, deal__property__is_demo=False),
-        Q(lead__isnull=True) | Q(lead__is_demo=False, lead__property__is_demo=False),
+        Q(lead__isnull=True) | (Q(lead__is_demo=False) & (Q(lead__property__isnull=True) | Q(lead__property__is_demo=False))),
         Q(property__isnull=True) | Q(property__is_demo=False),
         Q(owner_showing__isnull=True) | Q(owner_showing__deal__is_demo=False),
     )
@@ -115,6 +116,15 @@ def _real_showings(scope):
     else:
         qs = qs.filter(agency__isnull=True, owner_id=scope.user_id)
     return qs
+
+
+def team_open_work(scope):
+    """The manager queue: one row per open lead or independent task."""
+    if not scope.agency_id or scope.member_id:
+        raise ValueError("Для общей очереди нужна область команды.")
+    leads = _real_leads(scope).filter(outcome="open").exclude(status="archived")
+    tasks = _real_tasks(scope).filter(is_done=False, cancelled_at__isnull=True, lead__isnull=True)
+    return leads, tasks
 
 
 def _percentage(part, whole):
@@ -222,16 +232,28 @@ def team_member_rows(scope, period):
     if not scope.agency_id or scope.member_id:
         return []
     members = AgencyMembership.objects.filter(agency_id=scope.agency_id).select_related("user", "user__realtor_profile").order_by("user_id")
+    active_lead = Q(outcome="open") & ~Q(status="archived")
+    first_response_due = ExpressionWrapper(F("created_at") + timedelta(minutes=30), output_field=DateTimeField())
+    lead_due = Case(
+        When(first_contacted_at__isnull=True, then=Least(first_response_due, F("next_action_due_at"))),
+        default=F("next_action_due_at"), output_field=DateTimeField(),
+    )
     lead_rows = {
         row["assigned_to_id"]: row for row in _real_leads(scope).values("assigned_to_id").annotate(
             received=Count("pk", filter=Q(created_at__gte=period.start, created_at__lt=period.end)),
-            unanswered=Count("pk", filter=Q(outcome="open", first_contacted_at__isnull=True) & ~Q(status="archived")),
+            open_leads=Count("pk", filter=active_lead),
+            unanswered=Count("pk", filter=active_lead & Q(first_contacted_at__isnull=True)),
             overdue=Count("pk", filter=Lead.overdue_filter(period.now) & ~Q(status="archived")),
+            next_due_at=Min(lead_due, filter=active_lead),
         )
     }
     task_rows = {
         row["owner_id"]: row for row in _real_tasks(scope).values("owner_id").annotate(
             open_tasks=Count("pk", filter=Q(is_done=False, cancelled_at__isnull=True)),
+            overdue_independent_tasks=Count("pk", filter=Q(
+                is_done=False, cancelled_at__isnull=True, lead__isnull=True, due_at__lt=period.now,
+            )),
+            next_due_at=Min("due_at", filter=Q(is_done=False, cancelled_at__isnull=True)),
         )
     }
     deal_rows = {
@@ -240,25 +262,36 @@ def team_member_rows(scope, period):
         )
     }
     rows = []
+
+    def nearest_due(user_id):
+        dates = (lead_rows.get(user_id, {}).get("next_due_at"), task_rows.get(user_id, {}).get("next_due_at"))
+        return min((value for value in dates if value is not None), default=None)
+
     for membership in members:
         user_id = membership.user_id
         rows.append({
             "user": membership.user,
             "user_id": user_id,
             "received": lead_rows.get(user_id, {}).get("received", 0),
+            "open_leads": lead_rows.get(user_id, {}).get("open_leads", 0),
             "unanswered": lead_rows.get(user_id, {}).get("unanswered", 0),
             "overdue": lead_rows.get(user_id, {}).get("overdue", 0),
+            "urgent_work": lead_rows.get(user_id, {}).get("overdue", 0) + task_rows.get(user_id, {}).get("overdue_independent_tasks", 0),
             "open_tasks": task_rows.get(user_id, {}).get("open_tasks", 0),
             "active_deals": deal_rows.get(user_id, {}).get("active_deals", 0),
+            "next_due_at": nearest_due(user_id),
         })
     if None in lead_rows or None in deal_rows:
         rows.append({
             "user": None,
             "user_id": None,
             "received": lead_rows.get(None, {}).get("received", 0),
+            "open_leads": lead_rows.get(None, {}).get("open_leads", 0),
             "unanswered": lead_rows.get(None, {}).get("unanswered", 0),
             "overdue": lead_rows.get(None, {}).get("overdue", 0),
+            "urgent_work": lead_rows.get(None, {}).get("overdue", 0),
             "open_tasks": 0,
             "active_deals": deal_rows.get(None, {}).get("active_deals", 0),
+            "next_due_at": nearest_due(None),
         })
     return rows

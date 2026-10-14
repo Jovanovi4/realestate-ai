@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{% if kind == 'search' %}Подобрать недвижимость{% else %}Продать или сдать недвижимость{% endif %}{% endblock %}
+{% block content %}
+<div class="app-form-page app-form-page--narrow public-intake-page">
+  <header class="ui-page-header">
+    <div><p class="ui-page-header__eyebrow">{{ workspace_name }}</p><h1 class="ui-page-header__title">{% if kind == 'search' %}Подобрать недвижимость{% else %}Хочу продать / сдать{% endif %}</h1><p class="ui-page-header__description">{% if kind == 'search' %}Расскажите, что ищете. Риелтор уточнит детали и предложит следующий шаг.{% else %}Оставьте контакты и кратко опишите объект. Риелтор свяжется с вами.{% endif %}</p></div>
+  </header>
+  {% if sent %}
+    <section class="detail-section" role="status"><h2 class="h5 mb-2">Обращение отправлено</h2><p class="detail-muted mb-0">Спасибо! Риелтор получил ваш запрос.</p></section>
+  {% else %}
+    <form method="post" class="app-form app-form-panel" novalidate>{% csrf_token %}
+      {{ form.request_id }}{{ form.source_detail }}
+      <div class="visually-hidden" aria-hidden="true">{{ form.website }}</div>
+      {% if form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ form.non_field_errors }}</div>{% endif %}
+      <div class="app-form-grid">
+        <div class="app-field">{% include "includes/form_field.html" with field=form.name %}</div>
+        <div class="app-field">{% include "includes/form_field.html" with field=form.phone %}</div>
+        {% if kind == 'search' %}
+          <div class="app-field">{% include "includes/form_field.html" with field=form.interest_type %}</div>
+          <div class="app-field is-wide">{% include "includes/form_field.html" with field=form.message %}</div>
+        {% else %}
+          <div class="app-field">{% include "includes/form_field.html" with field=form.deal_type %}</div>
+          <div class="app-field">{% include "includes/form_field.html" with field=form.address %}</div>
+          <div class="app-field is-wide">{% include "includes/form_field.html" with field=form.description %}</div>
+          <div class="app-field">{% include "includes/form_field.html" with field=form.expected_price %}</div>
+        {% endif %}
+      </div>
+      <div class="form-check mt-3">{{ form.personal_data_consent }}<label class="form-check-label small" for="{{ form.personal_data_consent.id_for_label }}">Даю <a href="{% url 'personal_data_consent' %}" target="_blank" rel="noopener">согласие на обработку персональных данных</a> и ознакомился(-ась) с <a href="{% url 'privacy_policy' %}" target="_blank" rel="noopener">политикой</a>.</label>{% if form.personal_data_consent.errors %}<div class="text-danger small mt-1">{{ form.personal_data_consent.errors|striptags }}</div>{% endif %}</div>
+      {% if turnstile_enabled %}<div class="cf-turnstile mt-3" data-sitekey="{{ turnstile_site_key }}"></div><script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{% endif %}
+      <div class="app-form-actions"><button class="btn btn-primary" type="submit">Отправить обращение</button></div>
+    </form>
+  {% endif %}
+  {% include "properties/includes/landing_legal_footer.html" %}
+</div>
+{% endblock %}

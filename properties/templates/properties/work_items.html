@@ -45,4 +45,16 @@
 {% else %}
   <section class="empty-state"><div><span class="empty-state__icon" aria-hidden="true"><svg class="ui-icon" viewBox="0 0 24 24"><use href="#ui-icon-calendar"></use></svg></span><h2 class="empty-state__title">Открытых дел нет</h2><p class="empty-state__text">{% if selected_kind == 'all' %}Новые задачи, заявки и показы появятся здесь.{% else %}Попробуйте выбрать другой тип дела.{% endif %}</p>{% if selected_kind != 'all' %}<a href="{% url 'work_items' %}" class="btn btn-neutral mt-3">Показать все</a>{% endif %}</div></section>
 {% endif %}
+<script>
+  (() => {
+    const filters = document.querySelector('.work-items-filters');
+    const active = filters?.querySelector('[aria-current="page"]');
+    if (!active || !window.matchMedia('(max-width: 767.98px)').matches) return;
+    requestAnimationFrame(() => {
+      const container = filters.getBoundingClientRect();
+      const selected = active.getBoundingClientRect();
+      filters.scrollLeft += selected.left - container.left - (container.width - selected.width) / 2;
+    });
+  })();
+</script>
 {% endblock %}

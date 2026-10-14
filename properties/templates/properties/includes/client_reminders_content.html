@@ -1,0 +1,33 @@
+<summary class="client-reminders__heading"><strong role="heading" aria-level="2">Задачи по клиентам</strong>{% if overdue_reminders %}<span class="client-reminders__urgent">Просрочено · {{ overdue_reminder_count }}</span>{% endif %}{% if today_reminders %}<span>Сегодня · {{ today_reminder_count }}</span>{% endif %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
+<div class="client-reminders__content"><a href="{% url 'workday' %}" class="btn btn-text btn-sm">Задачи</a>
+  <div class="client-reminders__groups">
+    {% if overdue_reminders %}
+      <div class="client-reminder-group is-overdue">
+        <h3>Просрочено</h3>
+        <div class="client-reminder-group__items">
+          {% for reminder in overdue_reminders %}
+            <a class="client-reminder" href="{% url 'client_detail' reminder.client.pk %}">
+              <span class="client-reminder__title">{{ reminder.text }}</span>
+              <span class="client-reminder__meta"><strong>{{ reminder.client.name }}</strong><time datetime="{{ reminder.due_at|date:'c' }}">{{ reminder.due_at|date:"d.m · H:i" }}</time></span>
+            </a>
+          {% endfor %}
+        </div>
+        {% if overdue_reminder_count > 5 %}<p class="client-reminder-group__more">Показаны первые 5 из {{ overdue_reminder_count }}</p>{% endif %}
+      </div>
+    {% endif %}
+    {% if today_reminders %}
+      <div class="client-reminder-group is-today">
+        <h3>Сегодня</h3>
+        <div class="client-reminder-group__items">
+          {% for reminder in today_reminders %}
+            <a class="client-reminder" href="{% url 'client_detail' reminder.client.pk %}">
+              <span class="client-reminder__title">{{ reminder.text }}</span>
+              <span class="client-reminder__meta"><strong>{{ reminder.client.name }}</strong><time datetime="{{ reminder.due_at|date:'c' }}">{{ reminder.due_at|date:"H:i" }}</time></span>
+            </a>
+          {% endfor %}
+        </div>
+        {% if today_reminder_count > 5 %}<p class="client-reminder-group__more">Показаны первые 5 из {{ today_reminder_count }}</p>{% endif %}
+      </div>
+    {% endif %}
+  </div>
+</div>

@@ -39,6 +39,20 @@ class DealBoardStageTests(TestCase):
         self.assertContains(response, reverse("deal_detail", args=[self.deal.pk]))
         self.assertContains(self.client.get(reverse("deal_detail", args=[self.deal.pk])), 'id="id_stage"')
 
+    def test_closed_deals_are_prominent_when_no_active_deals_remain(self):
+        self.assertEqual(self.move("won").status_code, 200)
+        response = self.client.get(reverse("deal_board"))
+
+        self.assertEqual(response.context["active_count"], 0)
+        self.assertEqual(response.context["closed_count"], 1)
+        self.assertContains(response, "Активных сделок нет")
+        self.assertContains(response, "deal-board--closed-focus")
+        self.assertContains(response, '<p class="deal-board__closed-heading">Завершённые сделки</p>')
+        self.assertContains(response, f'data-deal-id="{self.deal.pk}" data-deal-stage="won"')
+
+        filtered = self.client.get(reverse("deal_board"), {"stage": "won"})
+        self.assertNotContains(filtered, "deal-board--closed-focus")
+
     def test_move_updates_stage_and_history_without_changing_other_fields(self):
         response = self.move("viewing")
 

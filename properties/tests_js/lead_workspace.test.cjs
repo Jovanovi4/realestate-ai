@@ -22,13 +22,13 @@ test('clicking a lead row opens its panel without hijacking row controls', () =>
 
   let opened = 0;
   const opener = { click() { opened += 1; } };
-  const row = { querySelector(selector) { return selector === '[data-lead-panel-open]' ? opener : null; } };
+  const row = { querySelector(selector) { return selector === '[data-lead-panel-open], [data-owner-detail-link]' ? opener : null; } };
   const phone = { href: 'tel:+79990000000', closest(selector) { return selector === '#lead-workspace' ? {} : null; } };
   const click = (kind, overrides = {}) => {
     let prevented = false;
     listeners.get('click')({
       target: { closest(selector) {
-        if (selector === '[data-lead-open-row]') return row;
+        if (selector === '[data-lead-open-row], [data-owner-open-row]') return row;
         if (selector.startsWith('a, button,')) return kind === 'row' ? null : {};
         if (selector === 'a[href]') return kind === 'phone' ? phone : null;
         return null;
@@ -46,6 +46,35 @@ test('clicking a lead row opens its panel without hijacking row controls', () =>
   for (const kind of ['checkbox', 'phone', 'details']) assert.equal(click(kind), false);
   assert.equal(click('row', { ctrlKey: true }), false);
   assert.equal(click('row', { button: 1 }), false);
+  assert.equal(opened, 1);
+});
+
+test('clicking an owner request row opens its owner workflow', () => {
+  const listeners = new Map();
+  const document = {
+    body: { addEventListener() {} },
+    addEventListener(name, listener) { listeners.set(name, listener); },
+    querySelectorAll() { return []; },
+    getElementById() { return null; },
+  };
+  const history = { state: null, replaceState(state) { this.state = state; } };
+  const window = { location: { href: 'https://example.test/leads/' }, addEventListener() {} };
+  const code = fs.readFileSync(path.join(__dirname, '../../static/js/lead-workspace.js'), 'utf8');
+  vm.runInNewContext(code, { document, window, history, FormData, URL, URLSearchParams, WeakMap });
+  let opened = 0;
+  const row = { querySelector() { return { click() { opened += 1; } }; } };
+  const click = (control) => {
+    listeners.get('click')({
+      target: { closest(selector) {
+        if (selector === '[data-lead-open-row], [data-owner-open-row]') return row;
+        if (selector.startsWith('a, button,')) return control ? {} : null;
+        return null;
+      } },
+      button: 0, preventDefault() {}, stopImmediatePropagation() {},
+    });
+  };
+  click(false);
+  click(true);
   assert.equal(opened, 1);
 });
 
@@ -193,40 +222,92 @@ test('saved lead shows a result and offers the next visible lead', () => {
   assert.equal(requests[0].url, '/leads/?page=1&lead=1');
 });
 
-test('wide lead layout falls back to overlay when the compact table would scroll horizontally', () => {
+test('opening a lead focuses its in-page panel and scrolls to it only in a stacked layout', () => {
+  for (const width of [700, 1100]) {
+    const listeners = new Map();
+    let focused = 0;
+    let scrolled = 0;
+    const list = { inert: false };
+    const bodyClasses = new Set();
+    const panel = {
+      focus() { focused += 1; },
+      scrollIntoView() { scrolled += 1; },
+    };
+    const workspace = {
+      dataset: {},
+      getBoundingClientRect() { return { width }; },
+      querySelector(selector) { return selector === '.lead-workspace__list' ? list : null; },
+    };
+    const document = {
+      body: {
+        addEventListener(name, listener) { listeners.set(name, listener); },
+        classList: { toggle(name, active) { if (active) bodyClasses.add(name); else bodyClasses.delete(name); } },
+      },
+      addEventListener(name, listener) { listeners.set(name, listener); },
+      querySelectorAll() { return []; },
+      querySelector(selector) { return selector === '.lead-workspace__list' ? list : null; },
+      getElementById(id) {
+        if (id === 'lead-workspace') return workspace;
+        if (id === 'lead-panel') return panel;
+        return null;
+      },
+    };
+    const history = { state: null, replaceState(state) { this.state = state; } };
+    const window = { location: { href: 'https://example.test/leads/' }, addEventListener() {} };
+    const code = fs.readFileSync(path.join(__dirname, '../../static/js/lead-workspace.js'), 'utf8');
+    vm.runInNewContext(code, { document, window, history, FormData, URL, URLSearchParams, WeakMap });
+
+    listeners.get('htmx:afterSwap')({ detail: { target: { id: 'lead-workspace' } } });
+    assert.equal(focused, 1);
+    assert.equal(scrolled, width < 704 ? 1 : 0);
+    assert.equal(list.inert, false);
+    assert.equal(bodyClasses.has('lead-panel-overlay-open'), false);
+  }
+});
+
+test('lead filters stay expanded while htmx replaces the list after filtering', () => {
   const listeners = new Map();
-  const classes = new Set();
-  const table = { scrollWidth: 700, clientWidth: 600 };
-  const workspace = {
-    parentElement: { children: [] },
-    getBoundingClientRect() { return { width: 1200 }; },
-    querySelector(selector) { return selector === '.lead-workspace__list .table-responsive' ? table : null; },
-    classList: {
-      toggle(name, active) { if (active) classes.add(name); else classes.delete(name); },
-      contains(name) { return classes.has(name); },
-      remove(name) { classes.delete(name); },
-    },
+  const makeElement = () => {
+    const classes = new Set();
+    return {
+      classes, attributes: {},
+      classList: {
+        contains(name) { return classes.has(name); },
+        toggle(name, active) { if (active) classes.add(name); else classes.delete(name); },
+      },
+      setAttribute(name, value) { this.attributes[name] = value; },
+    };
   };
+  let panel = makeElement();
+  let toggle = makeElement();
+  const workspace = { dataset: {} };
   const document = {
-    body: { addEventListener() {}, classList: { remove() {} } },
-    documentElement: { scrollWidth: 1200, clientWidth: 1200 },
+    body: { addEventListener(name, listener) { listeners.set(name, listener); } },
     addEventListener(name, listener) { listeners.set(name, listener); },
     querySelectorAll() { return []; },
-    querySelector() { return null; },
-    getElementById(id) { return id === 'lead-workspace' ? workspace : null; },
+    querySelector(selector) { return selector === '[data-lead-filter-toggle]' ? toggle : null; },
+    getElementById(id) {
+      if (id === 'lead-filter-panel') return panel;
+      if (id === 'lead-workspace') return workspace;
+      return null;
+    },
   };
   const history = { state: null, replaceState(state) { this.state = state; } };
   const window = { location: { href: 'https://example.test/leads/' }, addEventListener() {} };
   const code = fs.readFileSync(path.join(__dirname, '../../static/js/lead-workspace.js'), 'utf8');
-  vm.runInNewContext(code, {
-    document, window, history, FormData, URL, URLSearchParams, WeakMap,
-    ResizeObserver: class { observe() {} unobserve() {} },
-  });
+  vm.runInNewContext(code, { document, window, history, FormData, URL, URLSearchParams, WeakMap });
 
-  listeners.get('DOMContentLoaded')();
-  assert.equal(classes.has('lead-workspace--roomy'), false);
+  listeners.get('show.bs.collapse')({ target: { id: 'lead-filter-panel' } });
+  panel = makeElement();
+  toggle = makeElement();
+  listeners.get('htmx:afterSwap')({ detail: { target: { id: 'lead-workspace' } } });
+  assert.equal(panel.classes.has('show'), true);
+  assert.equal(toggle.attributes['aria-expanded'], 'true');
 
-  table.scrollWidth = 600;
-  listeners.get('DOMContentLoaded')();
-  assert.equal(classes.has('lead-workspace--roomy'), true);
+  listeners.get('hide.bs.collapse')({ target: { id: 'lead-filter-panel' } });
+  panel = makeElement();
+  toggle = makeElement();
+  listeners.get('htmx:afterSwap')({ detail: { target: { id: 'lead-workspace' } } });
+  assert.equal(panel.classes.has('show'), false);
+  assert.equal(toggle.attributes['aria-expanded'], 'false');
 });

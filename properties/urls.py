@@ -2,6 +2,10 @@ from django.contrib.auth import views as auth_views
 from django.urls import path, reverse_lazy
 
 from .ai_views import AIAssistantView, AIBundleGenerateView, AIContentDeleteView, AIContentEditView, AIInlineGenerateView, AILeadReplyView, generate_description
+from .lead_intake_views import ManualLeadCreateView, LeadAttachPropertyView
+from .public_intake_views import PublicIntakeLinksView, PublicRequestView
+from .inbound_email_views import InboundEmailDetailView, InboundEmailListView
+from .client_merge_views import ClientMergeView
 from .forms import AccountPasswordChangeForm, PhoneAuthenticationForm
 from .account_views import AccountRecoveryView, AccountResetConfirmView, ConfirmEmailView, VerifyEmailView
 from django.views.generic import TemplateView
@@ -21,11 +25,14 @@ from .client_matching_views import (
 )
 from .telegram_views import TelegramPublishView, telegram_public_webhook
 from .integration_views import TelegramIntegrationView
-from .analytics_views import AnalyticsView
+from .analytics_views import AnalyticsExportView, AnalyticsView
 from .agency_views import (
-    AgencyCreateView, AgencyDashboardView, AgencyInviteView, AgencyInviteRevokeView, AgencyJoinView,
+    AgencyArchiveExportView, AgencyArchiveFileView, AgencyArchiveFilesView, AgencyArchiveRecordsView,
+    AgencyArchiveView, AgencyCloseView,
+    AgencyCreateView, AgencyDashboardView, AgencyHistoryView, AgencyRenameView, AgencyInviteView, AgencyInviteRevokeView, AgencyJoinView,
     AgencyMemberRemoveView, AgencyMemberRoleView, LeadAssignView,
 )
+from .team_work_views import AgencyWorkAssignView, AgencyWorkloadView
 from .workday_views import (
     ShowingCreateView, ShowingUpdateView, TaskCompleteView, TaskCreateView, TaskUpdateView, WorkdayView, WorkItemsView,
 )
@@ -78,6 +85,7 @@ from .views import (
 
 urlpatterns = [
     path("analytics/", AnalyticsView.as_view(), name="analytics"),
+    path("analytics/export/", AnalyticsExportView.as_view(), name="analytics_export"),
     path("telegram/public/webhook/", telegram_public_webhook, name="telegram_public_webhook"),
     path("integrations/telegram/", TelegramIntegrationView.as_view(), name="integration_telegram"),
     path("legal/privacy-policy/", privacy_policy, name="privacy_policy"),
@@ -106,12 +114,23 @@ urlpatterns = [
     }), name="account_email_sent"),
     path("email-confirm/<uidb64>/<token>/", ConfirmEmailView.as_view(), name="account_email_confirm"),
     path("agency/", AgencyDashboardView.as_view(), name="agency_dashboard"),
+    path("agency/history/", AgencyHistoryView.as_view(), name="agency_history"),
+    path("agency/settings/", AgencyCloseView.as_view(), name="agency_settings"),
+    path("agency/close/", AgencyCloseView.as_view(), name="agency_close"),
+    path("agency/archive/<int:pk>/", AgencyArchiveView.as_view(), name="agency_archive"),
+    path("agency/archive/<int:pk>/records/<str:kind>/", AgencyArchiveRecordsView.as_view(), name="agency_archive_records"),
+    path("agency/archive/<int:pk>/export/<str:kind>/", AgencyArchiveExportView.as_view(), name="agency_archive_export"),
+    path("agency/archive/<int:pk>/files/", AgencyArchiveFilesView.as_view(), name="agency_archive_files"),
+    path("agency/archive/<int:pk>/files/<int:file_pk>/", AgencyArchiveFileView.as_view(), name="agency_archive_file"),
+    path("agency/rename/", AgencyRenameView.as_view(), name="agency_rename"),
     path("agency/create/", AgencyCreateView.as_view(), name="agency_create"),
     path("agency/invite/", AgencyInviteView.as_view(), name="agency_invite"),
     path("agency/invitations/<int:pk>/revoke/", AgencyInviteRevokeView.as_view(), name="agency_invite_revoke"),
     path("agency/join/<uuid:code>/", AgencyJoinView.as_view(), name="agency_join"),
     path("agency/members/<int:pk>/role/", AgencyMemberRoleView.as_view(), name="agency_member_role"),
     path("agency/members/<int:pk>/remove/", AgencyMemberRemoveView.as_view(), name="agency_member_remove"),
+    path("agency/work/", AgencyWorkloadView.as_view(), name="agency_workload"),
+    path("agency/work/assign/", AgencyWorkAssignView.as_view(), name="agency_work_assign"),
     path("avito/export/", AvitoExportView.as_view(), name="avito_export"),
     path("cian/export/", CianExportView.as_view(), name="cian_export"),
     path(
@@ -124,6 +143,12 @@ urlpatterns = [
         name="password_change",
     ),
     path("leads/", LeadListView.as_view(), name="lead_list"),
+    path("intake/", PublicIntakeLinksView.as_view(), name="public_intake_links"),
+    path("intake/email/", InboundEmailListView.as_view(), name="inbound_email_list"),
+    path("intake/email/<int:pk>/", InboundEmailDetailView.as_view(), name="inbound_email_detail"),
+    path("request/<uuid:code>/search/", PublicRequestView.as_view(), {"kind": "search"}, name="public_search_request"),
+    path("request/<uuid:code>/owner/", PublicRequestView.as_view(), {"kind": "owner"}, name="public_owner_request"),
+    path("leads/new/", ManualLeadCreateView.as_view(), name="lead_create"),
     path("owner-inquiries/", OwnerInquiryListView.as_view(), name="owner_inquiry_list"),
     path("owner-inquiries/new/", OwnerInquiryCreateView.as_view(), name="owner_inquiry_create"),
     path("owner-inquiries/<int:pk>/", OwnerInquiryDetailView.as_view(), name="owner_inquiry_detail"),
@@ -135,6 +160,7 @@ urlpatterns = [
     path("leads/bulk-status/", LeadBulkStatusUpdateView.as_view(), name="lead_bulk_status_update"),
     path("leads/<int:pk>/ai-reply/", AILeadReplyView.as_view(), name="lead_ai_reply"),
     path("leads/<int:pk>/assign/", LeadAssignView.as_view(), name="lead_assign"),
+    path("leads/<int:pk>/attach-property/", LeadAttachPropertyView.as_view(), name="lead_attach_property"),
     path("leads/<int:pk>/process/", LeadProcessView.as_view(), name="lead_process"),
     path("leads/<int:pk>/complete-action/", LeadActionCompleteView.as_view(), name="lead_action_complete"),
     path("leads/<int:pk>/outcome/", LeadOutcomeView.as_view(), name="lead_outcome"),
@@ -154,6 +180,7 @@ urlpatterns = [
     path("clients/<int:pk>/status/", ClientStatusUpdateView.as_view(), name="client_status_update"),
     path("clients/<int:pk>/board-status/", ClientBoardStatusUpdateView.as_view(), name="client_board_status_update"),
     path("clients/<int:pk>/interactions/", ClientInteractionCreateView.as_view(), name="client_interaction_create"),
+    path("clients/<int:pk>/merge/<int:source_pk>/", ClientMergeView.as_view(), name="client_merge"),
     path("clients/<int:pk>/reminders/", ClientReminderCreateView.as_view(), name="client_reminder_create"),
     path("clients/<int:pk>/reminders/<int:reminder_pk>/edit/", ClientPanelTaskUpdateView.as_view(), name="client_panel_task_update"),
     path("clients/<int:pk>/reminders/<int:reminder_pk>/complete/", ClientReminderCompleteView.as_view(), name="client_reminder_complete"),

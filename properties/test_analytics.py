@@ -185,10 +185,13 @@ class AnalyticsAccessTests(TestCase):
         today = self.now.astimezone(ANALYTICS_TZ).date()
         seven_days = self.client.get(reverse("analytics"), {"scope": "team", "days": "7"})
         self.assertEqual(seven_days.context["report"]["period"].first_day, today - timedelta(days=6))
+        self.assertContains(seven_days, '<details class="analytics-filters__advanced">')
+        self.assertContains(seven_days, 'id="analytics-from-mobile"')
         invalid = self.client.get(reverse("analytics"), {
             "scope": "team", "date_from": (today + timedelta(days=1)).isoformat(), "date_to": today.isoformat(),
         })
         self.assertContains(invalid, "Проверьте даты")
+        self.assertContains(invalid, '<details class="analytics-filters__advanced" open>')
         self.assertEqual((invalid.context["report"]["period"].last_day - invalid.context["report"]["period"].first_day).days, 29)
         filtered = self.client.get(reverse("lead_list"), {
             "scope": "team", "metric": "received", "responsible": self.agent.pk,
@@ -196,6 +199,17 @@ class AnalyticsAccessTests(TestCase):
         })
         self.assertEqual([lead.pk for lead in filtered.context["leads"]], [self.agent_lead.pk])
         self.assertContains(filtered, "Аналитика · Заявки за период · Лендинг")
+
+    def test_current_overdue_is_grouped_with_the_work_queue(self):
+        self.client.force_login(self.founder)
+        response = self.client.get(reverse("analytics"), {"scope": "team"})
+        html = response.content.decode()
+        period_section = html.split('id="analytics-period-title"', 1)[1].split('id="analytics-now-title"', 1)[0]
+        now_section = html.split('id="analytics-now-title"', 1)[1].split('class="analytics-queue"', 1)[0]
+
+        self.assertNotIn("Просроченных заявок сейчас", period_section)
+        self.assertIn("Просроченных заявок сейчас", now_section)
+        self.assertIn(response.context["lead_links"]["overdue"].replace("&", "&amp;"), now_section)
 
     def test_drilldown_leads_respects_scope_and_metric(self):
         self.client.force_login(self.founder)

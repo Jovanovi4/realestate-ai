@@ -20,7 +20,7 @@ from .usage import attempt, begin_operation, enabled, ensure_scope, finish_opera
 FIELDS = {
     Property: ("owner_id", "agency_id", "status", "landing_published", "landing_logo"),
     PropertyImage: ("property__owner_id", "property__agency_id", "image"),
-    AgencyInvitation: ("agency_id", "accepted_by_id", "expires_at"),
+    AgencyInvitation: ("agency_id", "accepted_by_id", "revoked_at", "expires_at"),
     AgencyMembership: ("agency_id", "user_id", "role"),
 }
 
@@ -51,7 +51,7 @@ def _metrics(sender, value, now):
     if sender == AgencyMembership:
         return {"occupied_seats": 1}
     if sender == AgencyInvitation:
-        return {"invited_seats": int(value["accepted_by_id"] is None and value["expires_at"] > now)}
+        return {"invited_seats": int(value["accepted_by_id"] is None and value["revoked_at"] is None and value["expires_at"] > now)}
     return {}
 
 

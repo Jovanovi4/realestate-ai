@@ -16,13 +16,16 @@ def enabled():
 
 
 def require_allowed(decision):
-    if enabled() and not decision.allowed:
+    if (enabled() or decision.code == "team_closed") and not decision.allowed:
         raise TariffDenied(decision)
     return decision
 
 
 def require_resource_action(actor, resource, operation):
     """Check a saved record against its own workspace, not the actor's default one."""
+    if getattr(resource, "agency_id", None) and resource.agency.closed_at:
+        from .rules import PolicyDecision
+        raise TariffDenied(PolicyDecision(False, "team_closed", "Команда закрыта. Данные доступны владельцу в архиве."))
     if not enabled():
         return None
     from .rules import PolicyService
@@ -50,6 +53,9 @@ def require_telegram_publication(actor, property):
 
 def require_new_action(actor, operation, *, agency=None):
     """Check an unsaved CRM record in the workspace it will be created in."""
+    if agency and agency.closed_at:
+        from .rules import PolicyDecision
+        raise TariffDenied(PolicyDecision(False, "team_closed", "Команда закрыта. Данные доступны владельцу в архиве."))
     if not enabled():
         return None
     from .rules import PolicyService

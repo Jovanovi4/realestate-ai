@@ -1,0 +1,8 @@
+{% load crm_display %}
+<form method="get" class="{{ form_class }}">
+  <input type="hidden" name="scope" value="{{ report.scope.kind }}">
+  <div><label class="form-label" for="analytics-from{{ id_suffix }}">С даты</label><input class="form-control" id="analytics-from{{ id_suffix }}" type="date" name="date_from" value="{{ report.period.first_day|date:'Y-m-d' }}" required></div>
+  <div><label class="form-label" for="analytics-to{{ id_suffix }}">По дату</label><input class="form-control" id="analytics-to{{ id_suffix }}" type="date" name="date_to" value="{{ report.period.last_day|date:'Y-m-d' }}" required></div>
+  {% if can_choose_member and report.scope.kind == 'team' %}<div><label class="form-label" for="analytics-member{{ id_suffix }}">Ответственный</label><select class="form-select" id="analytics-member{{ id_suffix }}" name="member"><option value="">Вся команда</option>{% for item in member_choices %}<option value="{{ item.user_id }}"{% if report.scope.member_id == item.user_id %} selected{% endif %}>{{ item.user|staff_name }}</option>{% endfor %}</select></div>{% endif %}
+  <button class="btn btn-neutral" type="submit">Показать</button>
+</form>

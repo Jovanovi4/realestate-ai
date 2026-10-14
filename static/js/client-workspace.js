@@ -4,7 +4,6 @@
 
   let lastOpenedClient = null;
   let hadPanel = false;
-  let observedWorkspace = null;
   let restoreScroll = null;
   let listReturnScroll = null;
   let savedMessage = null;
@@ -14,8 +13,8 @@
   let refreshingAfterSave = false;
   let historyIndex = Number.isInteger(history.state?.reaicrmClientIndex) ? history.state.reaicrmClientIndex : 0;
   let restoringCancelledHistory = false;
+  let filtersOpen = false;
   const formSnapshots = new WeakMap();
-  const observer = new ResizeObserver(() => syncPanel());
   history.replaceState({ ...history.state, reaicrmClientIndex: historyIndex }, '', window.location.href);
 
   const formValues = (form) => new URLSearchParams(new FormData(form)).toString();
@@ -33,6 +32,14 @@
     const select = form?.querySelector('select[name="status"]');
     const button = form?.querySelector('[data-panel-status-save]');
     if (select && button) button.hidden = form.dataset.unsaved !== 'true' && select.value === form.dataset.initialStatus;
+  };
+  const syncFilterToggle = () => {
+    const trigger = document.querySelector('[data-client-filter-toggle]');
+    const workspace = document.getElementById('client-workspace');
+    if (!trigger || !workspace) return;
+    workspace.classList.toggle('client-workspace--filters-open', filtersOpen);
+    trigger.setAttribute('aria-expanded', String(filtersOpen));
+    trigger.classList.toggle('has-active-filters', workspace.dataset.activeFilters === 'true');
   };
   const hideDiscardWarning = () => {
     const warning = document.getElementById('client-panel-discard');
@@ -56,35 +63,11 @@
     allowNavigation = false;
     if (!hardNavigation) allowUnload = false;
   };
-  const backgroundElements = (workspace) => [
-    ...document.querySelectorAll('.app-sidebar, .mobile-header'),
-    ...[...(workspace?.parentElement?.children || [])].filter((element) => element !== workspace && element.tagName !== 'SCRIPT'),
-  ];
   const syncPanel = ({ moveFocus = false } = {}) => {
     const workspace = document.getElementById('client-workspace');
-    if (workspace !== observedWorkspace) {
-      if (observedWorkspace) observer.unobserve(observedWorkspace);
-      if (workspace) observer.observe(workspace);
-      observedWorkspace = workspace;
-    }
-    if (workspace) {
-      workspace.classList.toggle('client-workspace--roomy', workspace.getBoundingClientRect().width >= 1120);
-      const list = workspace.querySelector('.client-workspace__list');
-      const table = workspace.querySelector('.client-workspace__list .table-responsive');
-      if (workspace.classList.contains('client-workspace--roomy')
-          && ((list && list.scrollWidth > list.clientWidth + 1)
-            || (table && table.scrollWidth > table.clientWidth + 1)
-            || document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) {
-        workspace.classList.remove('client-workspace--roomy');
-      }
-    }
     const panel = document.getElementById('client-panel');
-    const list = document.querySelector('.client-workspace__list');
     const selected = document.querySelector('[data-client-panel-open][aria-current="true"]');
     if (!panel) {
-      document.body.classList.remove('lead-panel-overlay-open');
-      if (list) list.inert = false;
-      backgroundElements(workspace).forEach((element) => { element.inert = false; });
       if (lastOpenedClient && hadPanel) {
         const candidates = [...document.querySelectorAll(`[data-client-panel-open="${lastOpenedClient}"]`)];
         (candidates.find((element) => element.getClientRects().length) || candidates[0])?.focus({ preventScroll: true });
@@ -93,14 +76,12 @@
       hadPanel = false;
       return;
     }
-    const isOverlay = getComputedStyle(panel).position === 'fixed';
-    if (list) list.inert = isOverlay;
-    backgroundElements(workspace).forEach((element) => { element.inert = isOverlay; });
-    panel.setAttribute('aria-modal', String(isOverlay));
-    document.body.classList.toggle('lead-panel-overlay-open', isOverlay);
     hadPanel = true;
     if (selected?.dataset.clientPanelOpen) lastOpenedClient = selected.dataset.clientPanelOpen;
-    if (moveFocus) panel.focus({ preventScroll: true });
+    if (moveFocus) {
+      panel.focus({ preventScroll: true });
+      if (workspace?.getBoundingClientRect().width < 704) panel.scrollIntoView?.({ block: 'start' });
+    }
   };
   const showSavedNotice = (details) => {
     const body = document.querySelector('#client-panel .lead-panel__body');
@@ -129,11 +110,22 @@
 
   rememberForms();
   syncStatusSave();
-  document.addEventListener('DOMContentLoaded', () => { rememberForms(); syncStatusSave(); syncPanel(); });
+  syncFilterToggle();
+  document.addEventListener('DOMContentLoaded', () => { rememberForms(); syncStatusSave(); syncFilterToggle(); syncPanel(); });
   document.addEventListener('change', (event) => {
     if (event.target?.matches?.('#client-panel [data-client-panel-status-form] select[name="status"]')) syncStatusSave();
   });
   document.addEventListener('click', (event) => {
+    const filterTrigger = event.target.closest?.('[data-client-filter-toggle]');
+    if (filterTrigger) {
+      event.preventDefault();
+      const workspace = document.getElementById('client-workspace');
+      if (!workspace) return;
+      filtersOpen = !filtersOpen;
+      syncFilterToggle();
+      if (filtersOpen) workspace.querySelector('#client-q')?.focus();
+      return;
+    }
     const stay = event.target.closest('[data-client-discard-stay]');
     if (stay) {
       event.preventDefault();
@@ -183,7 +175,7 @@
       warnBeforeLeaving(() => control?.tagName === 'FORM' ? control.requestSubmit() : control?.click(), false, control);
       return;
     }
-    if (control?.matches('[data-client-panel-open], [data-client-panel-close], .client-workspace__backdrop')) {
+    if (control?.matches('[data-client-panel-open], [data-client-panel-close]')) {
       const currentScroll = { x: window.scrollX, y: window.scrollY };
       if (control.dataset.clientPanelOpen) {
         listReturnScroll = currentScroll;
@@ -206,11 +198,12 @@
       refreshingAfterSave = false;
       rememberForms();
       syncStatusSave();
-      syncPanel({ moveFocus: !!document.getElementById('client-panel') });
+      syncFilterToggle();
       if (restoreScroll) {
         window.scrollTo(restoreScroll.x, restoreScroll.y);
         restoreScroll = null;
       }
+      syncPanel({ moveFocus: !!document.getElementById('client-panel') });
       if (!document.getElementById('client-panel')) listReturnScroll = null;
       if (savedMessage) { showSavedNotice(savedMessage); savedMessage = null; }
     }
@@ -230,6 +223,7 @@
   document.body.addEventListener('htmx:historyRestore', () => {
     rememberForms();
     syncStatusSave();
+    syncFilterToggle();
     syncPanel();
     if (!document.getElementById('client-panel') && listReturnScroll) {
       window.scrollTo(listReturnScroll.x, listReturnScroll.y);
@@ -257,13 +251,21 @@
     }
     historyIndex = destinationIndex;
   }, true);
-  window.addEventListener('resize', () => syncPanel());
   window.addEventListener('beforeunload', (event) => {
     if (allowUnload || !hasUnsavedChanges()) return;
     event.preventDefault();
     event.returnValue = '';
   });
   document.addEventListener('keydown', (event) => {
+    const workspace = document.getElementById('client-workspace');
+    if (event.key === 'Escape' && filtersOpen && workspace
+        && event.target.closest('#client-toolbar')) {
+      event.preventDefault();
+      filtersOpen = false;
+      syncFilterToggle();
+      document.querySelector('[data-client-filter-toggle]')?.focus();
+      return;
+    }
     const panel = document.getElementById('client-panel');
     if (!panel) return;
     if (event.key === 'Escape') {
@@ -280,11 +282,5 @@
       if (close) { event.preventDefault(); close.click(); }
       return;
     }
-    if (event.key !== 'Tab' || panel.getAttribute('aria-modal') !== 'true') return;
-    const focusable = [...panel.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary')]
-      .filter((element) => element.getClientRects().length);
-    if (!focusable.length) { event.preventDefault(); panel.focus(); return; }
-    if (event.shiftKey && (document.activeElement === focusable[0] || document.activeElement === panel)) { event.preventDefault(); focusable.at(-1).focus(); }
-    else if (!event.shiftKey && (document.activeElement === focusable.at(-1) || document.activeElement === panel)) { event.preventDefault(); focusable[0].focus(); }
   });
 })();

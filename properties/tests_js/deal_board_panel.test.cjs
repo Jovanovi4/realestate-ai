@@ -52,7 +52,7 @@ test('saving a stage in the side panel moves the existing board card immediately
   };
   const board = {
     addEventListener() {},
-    classList: { contains() { return false; } },
+    classList: { contains() { return false; }, toggle() {} },
     querySelectorAll(selector) {
       if (selector === '.deal-board__column') return [source, destination];
       if (selector === '[data-deal-card]') return [card];

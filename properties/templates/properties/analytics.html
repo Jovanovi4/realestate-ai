@@ -12,16 +12,14 @@
 </nav>{% endif %}
 
 <section class="analytics-filters" aria-label="Фильтры аналитики">
-  <div class="analytics-filters__top"><div><strong>Период</strong><span>{{ report.period.first_day|date:"d.m.Y" }} — {{ report.period.last_day|date:"d.m.Y" }} · Москва</span></div>
+  <div class="analytics-filters__top"><div><strong>Период</strong><span>{{ report.period.first_day|date:"d.m.Y" }} — {{ report.period.last_day|date:"d.m.Y" }} · Москва</span>{% if report.scope.member_id and can_choose_member %}{% for item in member_choices %}{% if item.user_id == report.scope.member_id %}<span>Ответственный: {{ item.user|staff_name }}</span>{% endif %}{% endfor %}{% endif %}{% if report.now.overdue_leads %}<a class="analytics-filters__urgent" href="{{ lead_links.overdue }}">Просрочено сейчас · {{ report.now.overdue_leads }}</a>{% endif %}</div>
     <nav class="ui-switch analytics-presets" aria-label="Быстрый выбор периода">{% for preset in preset_links %}<a class="ui-switch__option{% if preset.active %} is-active{% endif %}" href="{{ preset.url }}"{% if preset.active %} aria-current="page"{% endif %}>{{ preset.days }} дней</a>{% endfor %}</nav>
   </div>
-  <form method="get" class="analytics-filter-form">
-    <input type="hidden" name="scope" value="{{ report.scope.kind }}">
-    <div><label class="form-label" for="analytics-from">С даты</label><input class="form-control" id="analytics-from" type="date" name="date_from" value="{{ report.period.first_day|date:'Y-m-d' }}" required></div>
-    <div><label class="form-label" for="analytics-to">По дату</label><input class="form-control" id="analytics-to" type="date" name="date_to" value="{{ report.period.last_day|date:'Y-m-d' }}" required></div>
-    {% if can_choose_member and report.scope.kind == 'team' %}<div><label class="form-label" for="analytics-member">Ответственный</label><select class="form-select" id="analytics-member" name="member"><option value="">Вся команда</option>{% for item in member_choices %}<option value="{{ item.user_id }}"{% if report.scope.member_id == item.user_id %} selected{% endif %}>{{ item.user|staff_name }}</option>{% endfor %}</select></div>{% endif %}
-    <button class="btn btn-neutral" type="submit">Показать</button>
-  </form>
+  {% include "properties/includes/analytics_filter_form.html" with form_class="analytics-filter-form analytics-filter-form--desktop" id_suffix="" %}
+  <details class="analytics-filters__advanced"{% if period_error %} open{% endif %}>
+    <summary>{% if can_choose_member and report.scope.kind == 'team' %}Даты и ответственный{% else %}Настроить период{% endif %} <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
+    {% include "properties/includes/analytics_filter_form.html" with form_class="analytics-filter-form analytics-filter-form--mobile" id_suffix="-mobile" %}
+  </details>
   {% if period_error %}<p class="analytics-filter-error" role="alert">{{ period_error }}</p>{% endif %}
   {% if report.scope.kind == 'team' and membership.role == 'agent' %}<p class="analytics-filter-note">Показаны ваши заявки, задачи и сделки команды.</p>{% elif report.scope.member_id %}<p class="analytics-filter-note">Показатели сотрудника относятся к записям, назначенным ему сейчас.</p>{% endif %}
 </section>
@@ -30,15 +28,15 @@
   <div class="analytics-section__heading"><div><p class="analytics-section__eyebrow">Результат за период</p><h2 id="analytics-period-title">За выбранные дни</h2></div></div>
   <div class="analytics-kpis">
     <article class="analytics-kpi"><span class="analytics-kpi__label">Поступило заявок</span><strong>{{ report.during.received }}</strong><a href="{{ lead_links.received }}">Открыть заявки <span aria-hidden="true">→</span></a></article>
-    <article class="analytics-kpi"><span class="analytics-kpi__label">Ответ в течение 30 минут</span><strong>{{ report.during.sla_percent|default_if_none:"—" }}{% if report.during.sla_percent != None %}<small> %</small>{% endif %}</strong><span class="analytics-kpi__meta">{{ report.during.sla_on_time }} из {{ report.during.sla_eligible }} заявок со сроком</span><details class="analytics-kpi__help"><summary aria-label="Как считается ответ в течение 30 минут"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-info"></use></svg></summary><p>Доля заявок периода, которым уже исполнилось 30 минут и по которым первый контакт записан вовремя.</p></details></article>
-    <article class="analytics-kpi"><span class="analytics-kpi__label">Медиана первого ответа</span><strong>{{ report.during.median_response_minutes|default_if_none:"—" }}{% if report.during.median_response_minutes != None %}<small> мин</small>{% endif %}</strong><span class="analytics-kpi__meta">По {{ report.during.median_sample }} записанным ответам</span><details class="analytics-kpi__help"><summary aria-label="Как считается время первого ответа"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-info"></use></svg></summary><p>Медианное время от поступления заявки до первого контакта среди ответов, записанных за период.</p></details></article>
-    <article class="analytics-kpi analytics-kpi--urgent"><span class="analytics-kpi__label">Просроченных заявок сейчас</span><strong>{{ report.now.overdue_leads }}</strong><a href="{{ lead_links.overdue }}">Разобрать заявки <span aria-hidden="true">→</span></a></article>
+    <article class="analytics-kpi"><span class="analytics-kpi__label">Ответ в течение 30 минут</span><strong>{{ report.during.sla_percent|default_if_none:"—" }}{% if report.during.sla_percent != None %}<small> %</small>{% endif %}</strong><span class="analytics-kpi__meta">{{ report.during.sla_on_time }} из {{ report.during.sla_eligible }} заявок со сроком</span><button class="ui-help-trigger analytics-kpi__help" type="button" data-ui-help aria-label="Как считается ответ в течение 30 минут" aria-expanded="false"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-info"></use></svg></button><div class="ui-help-content" hidden>Доля заявок периода, которым уже исполнилось 30 минут и по которым первый контакт записан вовремя.</div></article>
+    <article class="analytics-kpi"><span class="analytics-kpi__label">Медиана первого ответа</span><strong>{{ report.during.median_response_minutes|default_if_none:"—" }}{% if report.during.median_response_minutes != None %}<small> мин</small>{% endif %}</strong><span class="analytics-kpi__meta">По {{ report.during.median_sample }} записанным ответам</span><button class="ui-help-trigger analytics-kpi__help" type="button" data-ui-help aria-label="Как считается время первого ответа" aria-expanded="false"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-info"></use></svg></button><div class="ui-help-content" hidden>Медианное время от поступления заявки до первого контакта среди ответов, записанных за период.</div></article>
   </div>
   <p class="analytics-filter-note">За период: {{ report.during.completed_tasks }} выполненных задач · {{ report.during.converted_leads }} заявок переведено в сделку · {{ report.during.created_deals }} сделок создано.</p>
 </section>
 
 <section class="analytics-section" aria-labelledby="analytics-now-title">
   <div class="analytics-section__heading"><div><p class="analytics-section__eyebrow">Состояние сейчас</p><h2 id="analytics-now-title">Рабочая очередь</h2></div></div>
+  <div class="analytics-now-overdue{% if report.now.overdue_leads %} is-urgent{% endif %}"><span>Просроченных заявок сейчас</span><strong>{{ report.now.overdue_leads }}</strong><a href="{{ lead_links.overdue }}">Разобрать заявки <span aria-hidden="true">→</span></a></div>
   <div class="analytics-queue">
     <div><span>Без первого ответа</span><strong>{{ report.now.unanswered }}</strong><a href="{{ lead_links.unanswered }}">Открыть</a></div>
     <div><span>Открытые задачи</span><strong>{{ report.now.open_tasks }}</strong></div>
@@ -65,7 +63,32 @@
 
 {% if member_rows %}<section class="analytics-panel analytics-team" aria-labelledby="analytics-team-title">
   <div class="analytics-panel__head"><div><p class="analytics-section__eyebrow">Команда</p><h2 id="analytics-team-title">По ответственным</h2></div></div>
-  <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th scope="col">Сотрудник</th><th scope="col">Заявки за период</th><th scope="col">Без ответа</th><th scope="col">Просрочены</th><th scope="col">Задачи сейчас</th><th scope="col">Сделки сейчас</th></tr></thead><tbody>{% for row in member_rows %}<tr><th scope="row">{% if row.user %}<a href="{{ row.url }}">{{ row.user|staff_name }}</a>{% else %}Не назначено{% endif %}</th><td>{{ row.received }}</td><td>{{ row.unanswered }}</td><td>{{ row.overdue }}</td><td>{{ row.open_tasks }}</td><td>{{ row.active_deals }}</td></tr>{% endfor %}</tbody></table></div>
+  <div class="table-responsive"><table class="table align-middle mb-0"><thead><tr><th scope="col">Сотрудник</th><th scope="col">Заявки за период</th><th scope="col">Без ответа</th><th scope="col">Срочных дел</th><th scope="col">Задачи сейчас</th><th scope="col">Сделки сейчас</th></tr></thead><tbody>{% for row in member_rows %}<tr><th scope="row">{% if row.user %}<a href="{{ row.url }}">{{ row.user|staff_name }}</a>{% else %}Не назначено{% endif %}</th><td>{{ row.received }}</td><td>{{ row.unanswered }}</td><td>{{ row.urgent_work }}</td><td>{{ row.open_tasks }}</td><td>{{ row.active_deals }}</td></tr>{% endfor %}</tbody></table></div>
   <p class="analytics-filter-note">Исторические показатели отнесены к текущему ответственному. Переназначение изменит эту разбивку.</p>
 </section>{% endif %}
+
+<div class="analytics-grid analytics-extended">
+  <section class="analytics-panel" aria-labelledby="analytics-properties-title">
+    <div class="analytics-panel__head"><div><p class="analytics-section__eyebrow">За выбранный период</p><h2 id="analytics-properties-title">Объекты</h2></div><a class="btn btn-text btn-sm" href="{{ export_urls.properties }}">CSV ↓</a></div>
+    {% if extended.properties %}<div class="table-responsive"><table class="table align-middle mb-0 analytics-report-table"><thead><tr><th scope="col">Объект</th><th scope="col">Просмотры</th><th scope="col">Заявки</th><th scope="col">Показы</th></tr></thead><tbody>{% for row in extended.properties|slice:':10' %}<tr><th scope="row">{{ row.property.title }}</th><td>{{ row.views }}</td><td>{{ row.leads }}</td><td>{{ row.showings }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="analytics-empty">{% if report.scope.member_id %}У выбранного сотрудника нет объектов.{% else %}Объектов пока нет.{% endif %}</p>{% endif %}
+    <p class="analytics-filter-note">Просмотры — открытия публичного лендинга; показы — фактически завершённые после начала учёта.{% if report.scope.member_id %} Просмотры и доставки Telegram относятся ко всему объекту, даже при выборе сотрудника.{% endif %} Все объекты и дополнительные числа — в CSV.</p>
+  </section>
+  <section class="analytics-panel" aria-labelledby="analytics-channels-title">
+    <div class="analytics-panel__head"><div><p class="analytics-section__eyebrow">По заявкам периода</p><h2 id="analytics-channels-title">Каналы</h2></div><a class="btn btn-text btn-sm" href="{{ export_urls.channels }}">CSV ↓</a></div>
+    {% if extended.channels %}<div class="table-responsive"><table class="table align-middle mb-0 analytics-report-table"><thead><tr><th scope="col">Источник</th><th scope="col">Заявки</th><th scope="col">Целевые</th><th scope="col">В сделку</th></tr></thead><tbody>{% for row in extended.channels %}<tr><th scope="row">{{ row.label }}</th><td>{{ row.received }}</td><td>{{ row.qualified }}</td><td>{{ row.converted }}</td></tr>{% endfor %}</tbody></table></div>{% else %}<p class="analytics-empty">Заявок за период нет.</p>{% endif %}
+    <p class="analytics-filter-note">Telegram: доставлено объявлений {{ extended.telegram_delivered }}, откликов через бота {{ extended.telegram_responses }}. Прочтение неизвестно; эти числа не являются конверсией рассылки.</p>
+  </section>
+</div>
+
+<div class="analytics-grid analytics-extended">
+  <section class="analytics-panel" aria-labelledby="analytics-owners-title">
+    <div class="analytics-panel__head"><div><p class="analytics-section__eyebrow">Отдельный поток</p><h2 id="analytics-owners-title">Собственники</h2></div><a class="btn btn-text btn-sm" href="{{ export_urls.owners }}">CSV ↓</a></div>
+    <div class="analytics-queue analytics-queue--extended"><div><span>Обращений</span><strong>{{ extended.owners.received }}</strong></div><div><span>Первых разговоров</span><strong>{{ extended.owners.contacted }}</strong></div><div><span>Объект создан</span><strong>{{ extended.owners.linked_cohort }}</strong></div><div><span>Просрочены сейчас</span><strong>{{ extended.owners.overdue_now }}</strong></div></div>
+    <p class="analytics-filter-note">Согласовано {{ extended.owners.agreed_cohort }} из обращений периода; это их текущий результат.</p>
+  </section>
+  <section class="analytics-panel" aria-labelledby="analytics-comparison-title">
+    <div class="analytics-panel__head"><div><p class="analytics-section__eyebrow">Предыдущие {{ extended.previous_period.first_day|date:'d.m' }}–{{ extended.previous_period.last_day|date:'d.m' }}</p><h2 id="analytics-comparison-title">Сравнение периодов</h2></div><a class="btn btn-text btn-sm" href="{{ export_urls.comparison }}">CSV ↓</a></div>
+    <div class="table-responsive"><table class="table align-middle mb-0 analytics-report-table"><thead><tr><th scope="col">Показатель</th><th scope="col">Сейчас</th><th scope="col">Ранее</th><th scope="col">Разница</th></tr></thead><tbody>{% for row in extended.comparison %}<tr><th scope="row">{{ row.label }}</th><td>{{ row.current }}</td><td>{{ row.previous }}</td><td>{% if row.delta > 0 %}+{% endif %}{{ row.delta }}</td></tr>{% endfor %}</tbody></table></div>
+  </section>
+</div>
 {% endblock %}

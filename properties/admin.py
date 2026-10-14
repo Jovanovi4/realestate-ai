@@ -4,7 +4,7 @@ from django.db import transaction
 from billing.enforcement import enabled as billing_enforcement_enabled
 from .forms import SafeImageField
 
-from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, Client, ClientInteraction, ClientPropertySuggestion, ClientReminder, Deal, Lead, OutboundMessage, OwnerInquiry, Property, PropertyOwnerLink, RealtorProfile, Showing, TelegramDelivery, TelegramPublication, TelegramSubscriber, UserLegalAcceptance
+from .models import AIContent, Agency, AgencyInvitation, AgencyMembership, AuditEvent, CRMChangeEvent, Client, ClientInteraction, ClientMergeRecord, ClientPropertySuggestion, ClientReminder, Deal, InboundEvent, InboundMailboxCursor, LandingDailyView, Lead, OutboundMessage, OwnerInquiry, Property, PropertyOwnerLink, PublicIntakeLink, RealtorProfile, Showing, TelegramDelivery, TelegramPublication, TelegramSubscriber, UserLegalAcceptance
 
 
 class BillingReadOnlyWhenEnforced:
@@ -29,6 +29,44 @@ class TelegramReadOnlyAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(PublicIntakeLink)
+class PublicIntakeLinkAdmin(TelegramReadOnlyAdmin):
+    list_display = ("id", "owner", "agency", "enabled", "created_at")
+    readonly_fields = ("owner", "agency", "code", "enabled", "created_at")
+
+
+@admin.register(InboundEvent)
+class InboundEventAdmin(TelegramReadOnlyAdmin):
+    list_display = ("created_at", "channel", "external_id", "link", "lead", "owner_inquiry")
+    list_filter = ("channel",)
+    readonly_fields = ("link", "channel", "external_id", "lead", "owner_inquiry", "sender", "subject", "body", "received_at", "ignored_at", "created_at")
+
+
+@admin.register(InboundMailboxCursor)
+class InboundMailboxCursorAdmin(TelegramReadOnlyAdmin):
+    list_display = ("mailbox", "folder", "link", "last_uid", "updated_at")
+    readonly_fields = ("link", "mailbox", "folder", "uid_validity", "last_uid", "updated_at")
+
+
+@admin.register(ClientMergeRecord)
+class ClientMergeRecordAdmin(TelegramReadOnlyAdmin):
+    list_display = ("created_at", "target", "source_name", "source_phone", "merged_by")
+    readonly_fields = ("target", "source_id", "source_name", "source_phone", "source_snapshot", "moved_counts", "merged_by", "created_at")
+
+
+@admin.register(CRMChangeEvent)
+class CRMChangeEventAdmin(TelegramReadOnlyAdmin):
+    list_display = ("occurred_at", "resource_type", "resource_id", "field_name", "old_value", "new_value")
+    list_filter = ("resource_type", "field_name")
+    readonly_fields = ("agency_id", "personal_user_id", "resource_type", "resource_id", "field_name", "old_value", "new_value", "occurred_at")
+
+
+@admin.register(LandingDailyView)
+class LandingDailyViewAdmin(TelegramReadOnlyAdmin):
+    list_display = ("day", "property", "views")
+    readonly_fields = ("property", "day", "views")
 
 
 @admin.register(OutboundMessage)

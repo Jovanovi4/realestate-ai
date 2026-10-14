@@ -61,7 +61,7 @@ class DemoDataService:
             landing_subtitle="Пример готового лендинга, который можно открыть, изменить или удалить.",
             landing_about_title="Пространство для жизни",
             landing_contact_title="Запросить просмотр",
-            landing_trust_about="Демо-профиль показывает, как выглядит доверительный блок риелтора.",
+            landing_benefits=[],
             seo_title="Демо-квартира у парка",
             seo_description="Пример заполненного объекта для знакомства с Rieltor AI.",
             is_demo=True,

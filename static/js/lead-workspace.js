@@ -3,7 +3,6 @@
   window.reaicrmLeadPanelInitialized = true;
   let lastOpenedLead = null;
   let hadPanel = false;
-  let observedWorkspace = null;
   let restoreScroll = null;
   let listReturnScroll = null;
   let savedMessage = null;
@@ -11,12 +10,19 @@
   let allowNavigation = false;
   let allowUnload = false;
   let refreshingAfterSave = false;
+  let filtersOpen = document.getElementById('lead-filter-panel')?.classList.contains('show') || false;
   let historyIndex = Number.isInteger(history.state?.reaicrmLeadIndex) ? history.state.reaicrmLeadIndex : 0;
   let restoringCancelledHistory = false;
   const formSnapshots = new WeakMap();
   history.replaceState({ ...history.state, reaicrmLeadIndex: historyIndex }, '', window.location.href);
-  const observer = new ResizeObserver(() => syncPanel());
   const formValues = (form) => new URLSearchParams(new FormData(form)).toString();
+  const syncFilterPanel = () => {
+    const panel = document.getElementById('lead-filter-panel');
+    const toggle = document.querySelector('[data-lead-filter-toggle]');
+    if (!panel || !toggle) return;
+    panel.classList.toggle('show', filtersOpen);
+    toggle.setAttribute('aria-expanded', String(filtersOpen));
+  };
   const rememberForms = (clearUnsaved = false) => {
     document.querySelectorAll('#lead-panel form').forEach((form) => {
       formSnapshots.set(form, formValues(form));
@@ -99,35 +105,13 @@
     if (next) htmx.process(next);
   };
   rememberForms();
-  const backgroundElements = (workspace) => [
-    ...document.querySelectorAll('.app-sidebar, .mobile-header'),
-    ...[...(workspace?.parentElement?.children || [])].filter((element) => element !== workspace && element.tagName !== 'SCRIPT'),
-  ];
-
   const syncPanel = ({ moveFocus = false } = {}) => {
     const workspace = document.getElementById('lead-workspace');
-    if (workspace !== observedWorkspace) {
-      if (observedWorkspace) observer.unobserve(observedWorkspace);
-      if (workspace) observer.observe(workspace);
-      observedWorkspace = workspace;
-    }
-    if (workspace) {
-      workspace.classList.toggle('lead-workspace--roomy', workspace.getBoundingClientRect().width >= 1120);
-      const table = workspace.querySelector('.lead-workspace__list .table-responsive');
-      if (workspace.classList.contains('lead-workspace--roomy')
-          && ((table && table.scrollWidth > table.clientWidth + 1)
-            || document.documentElement.scrollWidth > document.documentElement.clientWidth + 1)) {
-        workspace.classList.remove('lead-workspace--roomy');
-      }
-    }
     const panel = document.getElementById('lead-panel');
-    const list = document.querySelector('.lead-workspace__list');
     const selected = document.querySelector('[data-lead-panel-open][aria-current="true"]');
     const selectedId = selected?.dataset.leadPanelOpen || null;
 
     if (!panel) {
-      document.body.classList.remove('lead-panel-overlay-open');
-      backgroundElements(workspace).forEach((element) => { element.inert = false; });
       if (lastOpenedLead && hadPanel) {
         document.querySelector(`[data-lead-panel-open="${lastOpenedLead}"]`)?.focus({ preventScroll: true });
       }
@@ -136,19 +120,24 @@
       return;
     }
 
-    const isOverlay = getComputedStyle(panel).position === 'fixed';
-    if (list) list.inert = isOverlay;
-    backgroundElements(workspace).forEach((element) => { element.inert = isOverlay; });
-    panel.setAttribute('aria-modal', String(isOverlay));
-    document.body.classList.toggle('lead-panel-overlay-open', isOverlay);
     hadPanel = true;
     if (selectedId) lastOpenedLead = selectedId;
-    if (moveFocus) panel.focus({ preventScroll: true });
+    if (moveFocus) {
+      panel.focus({ preventScroll: true });
+      if (workspace?.getBoundingClientRect().width < 704) panel.scrollIntoView?.({ block: 'start' });
+    }
   };
 
   document.addEventListener('DOMContentLoaded', () => {
     rememberForms();
+    syncFilterPanel();
     syncPanel();
+  });
+  document.addEventListener('show.bs.collapse', (event) => {
+    if (event.target.id === 'lead-filter-panel') filtersOpen = true;
+  });
+  document.addEventListener('hide.bs.collapse', (event) => {
+    if (event.target.id === 'lead-filter-panel') filtersOpen = false;
   });
   document.addEventListener('hidden.bs.modal', (event) => {
     if (event.target.id === 'action-confirmation-modal') allowUnload = false;
@@ -176,10 +165,10 @@
       }
       return;
     }
-    const row = event.target.closest('[data-lead-open-row]');
+    const row = event.target.closest('[data-lead-open-row], [data-owner-open-row]');
     if (row && !event.target.closest('a, button, input, select, textarea, label, summary, details, [role="button"]')
         && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey && !(event.button > 0)) {
-      const opener = row.querySelector('[data-lead-panel-open]');
+      const opener = row.querySelector('[data-lead-panel-open], [data-owner-detail-link]');
       if (opener) {
         event.preventDefault();
         opener.click();
@@ -212,7 +201,7 @@
       warnBeforeLeaving(() => control?.tagName === 'FORM' ? control.requestSubmit() : control?.click(), false, control);
       return;
     }
-    if (control?.matches('[data-lead-panel-open], [data-lead-panel-close], .lead-workspace__backdrop')) {
+    if (control?.matches('[data-lead-panel-open], [data-lead-panel-close]')) {
       const currentScroll = { x: window.scrollX, y: window.scrollY };
       if (control.dataset.leadPanelOpen) {
         listReturnScroll = currentScroll;
@@ -235,12 +224,13 @@
     if (event.detail.target?.id === 'lead-workspace') {
       refreshingAfterSave = false;
       rememberForms();
-      syncPanel({ moveFocus: !!document.getElementById('lead-panel') });
       updateSidebarCounters(document.getElementById('lead-workspace'));
       if (restoreScroll) {
         window.scrollTo(restoreScroll.x, restoreScroll.y);
         restoreScroll = null;
       }
+      syncFilterPanel();
+      syncPanel({ moveFocus: !!document.getElementById('lead-panel') });
       if (!document.getElementById('lead-panel')) listReturnScroll = null;
       if (savedMessage) {
         showSavedNotice(document.querySelector('#lead-panel .lead-panel__body'), document.getElementById('lead-workspace'), savedMessage);
@@ -263,6 +253,7 @@
   });
   document.body.addEventListener('htmx:historyRestore', () => {
     rememberForms();
+    syncFilterPanel();
     syncPanel();
     if (!document.getElementById('lead-panel') && listReturnScroll) {
       window.scrollTo(listReturnScroll.x, listReturnScroll.y);
@@ -290,7 +281,6 @@
     }
     historyIndex = destinationIndex;
   }, true);
-  window.addEventListener('resize', () => syncPanel());
   window.addEventListener('beforeunload', (event) => {
     if (allowUnload || !hasUnsavedChanges()) return;
     event.preventDefault();
@@ -313,11 +303,5 @@
       if (close) { event.preventDefault(); close.click(); }
       return;
     }
-    if (event.key !== 'Tab' || panel.getAttribute('aria-modal') !== 'true') return;
-    const focusable = [...panel.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary')]
-      .filter((element) => element.getClientRects().length);
-    if (!focusable.length) { event.preventDefault(); panel.focus(); return; }
-    if (event.shiftKey && (document.activeElement === focusable[0] || document.activeElement === panel)) { event.preventDefault(); focusable.at(-1).focus(); }
-    else if (!event.shiftKey && (document.activeElement === focusable.at(-1) || document.activeElement === panel)) { event.preventDefault(); focusable[0].focus(); }
   });
 })();
