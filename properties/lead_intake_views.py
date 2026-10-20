@@ -8,6 +8,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views import View
 
@@ -77,12 +78,12 @@ class LeadAttachPropertyView(LoginRequiredMixin, View):
             form = LeadPropertyForm(request.POST, lead=lead)
             if not form.is_valid():
                 messages.error(request, "Выберите доступный объект из этого пространства.")
-                return redirect("lead_detail", pk=pk)
+                return redirect(f"{reverse('lead_detail', args=[pk])}?attach=1#lead-property-attach")
             try:
                 require_resource_action(request.user, lead, Operation.EDIT_CRM)
             except TariffDenied as error:
                 messages.error(request, error.message)
-                return redirect("lead_detail", pk=pk)
+                return redirect(f"{reverse('lead_detail', args=[pk])}?attach=1#lead-property-attach")
             lead.property = form.cleaned_data["property"]
             lead.save(update_fields=["property", "updated_at"])
         messages.success(request, "Объект привязан к заявке.")

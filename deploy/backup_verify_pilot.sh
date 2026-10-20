@@ -34,9 +34,11 @@ compose=(sudo docker compose --env-file .env.docker --profile mail)
 sudo docker image inspect postgres:17-bookworm >/dev/null
 running_services="$("${compose[@]}" ps --status running --services)"
 writers=()
+writer_containers=()
 for service in web outbound publications account-emails; do
     if grep -Fxq "$service" <<< "$running_services"; then
         writers+=("$service")
+        writer_containers+=("$("${compose[@]}" ps -q "$service")")
     fi
 done
 
@@ -47,8 +49,8 @@ restore_container=""
 on_exit() {
     local result=$?
     trap - EXIT
-    if (( paused && ${#writers[@]} )); then
-        "${compose[@]}" start "${writers[@]}" || result=1
+    if (( paused && ${#writer_containers[@]} )); then
+        sudo docker start "${writer_containers[@]}" >/dev/null || result=1
     fi
     if [[ -n "$restore_container" ]]; then
         sudo docker rm -f "$restore_container" >/dev/null 2>&1 || true
@@ -79,7 +81,7 @@ count_sql='SELECT (SELECT count(*) FROM django_migrations), (SELECT count(*) FRO
     -- "$count_sql" > "$backup_dir/source-counts.txt"
 
 if (( ${#writers[@]} )); then
-    "${compose[@]}" start "${writers[@]}"
+    sudo docker start "${writer_containers[@]}" >/dev/null
 fi
 paused=0
 echo "Pilot writers are running again; checking the saved archives in isolation..."
@@ -89,7 +91,9 @@ sudo docker run --rm -d --network none --name "$restore_container" \
     -e POSTGRES_HOST_AUTH_METHOD=trust postgres:17-bookworm >/dev/null
 ready=0
 for _ in {1..60}; do
-    if sudo docker exec "$restore_container" pg_isready -U postgres -d postgres >/dev/null 2>&1; then
+    # The image briefly runs a socket-only server during initialization.
+    # TCP readiness confirms that the final postmaster has started.
+    if sudo docker exec "$restore_container" pg_isready -h 127.0.0.1 -U postgres -d postgres >/dev/null 2>&1; then
         ready=1
         break
     fi

@@ -715,13 +715,13 @@ class LeadProcessingTests(TestCase):
         with patch("properties.workday_views.timezone.now", return_value=received_at + timedelta(minutes=5)):
             response = self.client.get(reverse("workday"))
         self.assertContains(response, f"{reverse('lead_detail', args=[self.lead.pk])}?contact=1#lead-edit")
-        self.assertContains(response, ">Записать контакт</a>")
+        self.assertContains(response, f'aria-label="Записать контакт по заявке {self.lead.name}"')
 
         Lead.objects.filter(pk=self.lead.pk).update(first_contacted_at=received_at + timedelta(minutes=2))
         with patch("properties.workday_views.timezone.now", return_value=received_at + timedelta(minutes=5)):
             response = self.client.get(reverse("workday"))
         self.assertContains(response, f"{reverse('lead_detail', args=[self.lead.pk])}?complete=1#lead-action")
-        self.assertContains(response, ">Записать итог</a>")
+        self.assertContains(response, f'aria-label="Записать итог по заявке {self.lead.name}"')
         detail = self.client.get(reverse("lead_detail", args=[self.lead.pk]), {"complete": "1"})
         self.assertContains(detail, 'class="lead-action-complete" name="lead-action-editor" id="lead-action" open')
 

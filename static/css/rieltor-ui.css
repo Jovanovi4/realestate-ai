@@ -1064,7 +1064,7 @@ a.profile-stat:hover { border-color: var(--ui-border-strong); color: var(--ui-in
 .lead-next__unavailable small { display: block; padding: 0 .5rem .5rem; color: var(--ui-muted); font-size: .75rem; line-height: 1.4; }
 .lead-editor__form { padding-top: var(--ui-space-4); border-top: 1px solid var(--ui-border); }
 .lead-editor__extra { margin-top: var(--ui-space-4); }
-.lead-editor__extra summary, .lead-overview__assign summary { width: fit-content; color: var(--ui-accent); font-size: .8125rem; font-weight: 650; cursor: pointer; }
+.lead-editor__extra summary, .lead-overview__assign summary, .lead-property-attach > summary { width: fit-content; color: var(--ui-accent); font-size: .8125rem; font-weight: 650; cursor: pointer; }
 .lead-editor__extra > .lead-processing-form__grid { padding-top: .75rem; }
 .lead-history .lead-action-history { margin-top: var(--ui-space-4); }
 .lead-overview__owner { display: grid; gap: .25rem; }
@@ -1073,6 +1073,10 @@ a.profile-stat:hover { border-color: var(--ui-border-strong); color: var(--ui-in
 .lead-overview__assign { margin-top: .5rem; }
 .lead-overview__assign form { display: grid; gap: .5rem; margin-top: .75rem; }
 .lead-overview__assign .btn { justify-self: start; }
+.lead-property-attach > summary { min-height: 2rem; padding: .375rem 0; }
+.lead-property-attach > summary:focus-visible { outline: 2px solid var(--ui-accent); outline-offset: 2px; }
+.lead-property-attach > form { display: grid; justify-items: start; gap: .5rem; max-width: 26rem; margin-top: .875rem; }
+.lead-property-attach .form-select { width: 100%; }
 .lead-overview__facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .75rem; padding: var(--ui-space-4) 0; margin: var(--ui-space-4) 0 0; border-top: 1px solid var(--ui-border); }
 .lead-overview__facts div { min-width: 0; }
 .lead-overview__facts dd { margin: .25rem 0 0; color: var(--ui-ink); font-size: .8125rem; font-weight: 650; overflow-wrap: anywhere; }
@@ -1470,8 +1474,7 @@ a.profile-stat:hover { border-color: var(--ui-border-strong); color: var(--ui-in
 .showing-feedback-prompt > div { display: grid; gap: .125rem; }
 .showing-feedback-prompt strong { color: var(--ui-ink); font-size: .9375rem; }
 .detail-main-stack { min-width: 0; }
-.lead-detail-main { display: grid; gap: var(--ui-space-5); max-width: 54rem; }
-#lead-about > .lead-overview, #lead-history > .lead-history { max-width: 54rem; }
+.lead-detail-main { display: grid; gap: var(--ui-space-5); }
 .detail-contact-phone { display: inline-flex; align-items: center; flex-wrap: wrap; gap: .375rem; color: var(--ui-accent); font-size: 1.25rem; font-weight: 650; text-decoration: none; }
 .detail-contact-phone .ui-icon { flex: 0 0 auto; width: 1.125rem; height: 1.125rem; }
 .lead-contact__call-label { display: none; }

@@ -76,6 +76,17 @@
       </div>
     </section>
     {% endif %}
+    {% if attach_property_form %}
+    <section class="detail-section" aria-labelledby="lead-property-title">
+      <div class="detail-section__heading"><div><span class="detail-kicker">Перед сделкой</span><h2 id="lead-property-title">Объект для сделки</h2></div></div>
+      {% if can_attach_property %}
+      <details class="lead-property-attach" id="lead-property-attach"{% if request.GET.attach == '1' %} open{% endif %}>
+        <summary>Привязать предложенный объект</summary>
+        <form method="post" action="{% url 'lead_attach_property' lead.pk %}">{% csrf_token %}<label class="form-label" for="{{ attach_property_form.property.id_for_label }}">Выберите объект</label>{{ attach_property_form.property }}{{ attach_property_form.property.errors }}<button type="submit" class="btn btn-neutral btn-sm">Привязать объект</button></form>
+      </details>
+      {% else %}<p class="detail-muted mb-0">Доступных объектов пока нет. <a href="{% url 'create_property' %}">Добавить объект</a></p>{% endif %}
+    </section>
+    {% endif %}
     </div>
   </section>
   <section class="tab-pane fade" id="lead-about" role="tabpanel" aria-labelledby="lead-about-tab" tabindex="0">
@@ -94,7 +105,6 @@
     </div>
     {% if lead.client %}<div class="detail-aside__row"><span>Клиент</span><a href="{% url 'client_detail' lead.client.pk %}">{{ lead.client.name }} <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a></div>{% endif %}
     <div class="detail-aside__row"><span>Объект</span>{% if lead.property_id %}<a href="{% url 'property_detail' lead.property.pk %}">{{ lead.property.title }} <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% else %}<span>Пока не выбран</span>{% endif %}</div>
-    {% if attach_property_form %}{% if can_attach_property %}<form method="post" action="{% url 'lead_attach_property' lead.pk %}" class="lead-overview__assign">{% csrf_token %}<label class="form-label" for="{{ attach_property_form.property.id_for_label }}">Привязать предложенный объект</label>{{ attach_property_form.property }}{{ attach_property_form.property.errors }}<button type="submit" class="btn btn-neutral btn-sm">Привязать объект</button></form>{% else %}<p class="detail-muted mb-0">Доступных объектов пока нет. <a href="{% url 'create_property' %}">Добавить объект</a></p>{% endif %}{% endif %}
     {% if linked_deal %}<div class="detail-aside__row"><span>Сделка</span><a href="{% url 'deal_detail' linked_deal.pk %}">{{ linked_deal.get_stage_display }} <svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a></div>{% endif %}
   </div>
   </section>
