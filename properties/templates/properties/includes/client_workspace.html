@@ -1,9 +1,13 @@
 {% load crm_display %}
 <div id="client-workspace" class="lead-workspace client-workspace{% if selected_client %} client-workspace--open{% endif %}" data-clients-url="{% url 'client_list' %}" data-active-filters="{% if active_filters %}true{% else %}false{% endif %}"{% if next_client_id %} data-next-client-id="{{ next_client_id }}" data-next-client-url="?{{ client_panel_query }}&amp;client={{ next_client_id }}"{% endif %}>
-<section class="client-toolbar" id="client-toolbar" aria-label="Поиск и фильтры клиентов">
-  <form method="get" action="{% url 'client_list' %}" hx-get="{% url 'client_list' %}" hx-target="#client-workspace" hx-swap="outerHTML" hx-push-url="true">{% if owner_mode %}<input type="hidden" name="role" value="owner">{% endif %}
+<form method="get" action="{% url 'client_list' %}" hx-get="{% url 'client_list' %}" hx-target="#client-workspace" hx-swap="outerHTML" hx-push-url="true" hx-trigger="submit, input changed delay:400ms from:#client-q, search from:#client-q" hx-sync="this:replace">
+  {% if owner_mode %}<input type="hidden" name="role" value="owner">{% endif %}
+  <div class="workspace-search-controls">
+    <div class="workspace-search"><label class="visually-hidden" for="client-q">{% if owner_mode %}Поиск собственника{% else %}Поиск клиента{% endif %}</label><input class="form-control" id="client-q" name="q" type="search" value="{{ filters.q }}" placeholder="{% if owner_mode %}Имя или телефон{% else %}Имя, телефон или район{% endif %}"></div>
+    <button class="btn btn-icon btn-neutral client-filter-trigger{% if active_filters %} has-active-filters{% endif %}" type="button" data-client-filter-toggle aria-label="Фильтры" data-tooltip="Фильтры" aria-controls="client-toolbar" aria-expanded="false"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-filter"></use></svg></button>
+  </div>
+  <section class="client-toolbar" id="client-toolbar" aria-label="Фильтры клиентов">
     <div class="client-toolbar__main">
-      <div class="client-toolbar__search"><label class="form-label" for="client-q">{% if owner_mode %}Поиск собственника{% else %}Поиск клиента{% endif %}</label><input class="form-control" id="client-q" name="q" type="search" value="{{ filters.q }}" placeholder="{% if owner_mode %}Имя или телефон{% else %}Имя, телефон или район{% endif %}"></div>
       <div><label class="form-label" for="client-status">Отношения</label><select class="form-select" id="client-status" name="status"><option value="">Все состояния</option>{% for value, label in status_choices %}<option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
       <div><label class="form-label" for="client-sort">Сортировка</label><select class="form-select" id="client-sort" name="sort">{% for value, label in sort_choices %}<option value="{{ value }}" {% if filters.sort == value or not filters.sort and value == 'newest' %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
     </div>
@@ -13,8 +17,8 @@
       <div><label class="form-label" for="client-date-to">По дату</label><input class="form-control" id="client-date-to" name="date_to" type="date" value="{{ filters.date_to }}"></div>
     </div>
     <div class="client-toolbar__actions"><button class="btn btn-primary client-toolbar__submit" type="submit">Показать</button></div>
-  </form>
-</section>
+  </section>
+</form>
 {% if overdue_reminders or today_reminders %}
   <details class="client-reminders client-reminders--desktop"{% if overdue_reminders %} open{% endif %}>{% include "properties/includes/client_reminders_content.html" %}</details>
   <details class="client-reminders client-reminders--mobile">{% include "properties/includes/client_reminders_content.html" %}</details>

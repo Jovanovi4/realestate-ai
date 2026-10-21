@@ -27,7 +27,8 @@
       {% if contact_summary %}<div class="lead-contact-summary"><div><span class="detail-kicker">{{ contact_summary.label }}</span><time datetime="{{ contact_summary.at|date:'c' }}">{{ contact_summary.at|date:"d.m.Y · H:i" }}</time></div>{% if contact_summary.text|length > 160 %}<details><summary>{{ contact_summary.text|truncatechars:160 }}</summary><p>{{ contact_summary.text|linebreaksbr }}</p></details>{% else %}<p>{{ contact_summary.text|linebreaksbr }}</p>{% endif %}</div>{% elif lead.first_contacted_at %}<p class="detail-muted mb-0">Первый контакт записан, итог разговора пока не указан.</p>{% endif %}
     </section>
     {% if lead.status != 'archived' and lead.outcome == 'open' %}
-    <section class="detail-section lead-next" aria-labelledby="lead-processing-title">
+    <div class="lead-next__workspace">
+    <section class="detail-section lead-next" id="lead-next-actions" aria-labelledby="lead-processing-title">
       <div class="detail-section__heading"><div class="billing-heading-with-help"><h2 id="lead-processing-title">Следующее действие</h2>{% include "billing/includes/help.html" with label="Следующее действие" text="Задача ответственного. До первого контакта ответ клиенту нужен в течение 30 минут после поступления заявки; перенос задачи этот срок не меняет." only %}</div></div>
       <div class="lead-next__summary"><strong>{{ lead.next_action }}</strong></div>
       {% if lead.first_response_overdue %}
@@ -41,8 +42,17 @@
         {% if not lead_deadlines_match %}<p class="lead-next__secondary-deadline">Следующее действие до <time datetime="{{ lead.next_action_due_at|date:'c' }}">{{ lead.next_action_due_at|date:"d.m.Y, H:i" }}</time></p>{% endif %}
       {% else %}<p class="lead-next__deadline">Выполнить до <time datetime="{{ lead.next_action_due_at|date:'c' }}">{{ lead.next_action_due_at|date:"d.m.Y, H:i" }}</time></p>{% endif %}
       <div class="lead-next__controls">
-        <details class="lead-editor" name="lead-action-editor" id="lead-edit" {% if processing_form.errors or contact_open %}open{% endif %}>
-          <summary class="lead-overview__outcome-action"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></span><span>{% if lead.first_contacted_at %}Изменить план{% else %}Записать контакт{% endif %}</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
+        <button type="button" class="lead-overview__outcome-action" id="lead-edit" data-lead-action-open="lead-edit-panel" aria-expanded="false" aria-controls="lead-edit-panel"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></span><span>{% if lead.first_contacted_at %}Изменить план{% else %}Записать контакт{% endif %}</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></button>
+        {% if current_task %}<button type="button" class="lead-overview__outcome-action lead-action-complete" id="lead-action" data-lead-action-open="lead-action-panel" aria-expanded="false" aria-controls="lead-action-panel"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-check"></use></svg></span><span>Записать итог</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></button>{% endif %}
+        <button type="button" class="lead-overview__outcome-action lead-next__decline-trigger" id="lead-decline" data-lead-action-open="lead-decline-panel" aria-expanded="false" aria-controls="lead-decline-panel"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></span><span>Закрыть без сделки</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></button>
+        {% if can_convert %}
+          {% if linked_deal and linked_deal.stage != 'won' and linked_deal.stage != 'lost' %}<form method="post" action="{% url 'lead_outcome' lead.pk %}">{% csrf_token %}<input type="hidden" name="deal_id" value="{{ linked_deal.pk }}"><button type="submit" name="action" value="convert_existing" class="lead-overview__outcome-action"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Привязать к сделке</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></button></form>{% else %}<a class="lead-overview__outcome-action" href="{% url 'deal_create' %}?lead={{ lead.pk }}"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Перевести в сделку</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endif %}
+        {% else %}<div class="lead-next__unavailable"><span class="lead-overview__outcome-action" aria-disabled="true"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Перевести в сделку</span></span><small>{% if not lead.property_id %}Сначала привяжите объект.{% elif not lead.client %}Сначала свяжите заявку с клиентом.{% elif not lead.first_contacted_at %}После первого контакта и квалификации.{% else %}Отметьте «Целевой клиент».{% endif %}</small></div>{% endif %}
+      </div>
+    </section>
+      <aside class="lead-panel lead-next__side-panel" id="lead-edit-panel" role="region" tabindex="-1" aria-labelledby="lead-edit-title" hidden{% if processing_form.errors or contact_open %} data-lead-action-open-on-load{% endif %}>
+        <header class="lead-panel__header"><div class="lead-panel__heading"><span class="detail-kicker">Действие по заявке</span><h3 id="lead-edit-title">{% if lead.first_contacted_at %}Изменить план{% else %}Записать контакт{% endif %}</h3></div><button type="button" class="btn btn-icon btn-sm btn-neutral" data-lead-action-close aria-label="Закрыть форму" data-tooltip="Закрыть"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></button></header>
+        <div class="lead-panel__body">
           <form method="post" action="{% url 'lead_process' lead.pk %}" class="lead-processing-form lead-editor__form">
             {% csrf_token %}
             {% if processing_form.non_field_errors %}<div class="alert alert-danger">{{ processing_form.non_field_errors }}</div>{% endif %}
@@ -55,9 +65,11 @@
             <details class="lead-editor__extra" {% if processing_form.source.errors or processing_form.contact_note.errors %}open{% endif %}><summary>Источник{% if not lead.first_contacted_at %} и заметка{% endif %}</summary><div class="lead-processing-form__grid"><div><label class="form-label" for="{{ processing_form.source.id_for_label }}">{{ processing_form.source.label }}</label>{{ processing_form.source }}{{ processing_form.source.errors }}</div>{% if not lead.first_contacted_at %}<div class="lead-processing-form__wide"><label class="form-label" for="{{ processing_form.contact_note.id_for_label }}">{{ processing_form.contact_note.label }}</label>{{ processing_form.contact_note }}{{ processing_form.contact_note.errors }}</div>{% endif %}</div></details>
             <div class="lead-processing-form__actions">{% if lead.first_contacted_at %}<button type="submit" name="action" value="save" class="btn btn-primary">Сохранить план</button>{% else %}<button type="submit" name="action" value="contacted" class="btn btn-primary">Зафиксировать контакт</button><button type="submit" name="action" value="save" class="btn btn-neutral">Сохранить план</button>{% endif %}</div>
           </form>
-        </details>
-        {% if current_task %}<details class="lead-action-complete" name="lead-action-editor" id="lead-action" {% if complete_form.errors or complete_open %}open{% endif %}>
-          <summary class="lead-overview__outcome-action"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-check"></use></svg></span><span>Записать итог</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
+        </div>
+      </aside>
+      {% if current_task %}<aside class="lead-panel lead-next__side-panel" id="lead-action-panel" role="region" tabindex="-1" aria-labelledby="lead-action-title" hidden{% if complete_form.errors or complete_open %} data-lead-action-open-on-load{% endif %}>
+        <header class="lead-panel__header"><div class="lead-panel__heading"><span class="detail-kicker">Действие по заявке</span><h3 id="lead-action-title">Записать итог</h3></div><button type="button" class="btn btn-icon btn-sm btn-neutral" data-lead-action-close aria-label="Закрыть форму" data-tooltip="Закрыть"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></button></header>
+        <div class="lead-panel__body">
           <form method="post" action="{% url 'lead_action_complete' lead.pk %}" class="lead-processing-form lead-editor__form">
             {% csrf_token %}{{ complete_form.task_id }}
             {% if complete_form.non_field_errors %}<div class="alert alert-danger">{{ complete_form.non_field_errors }}</div>{% endif %}
@@ -68,13 +80,16 @@
             </div>
             <div class="lead-processing-form__actions"><button type="submit" class="btn btn-primary">Сохранить итог и новый шаг</button></div>
           </form>
-        </details>{% endif %}
-        {% if can_convert %}
-          {% if linked_deal and linked_deal.stage != 'won' and linked_deal.stage != 'lost' %}<form method="post" action="{% url 'lead_outcome' lead.pk %}">{% csrf_token %}<input type="hidden" name="deal_id" value="{{ linked_deal.pk }}"><button type="submit" name="action" value="convert_existing" class="lead-overview__outcome-action"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Привязать к сделке</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></button></form>{% else %}<a class="lead-overview__outcome-action" href="{% url 'deal_create' %}?lead={{ lead.pk }}"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Перевести в сделку</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endif %}
-        {% else %}<div class="lead-next__unavailable"><span class="lead-overview__outcome-action" aria-disabled="true"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Перевести в сделку</span></span><small>{% if not lead.property_id %}Сначала привяжите объект.{% elif not lead.client %}Сначала свяжите заявку с клиентом.{% elif not lead.first_contacted_at %}После первого контакта и квалификации.{% else %}Отметьте «Целевой клиент».{% endif %}</small></div>{% endif %}
-        <details class="lead-overview__decline" {% if decline_form.errors %}open{% endif %}><summary class="lead-overview__outcome-action"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></span><span>Закрыть без сделки</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary><form method="post" action="{% url 'lead_outcome' lead.pk %}">{% csrf_token %}<label class="form-label" for="{{ decline_form.reason.id_for_label }}">{{ decline_form.reason.label }}</label>{{ decline_form.reason }}{{ decline_form.reason.errors }}<button type="submit" name="action" value="decline" class="btn btn-neutral btn-sm">Закрыть заявку</button></form></details>
-      </div>
-    </section>
+        </div>
+      </aside>{% endif %}
+      <aside class="lead-panel lead-next__side-panel" id="lead-decline-panel" role="region" tabindex="-1" aria-labelledby="lead-decline-title" hidden{% if decline_form.errors %} data-lead-action-open-on-load{% endif %}>
+        <header class="lead-panel__header"><div class="lead-panel__heading"><span class="detail-kicker">Действие по заявке</span><h3 id="lead-decline-title">Закрыть без сделки</h3></div><button type="button" class="btn btn-icon btn-sm btn-neutral" data-lead-action-close aria-label="Закрыть форму" data-tooltip="Закрыть"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></button></header>
+        <div class="lead-panel__body">
+        <form method="post" action="{% url 'lead_outcome' lead.pk %}" class="lead-next__decline-form">{% csrf_token %}<label class="form-label" for="{{ decline_form.reason.id_for_label }}">{{ decline_form.reason.label }}</label>{{ decline_form.reason }}{{ decline_form.reason.errors }}<button type="submit" name="action" value="decline" class="btn btn-neutral btn-sm">Закрыть заявку</button></form>
+        </div>
+      </aside>
+    </div>
+      <div class="lead-next__backdrop" data-lead-action-close hidden></div>
     {% endif %}
     {% if attach_property_form %}
     <section class="detail-section" aria-labelledby="lead-property-title">
@@ -117,6 +132,63 @@
 </div>
 <script>
   window.addEventListener('DOMContentLoaded', () => {
+    const actionWorkspace = document.querySelector('.lead-next__workspace');
+    if (actionWorkspace) {
+      const actionTriggers = [...actionWorkspace.querySelectorAll('[data-lead-action-open]')];
+      const actionPanels = [...actionWorkspace.querySelectorAll('.lead-next__side-panel')];
+      const actionBackdrop = document.querySelector('.lead-next__backdrop');
+      const compactPanel = window.matchMedia('(max-width: 1199.98px)');
+      let activeTrigger = null;
+      const activePanel = () => actionPanels.find((panel) => !panel.hidden);
+      const syncPanelMode = () => {
+        const panel = activePanel();
+        document.body.classList.toggle('lead-next-panel-open', !!panel && compactPanel.matches);
+        if (!panel) return;
+        panel.setAttribute('role', compactPanel.matches ? 'dialog' : 'region');
+        if (compactPanel.matches) panel.setAttribute('aria-modal', 'true');
+        else panel.removeAttribute('aria-modal');
+      };
+      const closePanel = (restoreFocus = true) => {
+        actionPanels.forEach((panel) => { panel.hidden = true; panel.removeAttribute('aria-modal'); panel.setAttribute('role', 'region'); });
+        actionTriggers.forEach((trigger) => trigger.setAttribute('aria-expanded', 'false'));
+        actionBackdrop.hidden = true;
+        document.body.classList.remove('lead-next-panel-open');
+        if (restoreFocus) activeTrigger?.focus({ preventScroll: true });
+        activeTrigger = null;
+      };
+      const openPanel = (panel, trigger) => {
+        if (!panel) return;
+        actionPanels.forEach((item) => { item.hidden = item !== panel; });
+        actionTriggers.forEach((item) => item.setAttribute('aria-expanded', item === trigger ? 'true' : 'false'));
+        activeTrigger = trigger;
+        actionBackdrop.hidden = false;
+        syncPanelMode();
+        panel.focus({ preventScroll: true });
+      };
+      actionTriggers.forEach((trigger) => trigger.addEventListener('click', () => {
+        const panel = document.getElementById(trigger.dataset.leadActionOpen);
+        if (panel && !panel.hidden) closePanel();
+        else openPanel(panel, trigger);
+      }));
+      actionWorkspace.querySelectorAll('[data-lead-action-close]').forEach((button) => button.addEventListener('click', () => closePanel()));
+      actionBackdrop?.addEventListener('click', () => closePanel());
+      compactPanel.addEventListener('change', syncPanelMode);
+      document.addEventListener('keydown', (event) => {
+        const panel = activePanel();
+        if (!panel) return;
+        if (event.key === 'Escape') { event.preventDefault(); closePanel(); return; }
+        if (event.key !== 'Tab' || !compactPanel.matches) return;
+        const focusable = [...panel.querySelectorAll('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')].filter((element) => element.getClientRects().length);
+        if (!focusable.length) { event.preventDefault(); panel.focus(); return; }
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+        if (event.shiftKey && (document.activeElement === first || document.activeElement === panel)) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        else if (!panel.contains(document.activeElement)) { event.preventDefault(); first.focus(); }
+      });
+      const pendingPanel = actionPanels.find((panel) => panel.hasAttribute('data-lead-action-open-on-load'));
+      if (pendingPanel) openPanel(pendingPanel, actionTriggers.find((trigger) => trigger.dataset.leadActionOpen === pendingPanel.id));
+    }
     const tabs = document.getElementById('lead-tabs');
     const shell = tabs?.closest('.client-tabs-shell');
     const previous = shell?.querySelector('.client-tabs-arrow--prev');

@@ -123,7 +123,7 @@
       if (!workspace) return;
       filtersOpen = !filtersOpen;
       syncFilterToggle();
-      if (filtersOpen) workspace.querySelector('#client-q')?.focus();
+      if (filtersOpen) workspace.querySelector('#client-status')?.focus();
       return;
     }
     const stay = event.target.closest('[data-client-discard-stay]');

@@ -103,6 +103,7 @@ class PublicRequestView(View):
         return {
             "form": form,
             "kind": kind,
+            "disable_workspace_theme": True,
             "workspace_name": link.agency.name if link.agency_id else (
                 profile.display_name if profile and profile.display_name else link.responsible.get_full_name() or "Риелтор"
             ),

@@ -35,7 +35,7 @@ from billing.services import AccountService
 
 from .forms import (
     ClientDetailsForm, ClientForm, ClientInteractionForm, ClientPropertyReactionForm, ClientPropertySuggestionForm, ClientReminderForm, ClientSearchForm, LeadActionCompleteForm, LeadDeclineForm, LeadForm, LeadProcessingForm, OwnerContactForm, OwnerInteractionForm,
-    PropertyForm, PublicOwnerRequestForm, PublicSearchRequestForm, RegistrationForm, RealtorProfileForm,
+    PropertyForm, PublicOwnerRequestForm, PublicSearchRequestForm, RegistrationForm, RealtorProfileForm, ProfileAppearanceForm,
 )
 from .agency_access import agency_for, deletable_queryset, may_manage_agency, workspace_queryset
 from .board_pagination import paged_board_columns
@@ -767,6 +767,7 @@ class RealtorProfileUpdateView(LoginRequiredMixin, UpdateView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        context["appearance_form"] = ProfileAppearanceForm(initial={"color_scheme": self.object.color_scheme})
         properties = workspace_queryset(Property.objects, self.request.user).exclude(status="archived")
         context["statistics"] = {
             "properties": properties.count(),
@@ -775,6 +776,25 @@ class RealtorProfileUpdateView(LoginRequiredMixin, UpdateView):
         }
         context["closed_agencies"] = Agency.objects.filter(owner=self.request.user, closed_at__isnull=False).order_by("-closed_at")
         return context
+
+
+class ProfileAppearanceView(LoginRequiredMixin, View):
+    def post(self, request):
+        form = ProfileAppearanceForm(request.POST)
+        wants_json = "application/json" in request.headers.get("Accept", "")
+        if not form.is_valid():
+            message = form.errors["color_scheme"][0]
+            if wants_json:
+                return JsonResponse({"message": message}, status=400)
+            messages.error(request, message)
+            return redirect("edit_profile")
+        profile, _ = RealtorProfile.objects.get_or_create(user=request.user)
+        profile.color_scheme = form.cleaned_data["color_scheme"]
+        profile.save(update_fields=["color_scheme"])
+        if wants_json:
+            return JsonResponse({"color_scheme": profile.color_scheme})
+        messages.success(request, "Тема оформления сохранена.")
+        return redirect("edit_profile")
 
 
 def client_panel_query(raw_query):

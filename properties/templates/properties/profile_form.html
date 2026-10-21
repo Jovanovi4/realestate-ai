@@ -15,6 +15,8 @@
 </a>
 {% if closed_agencies %}<section class="detail-section mb-4"><div class="detail-section__heading"><div><span class="detail-kicker">Сохранённые данные</span><h2>Архив команд</h2></div></div>{% for agency in closed_agencies %}<div class="agency-row"><div><strong>{{ agency.name }}</strong><span class="detail-muted d-block">Закрыта {{ agency.closed_at|date:"d.m.Y H:i" }}</span></div><a class="btn btn-sm btn-neutral" href="{% url 'agency_archive' agency.pk %}">Открыть архив</a></div>{% endfor %}</section>{% endif %}
 
+
+
 <div class="profile-form-layout">
   <section class="app-form-panel" aria-labelledby="profile-form-title" x-data="{ preview: {% if form.instance.photo %}'{{ form.instance.photo.url|escapejs }}'{% else %}null{% endif %}, fileName: '', selectPhoto(event) { const file = event.target.files[0]; if (file) { this.preview = URL.createObjectURL(file); this.fileName = file.name; } } }">
     <div class="app-form-panel__heading"><div class="billing-heading-with-help"><h2 id="profile-form-title">Профиль и контакты</h2>{% include "billing/includes/help.html" with label="Профиль и контакты" text="Контакты и описание профиля появятся на опубликованных лендингах." only %}</div></div>
@@ -25,6 +27,7 @@
       <div class="app-form-actions"><button class="btn btn-primary" type="submit">Сохранить изменения</button></div>
     </form>
   </section>
+  <div class="profile-side-stack">
   <aside class="app-form-panel profile-account" aria-labelledby="profile-account-title">
     <div class="app-form-panel__heading">
       <h2 id="profile-account-title">Доступ к аккаунту</h2>
@@ -59,5 +62,26 @@
       <button class="btn btn-text" type="submit"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-log-out"></use></svg>Выйти из аккаунта</button>
     </form>
   </aside>
+<section class="app-form-panel profile-appearance" aria-labelledby="profile-appearance-title">
+  <div class="app-form-panel__heading"><h2 id="profile-appearance-title">Оформление</h2><p id="profile-appearance-hint">Тема применяется сразу.</p></div>
+  <form method="post" action="{% url 'profile_appearance' %}" data-color-scheme-form>
+    {% csrf_token %}
+    <fieldset class="profile-appearance__choices" aria-describedby="profile-appearance-hint profile-appearance-status">
+      <legend class="visually-hidden">Цветовая схема</legend>
+      {% for radio in appearance_form.color_scheme %}
+      <label class="theme-choice" title="{{ radio.choice_label }}">
+        {{ radio.tag }}
+        <span class="theme-choice__card">
+          <svg class="ui-icon theme-choice__icon" viewBox="0 0 24 24" aria-hidden="true"><use href="{% if radio.data.value == 'light' %}#ui-icon-sun{% elif radio.data.value == 'dark' %}#ui-icon-moon{% else %}#ui-icon-monitor{% endif %}"></use></svg>
+          <span class="theme-choice__label"><span>{% if radio.data.value == 'system' %}<span aria-hidden="true">Авто</span><span class="visually-hidden">{{ radio.choice_label }}</span>{% else %}{{ radio.choice_label }}{% endif %}</span><svg class="ui-icon theme-choice__check" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-check"></use></svg></span>
+        </span>
+      </label>
+      {% endfor %}
+    </fieldset>
+    <p class="profile-appearance__status" id="profile-appearance-status" role="status" aria-live="polite" aria-atomic="true" data-color-scheme-status></p>
+    <noscript><button class="btn btn-neutral" type="submit">Сохранить тему</button></noscript>
+  </form>
+</section>
+  </div>
 </div>
 {% endblock %}

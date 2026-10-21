@@ -1,0 +1,17 @@
+<aside class="lead-panel work-panel" id="work-panel" role="region" aria-labelledby="work-panel-title" tabindex="-1" hx-history="false">
+  <header class="lead-panel__header"><div class="lead-panel__heading"><span class="detail-kicker">{{ item.kind_label }}</span><h2 id="work-panel-title">{{ item.title }}</h2></div><div class="lead-panel__header-actions">
+    {% if next_work_item %}<a class="btn btn-icon btn-sm btn-neutral" href="{{ next_work_item.panel_url }}" hx-get="{{ next_work_item.panel_url }}" hx-target="#work-workspace" hx-swap="outerHTML" hx-push-url="true" data-work-panel-open="{{ next_work_item.key }}" aria-label="Открыть следующее дело" data-tooltip="Следующее дело"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endif %}
+    <a class="btn btn-icon btn-sm btn-neutral" href="{{ item.detail_url }}" aria-label="Открыть полную карточку" data-tooltip="Полная карточка"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-external-link"></use></svg></a>
+    <a class="btn btn-icon btn-sm btn-neutral" href="{{ work_list_url }}" hx-get="{{ work_list_url }}" hx-target="#work-workspace" hx-swap="outerHTML" hx-push-url="true" data-work-panel-close aria-label="Закрыть карточку дела" aria-keyshortcuts="Escape" data-tooltip="Закрыть"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></a>
+  </div></header>
+  <div class="lead-panel__body">
+    <section class="client-panel__section"><span class="detail-kicker">Срок</span><p class="work-panel__deadline">{% include "properties/includes/work_item_deadline.html" %}</p>{% if item.is_overdue %}<p class="detail-muted">Срок выполнения прошёл.</p>{% endif %}</section>
+    <section class="client-panel__section"><span class="detail-kicker">Контакт</span><p>{% if item.contact_url %}<a class="work-table__relation" href="{{ item.contact_url }}">{{ item.contact_name }}</a>{% else %}{{ item.contact_name }}{% endif %}</p>{% if item.phone %}<a class="lead-panel__phone" href="tel:{{ item.phone }}">{{ item.phone }}</a>{% endif %}</section>
+    {% if item.property_title %}<section class="client-panel__section"><span class="detail-kicker">Объект</span><p>{% if item.property_url %}<a class="work-table__relation" href="{{ item.property_url }}">{{ item.property_title }}</a>{% else %}{{ item.property_title }}{% endif %}</p>{% if item.deal_url %}<a class="btn btn-text btn-sm" href="{{ item.deal_url }}">Открыть сделку</a>{% endif %}</section>{% endif %}
+    {% if item.description %}<section class="client-panel__section"><span class="detail-kicker">{% if item.kind == 'showing' %}Место встречи{% else %}Подробности{% endif %}</span><p class="work-panel__description">{{ item.description|linebreaksbr }}</p></section>{% endif %}
+    <div class="lead-panel__form-actions">
+      {% if item.can_complete %}<form method="post" action="{% url 'task_complete' item.pk %}" data-work-complete="{{ item.key }}">{% csrf_token %}<input type="hidden" name="next" value="{{ work_list_url }}"><button class="btn btn-primary" type="submit"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-check"></use></svg>Завершить задачу</button></form>{% endif %}
+      <a class="btn {% if item.can_complete %}btn-neutral{% else %}btn-primary{% endif %}" href="{{ item.action_url }}">{{ item.action_label }}</a>
+    </div>
+  </div>
+</aside>

@@ -80,7 +80,7 @@ class LeadProcessingTests(TestCase):
         self.assertContains(response, 'id="lead-panel-discard"')
         self.assertContains(response, "Есть несохранённые изменения")
 
-    def test_lead_filters_group_search_and_queues_behind_one_control(self):
+    def test_lead_search_precedes_filter_toggle_and_queues_stay_collapsed(self):
         response = self.client.get(reverse("lead_list"), {"q": "Анна"})
 
         self.assertEqual(response.status_code, 200)
@@ -88,7 +88,8 @@ class LeadProcessingTests(TestCase):
         html = response.content.decode()
         self.assertIn('data-bs-target="#lead-filter-panel"', html)
         self.assertIn('aria-expanded="false" aria-controls="lead-filter-panel"', html)
-        self.assertLess(html.index('id="lead-filter-panel"'), html.index('id="lead-search-query"'))
+        self.assertLess(html.index('id="lead-search-query"'), html.index('data-lead-filter-toggle'))
+        self.assertLess(html.index('data-lead-filter-toggle'), html.index('id="lead-filter-panel"'))
         self.assertLess(html.index('id="lead-search-query"'), html.index('aria-label="Рабочие группы заявок"'))
         self.assertLess(html.index('aria-label="Рабочие группы заявок"'), html.index('id="leads-results"'))
         self.assertContains(response, self.lead.name)
@@ -529,7 +530,9 @@ class LeadProcessingTests(TestCase):
         self.assertEqual(response.context["status_tabs"][0]["url"], f"{url}?queue=all&q=%D0%9B%D0%B5%D1%81%D0%BD%D0%B0%D1%8F")
         self.assertIn("q=", response.context["pagination_query"])
         self.assertContains(response, 'name="q" value="Лесная"')
-        self.assertContains(response, "Сбросить поиск")
+        cleared = self.client.get(url, {"q": "", "status": "new"}, HTTP_HX_REQUEST="true")
+        self.assertEqual({lead.pk for lead in cleared.context["leads"]}, {self.lead.pk, matched.pk})
+        self.assertContains(cleared, 'name="status" value="new"')
         htmx = self.client.get(url, {"q": "Анна"}, HTTP_HX_REQUEST="true")
         self.assertContains(htmx, 'id="lead-workspace"')
         self.assertContains(htmx, self.lead.name)
@@ -616,6 +619,7 @@ class LeadProcessingTests(TestCase):
         original_task = ClientReminder.objects.get(lead=self.lead, is_done=False)
         response = self.client.post(url, {"action": "decline", "reason": "  "})
         self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'id="lead-decline-panel" role="region" tabindex="-1" aria-labelledby="lead-decline-title" hidden data-lead-action-open-on-load')
         self.lead.refresh_from_db()
         self.assertEqual(self.lead.outcome, "open")
 
@@ -703,35 +707,37 @@ class LeadProcessingTests(TestCase):
             created_at=received_at, next_action_due_at=received_at + timedelta(minutes=30),
         )
         with patch("properties.workday_views.timezone.now", return_value=received_at + timedelta(minutes=5)):
-            response = self.client.get(reverse("workday"))
+            response = self.client.get(reverse("workday"), {"item": f"lead:{self.lead.pk}"})
         self.assertContains(response, f"{reverse('lead_detail', args=[self.lead.pk])}?contact=1#lead-edit")
         self.assertContains(response, ">Записать контакт</a>")
         self.assertNotContains(response, reverse("task_detail", args=[ClientReminder.objects.get(lead=self.lead).pk]))
         detail = self.client.get(reverse("lead_detail", args=[self.lead.pk]), {"contact": "1"})
-        self.assertContains(detail, 'class="lead-editor" name="lead-action-editor" id="lead-edit" open')
-        self.assertNotContains(detail, 'id="lead-action" open')
+        self.assertContains(detail, 'id="lead-edit" data-lead-action-open="lead-edit-panel" aria-expanded="false" aria-controls="lead-edit-panel"')
+        self.assertContains(detail, 'id="lead-edit-panel" role="region" tabindex="-1" aria-labelledby="lead-edit-title" hidden data-lead-action-open-on-load')
+        self.assertContains(detail, 'id="lead-action" data-lead-action-open="lead-action-panel" aria-expanded="false" aria-controls="lead-action-panel"')
 
         Lead.objects.filter(pk=self.lead.pk).update(next_action_due_at=received_at - timedelta(minutes=5))
         with patch("properties.workday_views.timezone.now", return_value=received_at + timedelta(minutes=5)):
-            response = self.client.get(reverse("workday"))
+            response = self.client.get(reverse("workday"), {"item": f"lead:{self.lead.pk}"})
         self.assertContains(response, f"{reverse('lead_detail', args=[self.lead.pk])}?contact=1#lead-edit")
-        self.assertContains(response, f'aria-label="Записать контакт по заявке {self.lead.name}"')
+        self.assertContains(response, ">Записать контакт</a>")
 
         Lead.objects.filter(pk=self.lead.pk).update(first_contacted_at=received_at + timedelta(minutes=2))
         with patch("properties.workday_views.timezone.now", return_value=received_at + timedelta(minutes=5)):
-            response = self.client.get(reverse("workday"))
+            response = self.client.get(reverse("workday"), {"item": f"lead:{self.lead.pk}"})
         self.assertContains(response, f"{reverse('lead_detail', args=[self.lead.pk])}?complete=1#lead-action")
-        self.assertContains(response, f'aria-label="Записать итог по заявке {self.lead.name}"')
+        self.assertContains(response, ">Записать итог</a>")
         detail = self.client.get(reverse("lead_detail", args=[self.lead.pk]), {"complete": "1"})
-        self.assertContains(detail, 'class="lead-action-complete" name="lead-action-editor" id="lead-action" open')
+        self.assertContains(detail, 'id="lead-action" data-lead-action-open="lead-action-panel" aria-expanded="false" aria-controls="lead-action-panel"')
+        self.assertContains(detail, 'id="lead-action-panel" role="region" tabindex="-1" aria-labelledby="lead-action-title" hidden data-lead-action-open-on-load')
 
     @override_settings(AI_ENABLED=True)
-    def test_lead_card_shows_summary_and_keeps_editors_collapsed(self):
+    def test_lead_card_shows_summary_and_side_drawer_actions(self):
         response = self.client.get(reverse("lead_detail", args=[self.lead.pk]))
         self.assertContains(response, "Следующее действие")
         self.assertContains(response, "Ответить клиенту до")
-        self.assertContains(response, 'class="lead-editor" name="lead-action-editor" id="lead-edit"')
-        self.assertContains(response, 'class="lead-action-complete" name="lead-action-editor" id="lead-action"')
+        self.assertContains(response, 'id="lead-edit" data-lead-action-open="lead-edit-panel" aria-expanded="false" aria-controls="lead-edit-panel"')
+        self.assertContains(response, 'id="lead-action" data-lead-action-open="lead-action-panel" aria-expanded="false" aria-controls="lead-action-panel"')
         self.assertContains(response, '<span>Записать контакт</span>')
         self.assertContains(response, '<span>Записать итог</span>')
         self.assertContains(response, f'href="tel:{self.lead.phone}" aria-label="Позвонить {self.lead.phone}"')
@@ -743,8 +749,8 @@ class LeadProcessingTests(TestCase):
         self.assertContains(response, 'class="lead-overview__outcome-action"')
         self.assertContains(response, "Закрыть без сделки")
         self.assertNotContains(response, 'id="lead-ai-reply"')
-        self.assertNotContains(response, 'id="lead-edit" open')
-        self.assertNotContains(response, 'id="lead-action" open')
+        self.assertContains(response, 'id="lead-edit-panel" role="region" tabindex="-1" aria-labelledby="lead-edit-title" hidden>')
+        self.assertContains(response, 'id="lead-action-panel" role="region" tabindex="-1" aria-labelledby="lead-action-title" hidden>')
         self.assertContains(response, 'aria-label="Пояснение: Следующее действие"')
         self.assertContains(response, 'id="id_lead_next_action"')
         self.assertContains(response, 'id="id_complete_next_action"')

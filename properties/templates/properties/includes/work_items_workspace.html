@@ -1,0 +1,62 @@
+<div id="work-workspace" class="lead-workspace work-workspace{% if selected_item %} lead-workspace--open{% endif %}" data-work-scope="{{ work_scope }}" data-work-overdue="{{ nav_overdue_count }}" data-workday-url="{% url 'workday' %}">
+  <nav class="ui-switch work-period-tabs" aria-label="Период дел">
+    {% for tab in work_period_tabs %}<a class="ui-switch__option{% if tab.value == work_period %} is-active{% endif %}" href="{{ tab.url }}" hx-get="{{ tab.url }}" hx-target="#work-workspace" hx-swap="outerHTML" hx-push-url="true"{% if tab.value == work_period %} aria-current="page"{% endif %}>{{ tab.label }}<span class="lead-status-filter__count">{{ tab.count }}</span></a>{% endfor %}
+  </nav>
+  <form method="get" action="{{ request.path }}" hx-get="{{ request.path }}" hx-target="#work-workspace" hx-swap="outerHTML" hx-push-url="true" hx-trigger="submit, input changed delay:400ms from:#work-search-query, search from:#work-search-query" hx-sync="this:replace">
+    <input type="hidden" name="period" value="{{ work_period }}">
+    <div class="workspace-search-controls">
+      <div class="workspace-search"><label class="visually-hidden" for="work-search-query">Поиск дел</label><input class="form-control" id="work-search-query" type="search" name="q" value="{{ work_query }}" placeholder="Задача, имя, телефон или объект"></div>
+      <button class="btn btn-icon btn-neutral property-filter-trigger" type="button" data-work-filter-toggle aria-label="Фильтры" data-tooltip="Фильтры" aria-expanded="false" aria-controls="work-filter-panel"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-filter"></use></svg><span class="property-filter-trigger__count"{% if not work_filter_count %} hidden{% endif %} aria-hidden="true">{{ work_filter_count }}</span></button>
+    </div>
+    <section class="work-filter-panel" id="work-filter-panel" aria-label="Фильтры дел" hidden>
+      <div><label class="form-label" for="work-kind">Тип дела</label><select class="form-select" name="kind" id="work-kind">{% for value, label in work_kind_choices %}<option value="{{ value }}"{% if value == selected_kind %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+      <button class="btn btn-neutral" type="submit">Показать</button>
+    </section>
+  </form>
+  {% if work_period == 'today' %}<p class="work-list-hint">Просроченные дела включены в список на сегодня.</p>{% endif %}
+  <div class="client-results-head"><p class="client-results-count">Найдено: <span>{{ page_obj.paginator.count }}</span></p>{% if work_query or work_filter_count %}<a class="btn btn-text btn-sm" href="{{ work_reset_url }}" hx-get="{{ work_reset_url }}" hx-target="#work-workspace" hx-swap="outerHTML" hx-push-url="true">Сбросить поиск и фильтры</a>{% endif %}</div>
+  <div class="lead-workspace__layout">
+    <div class="lead-workspace__list work-workspace__list">
+      <div class="lead-bulk-toolbar work-selection" data-work-selection hidden><span class="lead-bulk-toolbar__count" data-work-selected-count aria-live="polite"></span><button class="btn btn-sm btn-text" type="button" data-work-clear-selection>Снять выбор</button></div>
+      {% if work_items %}
+      <div class="lead-table-shell desktop-records">
+        <div class="table-responsive">
+          <table class="table lead-table work-table align-middle mb-0">
+            <thead><tr><th scope="col" class="lead-table__selection"><input class="form-check-input" type="checkbox" data-work-select-all aria-label="Выбрать все дела на странице"></th><th scope="col" class="work-table__deadline">Срок</th><th scope="col">Задача</th><th scope="col" class="lead-table__optional">Клиент</th><th scope="col" class="lead-table__optional">Объект / сделка</th></tr></thead>
+            {% for group in groups %}<tbody aria-label="{{ group.title }}">
+              {% for item in group.items %}
+              <tr class="lead-table__row{% if selected_item.key == item.key %} is-open{% endif %}{% if forloop.first %} work-table__group-start{% endif %}" data-work-row="{{ item.key }}">
+                <td class="lead-table__selection"><input class="form-check-input" type="checkbox" name="work_keys" value="{{ item.key }}" data-work-select aria-label="Выбрать дело: {{ item.title }}"></td>
+                <td class="work-table__deadline">{% if forloop.first %}<span class="work-table__group-label">{{ group.title }}</span>{% endif %}{% include "properties/includes/work_item_deadline.html" %}</td>
+                <td><a class="lead-table__name work-table__title" href="{{ item.panel_url }}" hx-get="{{ item.panel_url }}" hx-target="#work-workspace" hx-swap="outerHTML" hx-push-url="true" data-work-panel-open="{{ item.key }}"{% if selected_item.key == item.key %} aria-current="true"{% endif %}>{{ item.title }}</a><span class="work-table__kind">{{ item.kind_label }}</span><span class="lead-table__compact-meta">{{ item.contact_name }}{% if item.property_title %} · {{ item.property_title }}{% endif %}</span></td>
+                <td class="lead-table__optional">{% if item.contact_url %}<a class="work-table__relation" href="{{ item.contact_url }}">{{ item.contact_name }}</a>{% else %}{{ item.contact_name }}{% endif %}</td>
+                <td class="lead-table__optional">{% if item.property_url %}<a class="work-table__relation" href="{{ item.property_url }}">{{ item.property_title }}</a>{% else %}<span class="detail-muted">{{ item.property_title|default:"—" }}</span>{% endif %}{% if item.deal_url %}<a class="work-table__deal" href="{{ item.deal_url }}">Сделка</a>{% endif %}</td>
+              </tr>
+              {% endfor %}
+            </tbody>{% endfor %}
+          </table>
+        </div>
+      </div>
+      <div class="mobile-records work-mobile-records">
+        <label class="work-select-all"><input class="form-check-input" type="checkbox" data-work-select-all>Выбрать все на странице</label>
+        {% for group in groups %}<h2 class="work-mobile-heading">{{ group.title }}</h2>{% for item in group.items %}
+        <article class="lead-mobile-card work-mobile-card{% if selected_item.key == item.key %} is-open{% endif %}" data-work-row="{{ item.key }}">
+          <div class="work-mobile-card__head"><input class="form-check-input" type="checkbox" name="work_keys" value="{{ item.key }}" data-work-select aria-label="Выбрать дело: {{ item.title }}"><div>{% include "properties/includes/work_item_deadline.html" %}<a class="lead-mobile-card__name" href="{{ item.panel_url }}" hx-get="{{ item.panel_url }}" hx-target="#work-workspace" hx-swap="outerHTML" hx-push-url="true" data-work-panel-open="{{ item.key }}"{% if selected_item.key == item.key %} aria-current="true"{% endif %}>{{ item.title }}</a></div></div>
+          <div class="work-mobile-card__meta"><span>{{ item.kind_label }} · {{ item.contact_name }}</span>{% if item.property_title %}<span>{{ item.property_title }}</span>{% endif %}</div>
+        </article>
+        {% endfor %}{% endfor %}
+      </div>
+      {% if page_obj.has_other_pages %}<nav class="mt-4" aria-label="Страницы дел"><ul class="pagination">
+        {% if work_previous_url %}<li class="page-item"><a class="page-link" href="{{ work_previous_url }}" hx-get="{{ work_previous_url }}" hx-target="#work-workspace" hx-swap="outerHTML" hx-push-url="true" aria-label="Предыдущая страница">‹</a></li>{% endif %}
+        <li class="page-item active"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+        {% if work_next_url %}<li class="page-item"><a class="page-link" href="{{ work_next_url }}" hx-get="{{ work_next_url }}" hx-target="#work-workspace" hx-swap="outerHTML" hx-push-url="true" aria-label="Следующая страница">›</a></li>{% endif %}
+      </ul></nav>{% endif %}
+      {% else %}<section class="empty-state"><h2 class="empty-state__title">{% if work_query or work_filter_count %}Дела не найдены{% elif work_period == 'today' %}На сегодня открытых дел нет{% elif work_period == 'overdue' %}Просроченных дел нет{% else %}Открытых дел нет{% endif %}</h2><p class="empty-state__text">{% if work_query or work_filter_count %}Измените поиск или фильтры.{% else %}Новые задачи, обращения и показы появятся здесь.{% endif %}</p></section>{% endif %}
+    </div>
+    {% if selected_item %}{% include "properties/includes/work_item_panel.html" with item=selected_item %}{% endif %}
+  </div>
+  {% if today_other_showings and work_period == 'today' and not work_query and selected_kind == 'all' or today_other_showings and work_period == 'today' and not work_query and selected_kind == 'showing' %}
+  <details class="record-details work-showing-history"><summary>Показы сегодня · история</summary><div>{% for showing in today_other_showings %}<p><a href="{% url 'showing_detail' showing.pk %}?next={{ work_list_url|urlencode }}">{{ showing.starts_at|date:"H:i" }} · {{ showing.deal.property.title }}</a> · {{ showing.get_status_display }}</p>{% endfor %}</div></details>
+  {% endif %}
+  <p class="work-request-error" data-work-request-error role="alert" hidden>Не удалось обновить список. Попробуйте ещё раз.</p>
+</div>

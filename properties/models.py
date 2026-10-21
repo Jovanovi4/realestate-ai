@@ -641,7 +641,10 @@ class AIContent(models.Model):
 
 
 class RealtorProfile(models.Model):
+    COLOR_SCHEMES = (("light", "Светлая"), ("dark", "Тёмная"), ("system", "Как на устройстве"))
+
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="realtor_profile")
+    color_scheme = models.CharField(max_length=6, choices=COLOR_SCHEMES, default="light", verbose_name="Цветовая схема")
     display_name = models.CharField(max_length=150, blank=True, verbose_name="Имя")
     photo = models.ImageField(upload_to="realtors/", blank=True, verbose_name="Фото")
     phone = models.CharField(max_length=30, blank=True, verbose_name="Телефон")

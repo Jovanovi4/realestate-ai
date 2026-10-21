@@ -24,7 +24,7 @@ test('client filters stay open across list refresh and close with Escape', () =>
         toggle(name, force) { if (force) classes.add(name); else classes.delete(name); },
         contains(name) { return classes.has(name); },
       },
-      querySelector(selector) { return selector === '#client-q' ? search : null; },
+      querySelector(selector) { return selector === '#client-status' ? search : null; },
     };
   };
   let workspace = makeWorkspace();

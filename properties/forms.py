@@ -325,6 +325,13 @@ class LandingStylePresetForm(forms.ModelForm):
         return cleaned
 
 
+class ProfileAppearanceForm(forms.Form):
+    color_scheme = forms.ChoiceField(
+        label="Цветовая схема", choices=RealtorProfile.COLOR_SCHEMES, widget=forms.RadioSelect,
+        error_messages={"required": "Выберите тему оформления.", "invalid_choice": "Выберите одну из доступных тем."},
+    )
+
+
 class RealtorProfileForm(forms.ModelForm):
     photo = SafeImageField(purpose="profile", required=False, label="Фото", widget=forms.FileInput(attrs={"accept": "image/png,image/jpeg,image/webp"}))
 

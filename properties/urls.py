@@ -55,6 +55,7 @@ from .views import (
     PropertyLandingPreviewView,
     PropertyLandingDraftPreviewView,
     RealtorProfileUpdateView,
+    ProfileAppearanceView,
     LeadListView,
     LeadDetailView,
     LeadProcessView,
@@ -107,6 +108,7 @@ urlpatterns = [
     }), name="password_reset_complete"),
     path("logout/", auth_views.LogoutView.as_view(), name="logout"),
     path("profile/", RealtorProfileUpdateView.as_view(), name="edit_profile"),
+    path("profile/appearance/", ProfileAppearanceView.as_view(), name="profile_appearance"),
     path("profile/email/verify/", VerifyEmailView.as_view(), name="account_email_verify"),
     path("profile/email/sent/", TemplateView.as_view(template_name="registration/account_security.html", extra_context={
         "title": "Запрос принят", "description": "Ссылка подтверждения будет отправлена на email из профиля. Проверьте почту и папку «Спам».",
