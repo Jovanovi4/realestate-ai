@@ -4,12 +4,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="telderi" content="eefdb684574f867e85b4a38e3e01bd03" />
     {% if user.is_authenticated and not disable_workspace_theme %}<meta name="color-scheme" content="{% if nav_profile.color_scheme == 'system' %}light dark{% elif nav_profile.color_scheme == 'dark' %}dark{% else %}light{% endif %}" />{% endif %}
     <title>{% block title %}RealEstate AI{% endblock %}</title>
     <script>try { if (localStorage.getItem('reaicrm.sidebar.collapsed') === 'true') document.documentElement.classList.add('sidebar-collapsed'); } catch (_) {}</script>
     {% if user.is_authenticated and not disable_workspace_theme %}<script src="{% static 'js/color-scheme.js' %}"></script>{% endif %}
     <link rel="icon" type="image/svg+xml" sizes="any" href="{% static 'branding/favicon.svg' %}" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.7/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="{% static 'css/golos-text.css' %}" />
     <script defer src="https://unpkg.com/htmx.org@2.0.6"></script>
     <script defer src="{% static 'js/sidebar.js' %}"></script>
     <script defer src="{% static 'js/catalog-views.js' %}"></script>

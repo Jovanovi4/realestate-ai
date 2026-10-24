@@ -1,0 +1,10 @@
+{% load tz %}{% get_current_timezone as panel_time_zone %}
+<div class="lead-panel__date-field" data-lead-date-field data-time-zone="{{ panel_time_zone }}">
+  <label class="form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+  <div class="lead-panel__date-shortcuts" role="group" aria-label="Выбрать день следующего действия">
+    <button type="button" class="btn btn-neutral btn-sm" data-lead-date="0">Сегодня</button>
+    <button type="button" class="btn btn-neutral btn-sm" data-lead-date="1">Завтра</button>
+    <button type="button" class="btn btn-text btn-sm" data-lead-date="custom">Выбрать дату</button>
+  </div>
+  {{ field }}{{ field.errors }}
+</div>

@@ -364,7 +364,12 @@ class AgencyWorkflowTests(TestCase):
         self.client.force_login(self.agent)
         workday = self.client.get(reverse("workday"))
         self.assertContains(workday, "Обсудить условия сделки")
-        self.assertContains(workday, reverse("showing_detail", args=[planned_showing.pk]))
+        showing_panel_url = f'{reverse("workday")}?period=today&page=1&item=showing%3A{planned_showing.pk}'
+        self.assertContains(workday, showing_panel_url.replace("&", "&amp;"))
+        self.assertContains(
+            self.client.get(showing_panel_url),
+            reverse("showing_detail", args=[planned_showing.pk]),
+        )
 
     def test_deal_from_team_lead_inherits_its_responsible(self):
         agency = self.create_agency()
@@ -842,19 +847,17 @@ class AccountAndPropertyAccessTests(TestCase):
                          [("Анна", 2), ("Борис", 1)])
         self.assertNotIn("metrics", response.context)
 
-    def test_client_reminder_card_shows_full_count_and_only_first_five(self):
+    def test_client_list_omits_task_summary_while_tasks_remain_in_work_list(self):
         owner = User.objects.create_user("client-owner", password="password")
         client = Client.objects.create(owner=owner, name="Анна", phone="+79990000000")
-        for index in range(6):
-            ClientReminder.objects.create(client=client, text=f"Напоминание {index}", due_at=timezone.now() - timedelta(days=1, minutes=index))
+        ClientReminder.objects.create(owner=owner, client=client, text="Позвонить Анне", due_at=timezone.now() - timedelta(days=1))
         self.client.force_login(owner)
 
         response = self.client.get(reverse("client_list"))
 
-        self.assertEqual(response.context["overdue_reminder_count"], 6)
-        self.assertContains(response, "Напоминание 5")
-        self.assertNotContains(response, "Напоминание 0")
-        self.assertContains(response, 'class="client-reminder-group is-overdue"')
+        self.assertNotContains(response, "Задачи по клиентам")
+        self.assertNotContains(response, "Позвонить Анне")
+        self.assertContains(self.client.get(reverse("work_items"), {"period": "overdue"}), "Позвонить Анне")
 
     def test_client_board_has_status_counts_and_only_own_clients(self):
         owner = User.objects.create_user("client-owner", password="password")

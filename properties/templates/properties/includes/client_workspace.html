@@ -19,11 +19,6 @@
     <div class="client-toolbar__actions"><button class="btn btn-primary client-toolbar__submit" type="submit">Показать</button></div>
   </section>
 </form>
-{% if overdue_reminders or today_reminders %}
-  <details class="client-reminders client-reminders--desktop"{% if overdue_reminders %} open{% endif %}>{% include "properties/includes/client_reminders_content.html" %}</details>
-  <details class="client-reminders client-reminders--mobile">{% include "properties/includes/client_reminders_content.html" %}</details>
-{% endif %}
-
 <div class="client-results-head">
   <p class="client-results-count">Найдено: <span>{{ page_obj.paginator.count }}</span></p>
   {% if active_filters %}

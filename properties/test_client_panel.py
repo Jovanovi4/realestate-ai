@@ -152,18 +152,19 @@ class ClientPanelTests(TestCase):
         self.assertContains(response, f'href="{reverse("lead_detail", args=[lead.pk])}?complete=1#lead-action">{reminder.text}</a>')
         self.assertNotContains(response, ">К заявке</a>")
 
-    def test_task_summary_is_refreshed_with_the_client_list(self):
+    def test_task_completion_keeps_client_list_without_task_summary(self):
         reminder = ClientReminder.objects.create(
             owner=self.user, client=self.contact, text="Срочно позвонить",
             due_at=timezone.now() - timedelta(hours=1),
         )
-        before = self.client.get(reverse("client_list"), HTTP_HX_REQUEST="true")
-        self.assertContains(before, "Просрочено · 1")
-        self.assertContains(before, '<details class="client-reminders client-reminders--mobile">')
+        before = self.client.get(reverse("client_list"), {"client": self.contact.pk}, HTTP_HX_REQUEST="true")
+        self.assertContains(before, "Срочно позвонить")
+        self.assertNotContains(before, "Задачи по клиентам")
         completed = self.panel_post(reverse("client_reminder_complete", args=[self.contact.pk, reminder.pk]), {})
         self.assertEqual(completed.status_code, 204)
-        after = self.client.get(reverse("client_list"), HTTP_HX_REQUEST="true")
+        after = self.client.get(reverse("client_list"), {"client": self.contact.pk}, HTTP_HX_REQUEST="true")
         self.assertNotContains(after, "Срочно позвонить")
+        self.assertNotContains(after, "Задачи по клиентам")
 
     def test_other_workspace_and_owner_tab_boundaries(self):
         outsider = User.objects.create_user("client-panel-outsider", password="password")

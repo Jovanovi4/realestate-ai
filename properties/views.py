@@ -957,14 +957,6 @@ class ClientListView(LoginRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         context["owner_mode"] = self.request.GET.get("role") == "owner"
         context["reset_url"] = f"{reverse('client_list')}?role=owner" if context["owner_mode"] else reverse("client_list")
-        now = timezone.now()
-        start_tomorrow = timezone.localtime(now).replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
-        pending_reminders = workspace_queryset(ClientReminder.objects, self.request.user).filter(
-            client__isnull=False, owner=self.request.user, is_done=False, cancelled_at__isnull=True,
-        ).select_related("client")
-        pending_reminders = pending_reminders.filter(client__contact_role__in=("owner", "both") if context["owner_mode"] else ("seeker", "both"))
-        overdue_reminders = pending_reminders.filter(due_at__lt=now)
-        today_reminders = pending_reminders.filter(due_at__gte=now, due_at__lt=start_tomorrow)
         context.update(
             {
                 "status_choices": Client.STATUS_CHOICES,
@@ -978,10 +970,6 @@ class ClientListView(LoginRequiredMixin, ListView):
                     ("name_desc", "Имя: Я–А"),
                     ("objects_desc", "Больше объектов") if context["owner_mode"] else ("leads_desc", "Больше заявок"),
                 ],
-                "overdue_reminders": overdue_reminders[:5],
-                "today_reminders": today_reminders[:5],
-                "overdue_reminder_count": overdue_reminders.count(),
-                "today_reminder_count": today_reminders.count(),
             }
         )
         params = self.request.GET.copy()
@@ -1969,6 +1957,24 @@ class LeadDetailView(LoginRequiredMixin, DetailView):
             "task_id": context["current_task"].pk if context["current_task"] else None,
             "next_action_due_at": timezone.localtime(timezone.now() + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M"),
         })
+        # The compact panel renders one editor, including after a failed POST.
+        panel_editor = ""
+        if self.object.status != "archived" and self.object.outcome == "open":
+            if context["decline_form"].is_bound:
+                panel_editor = "decline"
+            elif context["complete_form"].is_bound:
+                panel_editor = "complete"
+            elif context["processing_form"].is_bound:
+                panel_editor = "plan" if self.request.POST.get("action") == "save" or self.object.first_contacted_at else "contact"
+            elif context["contact_open"]:
+                panel_editor = "contact"
+            elif context["complete_open"] and self.object.first_contacted_at and context["current_task"]:
+                panel_editor = "complete"
+        context["panel_editor"] = panel_editor
+        context["panel_editor_title"] = {
+            "contact": "Записать первый контакт", "plan": "Изменить план",
+            "complete": "Записать итог", "decline": "Закрыть без сделки",
+        }.get(panel_editor, "")
         context["can_assign"] = bool(self.object.outcome == "open" and self.object.agency_id and may_manage_agency(self.request.user))
         context["can_delete"] = not self.object.agency_id or may_manage_agency(self.request.user)
         if context["can_assign"]:

@@ -48,8 +48,8 @@
 {% if form.outcome_note.errors %}<div class="alert alert-danger" role="alert">Проверьте <a href="#deal-details">итог или причину отказа</a> ниже.</div>{% endif %}
 {% if form.expected_commission.errors %}<div class="alert alert-danger" role="alert">Проверьте <a href="#deal-details">сумму комиссии</a> ниже.</div>{% endif %}
 <section class="detail-summary-bar deal-summary" aria-label="Связанные данные сделки">
-  <div><span class="detail-kicker">Клиент</span><a href="{% url 'client_detail' object.client.pk %}">{{ object.client.name }}</a></div>
-  <div><span class="detail-kicker">Объект</span><a href="{% url 'property_detail' object.property.pk %}">{{ object.property.title }}</a></div>
+  <div><span class="detail-kicker">Клиент</span><a class="deal-summary__link" href="{% url 'client_detail' object.client.pk %}">{{ object.client.name }}</a></div>
+  <div><span class="detail-kicker">Объект</span><a class="deal-summary__link" href="{% url 'property_detail' object.property.pk %}">{{ object.property.title }}</a></div>
   <div><span class="detail-kicker">Ответственный</span><strong>{% if object.responsible %}{{ object.responsible|staff_name }}{% else %}Не назначен{% endif %}</strong>
     {% if form.responsible %}<details class="deal-summary__editor"{% if form.responsible.errors %} open{% endif %}><summary>Изменить ответственного</summary><div class="deal-summary__editor-body"><div class="app-field">{% include "includes/form_field.html" with field=form.responsible %}</div><p class="form-text">Открытые задачи и запланированные показы перейдут новому ответственному.</p><button class="btn btn-neutral btn-sm" type="submit" form="deal-edit-form">Сохранить</button></div></details>{% endif %}
   </div>

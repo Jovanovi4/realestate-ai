@@ -1,11 +1,13 @@
+{% load static %}
 <!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Страница временно недоступна</title>
+  <link rel="stylesheet" href="{% static 'css/golos-text.css' %}">
   <style>
-    :root{font-family:Manrope,system-ui,sans-serif;color:#172033;background:#f7f8fa}
+    :root{font-family:"Golos Text",system-ui,sans-serif;color:#172033;background:#f7f8fa}
     body{min-height:100vh;display:grid;place-items:center;margin:0;padding:1.5rem;box-sizing:border-box}
     main{max-width:30rem;padding:2.5rem;background:#fff;border:1px solid #e5e9ef;border-radius:1rem;box-shadow:0 20px 55px rgba(23,32,51,.06)}
     h1{font-size:1.65rem;line-height:1.2;margin:0 0 .75rem}p{color:#637083;line-height:1.6;margin:0}

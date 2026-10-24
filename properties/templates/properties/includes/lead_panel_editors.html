@@ -1,0 +1,49 @@
+<div class="lead-panel__editor" data-lead-editor-shell{% if not panel_editor %} hidden{% endif %}>
+  <div class="lead-panel__editor-heading">
+    <button class="btn btn-text btn-sm" type="button" data-lead-editor-back><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-left"></use></svg>Назад</button>
+    <h3 id="lead-panel-editor-title" tabindex="-1">{{ panel_editor_title }}</h3>
+  </div>
+
+  <section id="lead-panel-process" data-lead-editor-view="process" aria-labelledby="lead-panel-editor-title"{% if panel_editor != 'contact' and panel_editor != 'plan' %} hidden{% endif %}>
+    <form method="post" action="{% url 'lead_process' lead.pk %}" {% if not full_card %}hx-post="{% url 'lead_process' lead.pk %}" hx-target="#lead-panel" hx-swap="outerHTML"{% endif %} class="lead-panel__form"{% if processing_form.is_bound %} data-unsaved="true"{% endif %}>
+      {% csrf_token %}{% if not full_card %}{% include "properties/includes/lead_panel_form_context.html" %}{% endif %}
+      {% if processing_form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ processing_form.non_field_errors }}</div>{% endif %}
+      {% if not lead.first_contacted_at %}
+        <fieldset class="lead-panel__contact-fields" data-lead-contact-fields{% if panel_editor != 'contact' %} hidden{% endif %}>
+          {% include "properties/includes/lead_panel_choices.html" with field=processing_form.contact_method contact_choices=True only %}
+          <div><label class="form-label" for="{{ processing_form.contact_note.id_for_label }}">{{ processing_form.contact_note.label }}</label>{{ processing_form.contact_note }}{{ processing_form.contact_note.errors }}</div>
+        </fieldset>
+      {% endif %}
+      {% include "properties/includes/lead_panel_choices.html" with field=processing_form.qualification only %}
+      <div><label class="form-label" for="{{ processing_form.next_action.id_for_label }}">{{ processing_form.next_action.label }}</label>{{ processing_form.next_action }}{{ processing_form.next_action.errors }}</div>
+      {% include "properties/includes/lead_panel_deadline_field.html" with field=processing_form.next_action_due_at only %}
+      <div><label class="form-label" for="{{ processing_form.source.id_for_label }}">{{ processing_form.source.label }}</label>{{ processing_form.source }}{{ processing_form.source.errors }}</div>
+      <button class="btn btn-primary" type="submit" name="action" value="contacted" data-lead-contact-submit{% if panel_editor != 'contact' %} hidden disabled{% endif %}>Зафиксировать контакт</button>
+      <button class="btn btn-primary" type="submit" name="action" value="save" data-lead-plan-submit{% if panel_editor == 'contact' %} hidden disabled{% endif %}>Сохранить план</button>
+    </form>
+  </section>
+
+  {% if lead.first_contacted_at and current_task or complete_form.is_bound %}
+    <section id="lead-panel-complete" data-lead-editor-view="complete" aria-labelledby="lead-panel-editor-title"{% if panel_editor != 'complete' %} hidden{% endif %}>
+      <p class="lead-panel__editor-context">{{ current_task.text }}</p>
+      <form method="post" action="{% url 'lead_action_complete' lead.pk %}" {% if not full_card %}hx-post="{% url 'lead_action_complete' lead.pk %}" hx-target="#lead-panel" hx-swap="outerHTML"{% endif %} class="lead-panel__form"{% if complete_form.is_bound %} data-unsaved="true"{% endif %}>
+        {% csrf_token %}{% if not full_card %}{% include "properties/includes/lead_panel_form_context.html" %}{% endif %}{{ complete_form.task_id }}
+        {% if complete_form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ complete_form.non_field_errors }}</div>{% endif %}
+        <div><label class="form-label" for="{{ complete_form.outcome_note.id_for_label }}">{{ complete_form.outcome_note.label }}</label>{{ complete_form.outcome_note }}{{ complete_form.outcome_note.errors }}</div>
+        <div><label class="form-label" for="{{ complete_form.next_action.id_for_label }}">{{ complete_form.next_action.label }}</label>{{ complete_form.next_action }}{{ complete_form.next_action.errors }}</div>
+        {% include "properties/includes/lead_panel_deadline_field.html" with field=complete_form.next_action_due_at only %}
+        <button class="btn btn-primary" type="submit">Сохранить итог и новый шаг</button>
+      </form>
+    </section>
+  {% endif %}
+
+  <section id="lead-panel-decline" data-lead-editor-view="decline" aria-labelledby="lead-panel-editor-title"{% if panel_editor != 'decline' %} hidden{% endif %}>
+    <p class="lead-panel__editor-context">Заявка будет завершена без сделки. Открытое действие по ней будет отменено.</p>
+    <form method="post" action="{% url 'lead_outcome' lead.pk %}" {% if not full_card %}hx-post="{% url 'lead_outcome' lead.pk %}" hx-target="#lead-panel" hx-swap="outerHTML"{% endif %} class="lead-panel__form"{% if decline_form.is_bound %} data-unsaved="true"{% endif %}>
+      {% csrf_token %}{% if not full_card %}{% include "properties/includes/lead_panel_form_context.html" %}{% endif %}
+      {% if decline_form.non_field_errors %}<div class="alert alert-danger" role="alert">{{ decline_form.non_field_errors }}</div>{% endif %}
+      <div><label class="form-label" for="{{ decline_form.reason.id_for_label }}">{{ decline_form.reason.label }}</label>{{ decline_form.reason }}{{ decline_form.reason.errors }}</div>
+      <button class="btn btn-neutral" type="submit" name="action" value="decline">Закрыть заявку</button>
+    </form>
+  </section>
+</div>

@@ -1,5 +1,5 @@
 {% load crm_display %}
-<aside class="lead-panel" id="lead-panel" role="region" aria-labelledby="lead-panel-title" tabindex="-1" hx-history="false">
+<aside class="lead-panel" id="lead-panel" role="region" aria-labelledby="lead-panel-title" tabindex="-1" hx-history="false" data-lead-editor-state="{{ panel_editor }}">
   <header class="lead-panel__header">
     <div class="lead-panel__heading">
       <span class="detail-kicker">Заявка</span>
@@ -20,6 +20,7 @@
 
   <div class="lead-panel__body">
     {% if panel_error %}<div class="alert alert-danger" role="alert">{{ panel_error }}</div>{% endif %}
+    <div data-lead-overview{% if panel_editor %} hidden{% endif %}>
     <div class="lead-panel__identity">
       <a class="lead-panel__phone" href="tel:{{ lead.phone }}"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-phone"></use></svg><span>{{ lead.phone }}</span></a>
       <span class="lead-panel__property">{% if lead.property_id %}{{ lead.property.title }}{% else %}Подбор недвижимости{% if lead.message %} · {{ lead.message|truncatechars:72 }}{% endif %}{% endif %}</span>
@@ -40,60 +41,30 @@
 
       <div class="lead-panel__actions" role="group" aria-label="Действия с заявкой">
       {% if not lead.first_contacted_at %}
-        <details class="lead-panel__action" id="lead-panel-process" {% if processing_form.errors or contact_open %}open{% endif %}>
-          <summary class="lead-overview__outcome-action"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg></span><span>Записать первый контакт</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
-          <form method="post" action="{% url 'lead_process' lead.pk %}" hx-post="{% url 'lead_process' lead.pk %}" hx-target="#lead-panel" hx-swap="outerHTML" class="lead-panel__form"{% if processing_form.is_bound %} data-unsaved="true"{% endif %}>
-            {% csrf_token %}{% include "properties/includes/lead_panel_form_context.html" %}
-            {% if processing_form.non_field_errors %}<div class="alert alert-danger">{{ processing_form.non_field_errors }}</div>{% endif %}
-            <div><label class="form-label" for="{{ processing_form.contact_method.id_for_label }}">{{ processing_form.contact_method.label }}</label>{{ processing_form.contact_method }}{{ processing_form.contact_method.errors }}</div>
-            <div><label class="form-label" for="{{ processing_form.qualification.id_for_label }}">{{ processing_form.qualification.label }}</label>{{ processing_form.qualification }}{{ processing_form.qualification.errors }}</div>
-            <div><label class="form-label" for="{{ processing_form.next_action.id_for_label }}">{{ processing_form.next_action.label }}</label>{{ processing_form.next_action }}{{ processing_form.next_action.errors }}</div>
-            <div><label class="form-label" for="{{ processing_form.next_action_due_at.id_for_label }}">{{ processing_form.next_action_due_at.label }}</label>{{ processing_form.next_action_due_at }}{{ processing_form.next_action_due_at.errors }}</div>
-            <details class="lead-panel__form-extra" {% if processing_form.source.errors or processing_form.contact_note.errors %}open{% endif %}><summary>Источник и заметка</summary><div class="lead-panel__form-extra-body"><div><label class="form-label" for="{{ processing_form.source.id_for_label }}">{{ processing_form.source.label }}</label>{{ processing_form.source }}{{ processing_form.source.errors }}</div><div><label class="form-label" for="{{ processing_form.contact_note.id_for_label }}">{{ processing_form.contact_note.label }}</label>{{ processing_form.contact_note }}{{ processing_form.contact_note.errors }}</div></div></details>
-            <div class="lead-panel__form-actions"><button class="btn btn-primary" type="submit" name="action" value="contacted">Зафиксировать контакт</button><button class="btn btn-neutral" type="submit" name="action" value="save">Сохранить план</button></div>
-          </form>
-        </details>
-        <button class="lead-overview__outcome-action" type="button" data-lead-panel-plan aria-controls="lead-panel-process"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-calendar"></use></svg></span><span>Изменить план</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></button>
+        <button class="btn btn-primary lead-panel__primary" type="button" data-lead-editor-open="contact" aria-controls="lead-panel-process"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-edit"></use></svg><span>Записать первый контакт</span></button>
       {% elif current_task %}
-        <details class="lead-panel__action" {% if complete_form.errors or complete_open %}open{% endif %}>
-          <summary class="lead-overview__outcome-action"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-check"></use></svg></span><span>Записать итог</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
-          <form method="post" action="{% url 'lead_action_complete' lead.pk %}" hx-post="{% url 'lead_action_complete' lead.pk %}" hx-target="#lead-panel" hx-swap="outerHTML" class="lead-panel__form"{% if complete_form.is_bound %} data-unsaved="true"{% endif %}>
-            {% csrf_token %}{% include "properties/includes/lead_panel_form_context.html" %}{{ complete_form.task_id }}
-            {% if complete_form.non_field_errors %}<div class="alert alert-danger">{{ complete_form.non_field_errors }}</div>{% endif %}
-            <div><label class="form-label" for="{{ complete_form.outcome_note.id_for_label }}">{{ complete_form.outcome_note.label }}</label>{{ complete_form.outcome_note }}{{ complete_form.outcome_note.errors }}</div>
-            <div><label class="form-label" for="{{ complete_form.next_action.id_for_label }}">{{ complete_form.next_action.label }}</label>{{ complete_form.next_action }}{{ complete_form.next_action.errors }}</div>
-            <div><label class="form-label" for="{{ complete_form.next_action_due_at.id_for_label }}">{{ complete_form.next_action_due_at.label }}</label>{{ complete_form.next_action_due_at }}{{ complete_form.next_action_due_at.errors }}</div>
-            <button class="btn btn-primary" type="submit">Сохранить итог и новый шаг</button>
-          </form>
-        </details>
+        <button class="btn btn-primary lead-panel__primary" type="button" data-lead-editor-open="complete" aria-controls="lead-panel-complete"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-check"></use></svg><span>Записать итог</span></button>
       {% endif %}
-      {% if lead.first_contacted_at %}
-        <details class="lead-panel__action lead-panel__plan" {% if processing_form.errors %}open{% endif %}>
-          <summary class="lead-overview__outcome-action"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-calendar"></use></svg></span><span>Изменить план</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
-          <form method="post" action="{% url 'lead_process' lead.pk %}" hx-post="{% url 'lead_process' lead.pk %}" hx-target="#lead-panel" hx-swap="outerHTML" class="lead-panel__form"{% if processing_form.is_bound %} data-unsaved="true"{% endif %}>
-            {% csrf_token %}{% include "properties/includes/lead_panel_form_context.html" %}
-            {% if processing_form.non_field_errors %}<div class="alert alert-danger">{{ processing_form.non_field_errors }}</div>{% endif %}
-            <div><label class="form-label" for="{{ processing_form.qualification.id_for_label }}">{{ processing_form.qualification.label }}</label>{{ processing_form.qualification }}{{ processing_form.qualification.errors }}</div>
-            <div><label class="form-label" for="{{ processing_form.next_action.id_for_label }}">{{ processing_form.next_action.label }}</label>{{ processing_form.next_action }}{{ processing_form.next_action.errors }}</div>
-            <div><label class="form-label" for="{{ processing_form.next_action_due_at.id_for_label }}">{{ processing_form.next_action_due_at.label }}</label>{{ processing_form.next_action_due_at }}{{ processing_form.next_action_due_at.errors }}</div>
-            <details class="lead-panel__form-extra" {% if processing_form.source.errors %}open{% endif %}><summary>Источник</summary><div class="lead-panel__form-extra-body"><div><label class="form-label" for="{{ processing_form.source.id_for_label }}">{{ processing_form.source.label }}</label>{{ processing_form.source }}{{ processing_form.source.errors }}</div></div></details>
-            <button class="btn btn-neutral" type="submit" name="action" value="save">Сохранить план</button>
-          </form>
-        </details>
-      {% endif %}
+      <button class="lead-overview__outcome-action" type="button" data-lead-editor-open="plan" aria-controls="lead-panel-process"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-calendar"></use></svg></span><span>Изменить план</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></button>
 
       {% if can_convert %}
         {% if linked_deal and linked_deal.stage != 'won' and linked_deal.stage != 'lost' %}<form method="post" action="{% url 'lead_outcome' lead.pk %}" hx-post="{% url 'lead_outcome' lead.pk %}" hx-target="#lead-panel" hx-swap="outerHTML">{% csrf_token %}{% include "properties/includes/lead_panel_form_context.html" %}<input type="hidden" name="deal_id" value="{{ linked_deal.pk }}"><button class="lead-overview__outcome-action" type="submit" name="action" value="convert_existing"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Привязать к сделке</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></button></form>{% else %}<a class="lead-overview__outcome-action" href="{% url 'deal_create' %}?lead={{ lead.pk }}"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Перевести в сделку</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></a>{% endif %}
       {% else %}<div class="lead-panel__unavailable"><span class="lead-overview__outcome-action lead-panel__action-unavailable" aria-disabled="true"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-briefcase"></use></svg></span><span>Перевести в сделку</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></span><small>{% if not lead.property_id %}Привяжите объект в полной карточке заявки.{% elif not lead.client %}Сначала свяжите заявку с клиентом.{% elif not lead.first_contacted_at %}После первого контакта и квалификации.{% else %}Отметьте «Целевой клиент».{% endif %}</small></div>{% endif %}
 
-      <details class="lead-panel__action lead-panel__decline" {% if decline_form.is_bound %}open{% endif %}>
-        <summary class="lead-overview__outcome-action"><span class="lead-overview__outcome-icon"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg></span><span>Закрыть без сделки</span><svg class="ui-icon lead-overview__outcome-chevron" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-chevron-right"></use></svg></summary>
-        <form method="post" action="{% url 'lead_outcome' lead.pk %}" hx-post="{% url 'lead_outcome' lead.pk %}" hx-target="#lead-panel" hx-swap="outerHTML" class="lead-panel__form"{% if decline_form.is_bound %} data-unsaved="true"{% endif %}>{% csrf_token %}{% include "properties/includes/lead_panel_form_context.html" %}<div><label class="form-label" for="{{ decline_form.reason.id_for_label }}">{{ decline_form.reason.label }}</label>{{ decline_form.reason }}{{ decline_form.reason.errors }}</div><button class="btn btn-neutral btn-sm" type="submit" name="action" value="decline">Закрыть заявку</button></form>
-      </details>
+      <div class="lead-panel__more">
+        <button class="btn btn-text btn-sm" type="button" data-lead-more-toggle aria-expanded="false" aria-controls="lead-panel-more"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-more"></use></svg>Ещё</button>
+        <div id="lead-panel-more" class="lead-panel__more-actions" hidden>
+          <button class="btn btn-text btn-sm" type="button" data-lead-editor-open="decline" aria-controls="lead-panel-decline"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="#ui-icon-close"></use></svg>Закрыть без сделки</button>
+        </div>
+      </div>
       </div>
     {% else %}
       {% if lead.outcome_reason %}<div class="lead-panel__finished"><span class="detail-kicker">Причина</span><p>{{ lead.outcome_reason|linebreaksbr }}</p></div>{% endif %}
       {% if lead.outcome == 'declined' and lead.status != 'archived' %}<form class="lead-panel__reopen" method="post" action="{% url 'lead_outcome' lead.pk %}" hx-post="{% url 'lead_outcome' lead.pk %}" hx-target="#lead-panel" hx-swap="outerHTML">{% csrf_token %}{% include "properties/includes/lead_panel_form_context.html" %}<button class="btn btn-neutral btn-sm" type="submit" name="action" value="reopen">Возобновить работу</button></form>{% endif %}
+    {% endif %}
+    </div>
+    {% if lead.status != 'archived' and lead.outcome == 'open' %}
+      {% include "properties/includes/lead_panel_editors.html" %}
     {% endif %}
   </div>
 </aside>

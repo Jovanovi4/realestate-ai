@@ -7,5 +7,6 @@
 {% if demo_test_completed %}<div class="alert alert-success border-0 shadow-sm"><strong>Готово!</strong> Вы прошли путь от лендинга до обращения клиента. Новая демо-заявка уже в списке ниже.</div>{% elif not has_any_leads %}<div class="contextual-hint mb-4"><span class="contextual-hint-mark">i</span><span>Добавьте запрос на подбор вручную или примите отклик с лендинга и Telegram.</span></div>{% endif %}
 
 {% include "properties/includes/lead_workspace.html" %}
+<script src="{% static 'js/lead-editor-controls.js' %}"></script>
 <script src="{% static 'js/lead-workspace.js' %}"></script>
 {% endblock %}

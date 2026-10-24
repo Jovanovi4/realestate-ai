@@ -29,17 +29,46 @@
       if (clearUnsaved) delete form.dataset.unsaved;
     });
   };
-  const hasUnsavedChanges = () => [...document.querySelectorAll('#lead-panel form')].some(
-    (form) => form.dataset.unsaved === 'true' || formValues(form) !== formSnapshots.get(form),
-  );
+  const formHasChanges = (form) => form.dataset.unsaved === 'true' || formValues(form) !== formSnapshots.get(form);
+  const hasUnsavedChanges = () => [...document.querySelectorAll('#lead-panel form')].some(formHasChanges);
+  const editorReturn = new WeakMap();
+  const toggleMoreActions = (panel, open) => {
+    const actions = panel.querySelector('#lead-panel-more');
+    if (actions) actions.hidden = !open;
+    panel.querySelector('[data-lead-more-toggle]')?.setAttribute('aria-expanded', String(open));
+  };
+  const setEditor = (mode, trigger) => {
+    const panel = document.getElementById('lead-panel');
+    const shell = panel?.querySelector('[data-lead-editor-shell]');
+    if (!shell) return;
+    const body = panel.querySelector('.lead-panel__body');
+    if (mode && !panel.dataset.leadEditorState) editorReturn.set(panel, { trigger, scroll: body.scrollTop });
+    if (!window.reaicrmLeadEditor.setMode(panel, mode)) return;
+    panel.querySelector('[data-lead-overview]').hidden = Boolean(mode);
+    const heading = shell.querySelector('#lead-panel-editor-title');
+    if (mode) {
+      toggleMoreActions(panel, false);
+      panel.querySelector('.lead-panel__notice')?.remove();
+      body.scrollTop = 0;
+      heading.focus({ preventScroll: true });
+    } else {
+      const previous = editorReturn.get(panel);
+      body.scrollTop = previous?.scroll || 0;
+      const opener = previous?.trigger;
+      if (opener?.dataset.leadEditorOpen === 'decline') toggleMoreActions(panel, true);
+      (opener || panel.querySelector('[data-lead-editor-open]') || panel).focus({ preventScroll: true });
+    }
+  };
   const hideDiscardWarning = () => {
     const warning = document.getElementById('lead-panel-discard');
     if (warning) warning.hidden = true;
   };
-  const warnBeforeLeaving = (action, hardNavigation, trigger) => {
+  const warnBeforeLeaving = (action, hardNavigation, trigger, submitWarning = '') => {
     const warning = document.getElementById('lead-panel-discard');
     if (!warning) return;
     pendingNavigation = { action, hardNavigation, trigger };
+    warning.querySelector('#lead-panel-discard-text').textContent = submitWarning || 'Сохраните запись или выйдите без изменений.';
+    warning.querySelector('[data-lead-discard-leave]').textContent = submitWarning ? 'Продолжить отправку' : 'Выйти без сохранения';
     warning.hidden = false;
     warning.querySelector('[data-lead-discard-stay]')?.focus({ preventScroll: true });
   };
@@ -157,12 +186,20 @@
       resumeNavigation();
       return;
     }
-    if (event.target.closest('[data-lead-panel-plan]')) {
-      const editor = document.getElementById('lead-panel-process');
-      if (editor) {
-        editor.open = true;
-        editor.querySelector('[name="next_action"]')?.focus({ preventScroll: true });
-      }
+    const editorOpener = event.target.closest('[data-lead-editor-open]');
+    if (editorOpener) {
+      event.preventDefault();
+      setEditor(editorOpener.dataset.leadEditorOpen, editorOpener);
+      return;
+    }
+    if (event.target.closest('[data-lead-editor-back]')) {
+      event.preventDefault();
+      setEditor('');
+      return;
+    }
+    const moreToggle = event.target.closest('[data-lead-more-toggle]');
+    if (moreToggle) {
+      toggleMoreActions(moreToggle.closest('#lead-panel'), moreToggle.getAttribute('aria-expanded') !== 'true');
       return;
     }
     const row = event.target.closest('[data-lead-open-row], [data-owner-open-row]');
@@ -186,7 +223,21 @@
   }, true);
   document.addEventListener('submit', (event) => {
     const form = event.target;
-    if (form.closest('#lead-panel')) { allowUnload = true; return; }
+    if (form.closest('#lead-panel')) {
+      const otherDraft = [...document.querySelectorAll('#lead-panel form')].some((other) => other !== form && formHasChanges(other));
+      const unsavedContact = event.submitter?.value === 'save' && (
+        form.querySelector('[name="contact_method"]:checked') || form.querySelector('[name="contact_note"]')?.value.trim()
+      );
+      if (!allowNavigation && (otherDraft || unsavedContact)) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        warnBeforeLeaving(() => form.requestSubmit(event.submitter || undefined), false, event.submitter || form,
+          otherDraft ? 'После отправки этой формы несохранённые изменения в другом действии будут потеряны.' : 'Сохранится только план. Способ связи и итог разговора не будут записаны. Чтобы записать контакт, вернитесь к первому контакту.');
+        return;
+      }
+      allowUnload = true;
+      return;
+    }
     if (allowNavigation || !form.closest('#lead-workspace') || !hasUnsavedChanges()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -217,8 +268,8 @@
       syncPanel();
       const panel = document.getElementById('lead-panel');
       const error = panel?.querySelector('.errorlist, .alert-danger');
-      const field = error?.closest('div')?.querySelector('input:not([type="hidden"]), select, textarea');
-      (field || error)?.setAttribute('tabindex', '-1');
+      const field = panel?.querySelector('[aria-invalid="true"]') || error?.closest('div')?.querySelector('input:not([type="hidden"]), select, textarea');
+      if (!field) error?.setAttribute('tabindex', '-1');
       (field || error || panel)?.focus({ preventScroll: true });
     }
     if (event.detail.target?.id === 'lead-workspace') {
@@ -245,7 +296,11 @@
     refreshingAfterSave = true;
     showSavedNotice(document.querySelector('#lead-panel .lead-panel__body'), document.getElementById('lead-workspace'), savedMessage);
     restoreScroll = { x: window.scrollX, y: window.scrollY };
-    htmx.ajax('GET', window.location.pathname + window.location.search, { target: '#lead-workspace', swap: 'outerHTML' });
+    const overviewUrl = new URL(window.location.href);
+    overviewUrl.searchParams.delete('contact');
+    overviewUrl.searchParams.delete('complete');
+    history.replaceState(history.state, '', overviewUrl.pathname + overviewUrl.search);
+    htmx.ajax('GET', overviewUrl.pathname + overviewUrl.search, { target: '#lead-workspace', swap: 'outerHTML' });
   });
   document.body.addEventListener('htmx:afterRequest', (event) => {
     if (event.detail.elt?.closest?.('#lead-panel')) allowUnload = false;
@@ -297,6 +352,17 @@
         pendingNavigation = null;
         hideDiscardWarning();
         trigger?.focus({ preventScroll: true });
+        return;
+      }
+      if (panel.dataset.leadEditorState) {
+        event.preventDefault();
+        setEditor('');
+        return;
+      }
+      if (panel.querySelector('[data-lead-more-toggle][aria-expanded="true"]')) {
+        event.preventDefault();
+        toggleMoreActions(panel, false);
+        panel.querySelector('[data-lead-more-toggle]').focus({ preventScroll: true });
         return;
       }
       const close = panel.querySelector('[data-lead-panel-close]');

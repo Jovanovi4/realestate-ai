@@ -264,6 +264,11 @@ class LeadProcessingTests(TestCase):
         self.assertContains(response, "Укажите время в будущем")
         self.assertContains(response, 'queue=all&amp;q=%D0%90%D0%BD%D0%BD%D0%B0&amp;page=2')
         self.assertContains(response, 'data-unsaved="true"')
+        self.assertContains(response, 'data-lead-editor-state="contact"')
+        self.assertContains(response, '<div data-lead-overview hidden>')
+        self.assertContains(response, 'name="contact_method" value="call" checked')
+        self.assertContains(response, 'name="qualification" value="qualified" checked')
+        self.assertContains(response, self.processing_data()["contact_note"])
         self.assertNotContains(response, 'id="lead-workspace"')
         self.lead.refresh_from_db()
         self.assertIsNone(self.lead.first_contacted_at)
@@ -284,7 +289,8 @@ class LeadProcessingTests(TestCase):
         }, HTTP_HX_REQUEST="true")
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "Обязательное поле")
-        self.assertContains(response, 'class="lead-panel__action lead-panel__decline" open')
+        self.assertContains(response, 'data-lead-editor-state="decline"')
+        self.assertContains(response, 'data-lead-editor-view="decline" aria-labelledby="lead-panel-editor-title">')
 
         response = self.client.post(reverse("lead_outcome", args=[self.lead.pk]), {
             "action": "decline", "reason": "Клиент отказался", "panel_context": "lead_list",
@@ -311,6 +317,65 @@ class LeadProcessingTests(TestCase):
         self.lead.refresh_from_db()
         self.assertEqual(self.lead.next_action, "Отправить документы")
         self.assertEqual(ClientReminder.objects.get(lead=self.lead, is_done=False).text, "Отправить документы")
+
+    def test_panel_offers_visible_choices_and_one_editor_without_nested_disclosures(self):
+        response = self.client.get(reverse("lead_list"), {"lead": self.lead.pk, "contact": "1"})
+        panel = response.content.decode().split('<aside class="lead-panel" id="lead-panel"', 1)[1].split("</aside>", 1)[0]
+        self.assertEqual(response.context["panel_editor"], "contact")
+        self.assertEqual(panel.count('type="radio"'), 6)
+        self.assertIn('name="qualification" value="pending" checked', panel)
+        self.assertNotIn('<select name="qualification"', panel)
+        self.assertNotIn('<select name="contact_method"', panel)
+        self.assertNotIn('<details', panel)
+        self.assertIn('<select name="source"', panel)
+        self.assertIn('data-lead-contact-fields>', panel)
+        self.assertIn('data-lead-editor-back', panel)
+        self.assertIn('data-lead-date="1"', panel)
+        self.assertIn(f'data-time-zone="{timezone.get_current_timezone_name()}"', panel)
+        self.assertIn('id="lead-panel-more" class="lead-panel__more-actions" hidden', panel)
+
+    def test_panel_plan_before_contact_keeps_errors_and_saves_without_creating_contact(self):
+        url = reverse("lead_process", args=[self.lead.pk])
+        data = self.processing_data(action="save", qualification="pending", next_action="Уточнить время звонка")
+        data.pop("contact_method")
+        data.pop("contact_note")
+        data["panel_context"] = "lead_list"
+        response = self.client.post(url, {**data, "next_action_due_at": "2020-01-01T10:00"}, HTTP_HX_REQUEST="true")
+        self.assertEqual(response.context["panel_editor"], "plan")
+        self.assertContains(response, 'data-lead-contact-fields hidden')
+        self.assertContains(response, 'value="Уточнить время звонка"')
+        self.assertContains(response, 'name="qualification" value="pending" checked')
+        response = self.client.post(url, data, HTTP_HX_REQUEST="true")
+        self.assertEqual(response.status_code, 204)
+        self.lead.refresh_from_db()
+        self.assertIsNone(self.lead.first_contacted_at)
+        self.assertEqual(self.lead.status, "new")
+        self.assertEqual(self.lead.next_action, data["next_action"])
+        self.assertFalse(self.lead.interactions.filter(interaction_type__in=("call", "message")).exists())
+
+    def test_panel_contact_choice_errors_are_visible_and_keep_selected_qualification(self):
+        response = self.client.post(reverse("lead_process", args=[self.lead.pk]), {
+            **self.processing_data(contact_method="", qualification="pending"), "panel_context": "lead_list",
+        }, HTTP_HX_REQUEST="true")
+        self.assertEqual(response.context["panel_editor"], "contact")
+        self.assertContains(response, 'name="qualification" value="pending" checked aria-invalid="true"')
+        self.assertContains(response, 'name="contact_method" value="call" aria-invalid="true"')
+        self.assertContains(response, "Укажите способ связи.")
+        self.assertContains(response, "Укажите результат квалификации")
+
+    def test_panel_invalid_result_keeps_its_editor_and_draft(self):
+        self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data())
+        task = ClientReminder.objects.get(lead=self.lead, is_done=False)
+        data = {**self.completion_data(task), "next_action_due_at": "2020-01-01T10:00", "panel_context": "lead_list"}
+        response = self.client.post(reverse("lead_action_complete", args=[self.lead.pk]), data, HTTP_HX_REQUEST="true")
+        self.assertEqual(response.context["panel_editor"], "complete")
+        self.assertContains(response, 'data-lead-editor-view="complete" aria-labelledby="lead-panel-editor-title">')
+        self.assertContains(response, data["outcome_note"])
+        self.assertContains(response, data["next_action"])
+        self.assertContains(response, "Укажите время в будущем")
+        self.assertContains(response, 'data-unsaved="true"')
+        task.refresh_from_db()
+        self.assertFalse(task.is_done)
 
     def test_panel_can_attach_qualified_lead_to_existing_deal(self):
         self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data())
@@ -619,7 +684,8 @@ class LeadProcessingTests(TestCase):
         original_task = ClientReminder.objects.get(lead=self.lead, is_done=False)
         response = self.client.post(url, {"action": "decline", "reason": "  "})
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'id="lead-decline-panel" role="region" tabindex="-1" aria-labelledby="lead-decline-title" hidden data-lead-action-open-on-load')
+        self.assertContains(response, 'data-lead-detail-actions data-lead-editor-state="decline"')
+        self.assertContains(response, 'id="lead-detail-editor" role="region" tabindex="-1" aria-labelledby="lead-panel-editor-title">')
         self.lead.refresh_from_db()
         self.assertEqual(self.lead.outcome, "open")
 
@@ -712,9 +778,9 @@ class LeadProcessingTests(TestCase):
         self.assertContains(response, ">Записать контакт</a>")
         self.assertNotContains(response, reverse("task_detail", args=[ClientReminder.objects.get(lead=self.lead).pk]))
         detail = self.client.get(reverse("lead_detail", args=[self.lead.pk]), {"contact": "1"})
-        self.assertContains(detail, 'id="lead-edit" data-lead-action-open="lead-edit-panel" aria-expanded="false" aria-controls="lead-edit-panel"')
-        self.assertContains(detail, 'id="lead-edit-panel" role="region" tabindex="-1" aria-labelledby="lead-edit-title" hidden data-lead-action-open-on-load')
-        self.assertContains(detail, 'id="lead-action" data-lead-action-open="lead-action-panel" aria-expanded="false" aria-controls="lead-action-panel"')
+        self.assertContains(detail, 'id="lead-edit" data-lead-editor-open="contact" aria-expanded="true" aria-controls="lead-detail-editor"')
+        self.assertContains(detail, 'data-lead-detail-actions data-lead-editor-state="contact"')
+        self.assertNotContains(detail, 'data-lead-editor-open="complete"')
 
         Lead.objects.filter(pk=self.lead.pk).update(next_action_due_at=received_at - timedelta(minutes=5))
         with patch("properties.workday_views.timezone.now", return_value=received_at + timedelta(minutes=5)):
@@ -728,32 +794,30 @@ class LeadProcessingTests(TestCase):
         self.assertContains(response, f"{reverse('lead_detail', args=[self.lead.pk])}?complete=1#lead-action")
         self.assertContains(response, ">Записать итог</a>")
         detail = self.client.get(reverse("lead_detail", args=[self.lead.pk]), {"complete": "1"})
-        self.assertContains(detail, 'id="lead-action" data-lead-action-open="lead-action-panel" aria-expanded="false" aria-controls="lead-action-panel"')
-        self.assertContains(detail, 'id="lead-action-panel" role="region" tabindex="-1" aria-labelledby="lead-action-title" hidden data-lead-action-open-on-load')
+        self.assertContains(detail, 'id="lead-action" data-lead-editor-open="complete" aria-expanded="true" aria-controls="lead-detail-editor"')
+        self.assertContains(detail, 'data-lead-detail-actions data-lead-editor-state="complete"')
 
     @override_settings(AI_ENABLED=True)
-    def test_lead_card_shows_summary_and_side_drawer_actions(self):
+    def test_lead_card_shows_summary_and_shared_side_editor(self):
         response = self.client.get(reverse("lead_detail", args=[self.lead.pk]))
         self.assertContains(response, "Следующее действие")
         self.assertContains(response, "Ответить клиенту до")
-        self.assertContains(response, 'id="lead-edit" data-lead-action-open="lead-edit-panel" aria-expanded="false" aria-controls="lead-edit-panel"')
-        self.assertContains(response, 'id="lead-action" data-lead-action-open="lead-action-panel" aria-expanded="false" aria-controls="lead-action-panel"')
-        self.assertContains(response, '<span>Записать контакт</span>')
-        self.assertContains(response, '<span>Записать итог</span>')
+        self.assertContains(response, 'id="lead-edit" data-lead-editor-open="contact" aria-expanded="false" aria-controls="lead-detail-editor"')
+        self.assertContains(response, 'data-lead-editor-open="plan"')
+        self.assertContains(response, '<span>Записать первый контакт</span>')
+        self.assertNotContains(response, '<span>Записать итог</span>')
         self.assertContains(response, f'href="tel:{self.lead.phone}" aria-label="Позвонить {self.lead.phone}"')
         self.assertContains(response, '<use href="#ui-icon-phone"></use>')
         self.assertContains(response, '<use href="#ui-icon-edit"></use>')
         self.assertContains(response, 'class="lead-contact__call-label">Позвонить</span>')
-        self.assertContains(response, '<use href="#ui-icon-check"></use>')
         self.assertContains(response, 'class="detail-main-stack lead-detail-main"')
         self.assertContains(response, 'class="lead-overview__outcome-action"')
         self.assertContains(response, "Закрыть без сделки")
         self.assertNotContains(response, 'id="lead-ai-reply"')
-        self.assertContains(response, 'id="lead-edit-panel" role="region" tabindex="-1" aria-labelledby="lead-edit-title" hidden>')
-        self.assertContains(response, 'id="lead-action-panel" role="region" tabindex="-1" aria-labelledby="lead-action-title" hidden>')
+        self.assertContains(response, 'id="lead-detail-editor" role="region" tabindex="-1" aria-labelledby="lead-panel-editor-title" hidden>')
+        self.assertContains(response, 'id="lead-detail-more" class="lead-panel__more-actions" hidden>')
         self.assertContains(response, 'aria-label="Пояснение: Следующее действие"')
         self.assertContains(response, 'id="id_lead_next_action"')
-        self.assertContains(response, 'id="id_complete_next_action"')
         html = response.content.decode()
         self.assertLess(html.index('id="lead-overview" role="tabpanel"'), html.index('id="lead-about" role="tabpanel"'))
         self.assertLess(html.index('id="lead-about" role="tabpanel"'), html.index('id="lead-history" role="tabpanel"'))
@@ -765,11 +829,63 @@ class LeadProcessingTests(TestCase):
         response = self.client.get(reverse("lead_detail", args=[self.lead.pk]))
 
         self.assertContains(response, '<span>Изменить план</span>')
-        self.assertContains(response, '<label class="form-label" for="id_lead_next_action">Текущее действие</label>')
-        self.assertContains(response, 'value="save" class="btn btn-primary">Сохранить план</button>')
+        self.assertContains(response, '<label class="form-label" for="id_lead_next_action">Следующее действие</label>')
+        self.assertContains(response, 'name="action" value="save" data-lead-plan-submit>Сохранить план</button>')
         self.assertContains(response, '<span>Записать итог</span>')
         self.assertContains(response, '<label class="form-label" for="id_complete_next_action">Следующее действие</label>')
         self.assertNotContains(response, "Изменить первый контакт и следующий шаг")
+
+    def test_full_card_uses_visible_choices_and_regular_posts(self):
+        response = self.client.get(reverse("lead_detail", args=[self.lead.pk]), {"contact": "1"})
+        editor = response.content.decode().split('id="lead-detail-editor"', 1)[1].split('</aside>', 1)[0]
+        self.assertEqual(editor.count('type="radio"'), 6)
+        self.assertIn('data-lead-contact-fields>', editor)
+        self.assertIn('name="qualification" value="pending" checked', editor)
+        self.assertIn('<select name="source"', editor)
+        self.assertIn('data-lead-date="0"', editor)
+        self.assertIn('data-lead-date="1"', editor)
+        self.assertIn('data-lead-date="custom"', editor)
+        self.assertNotIn('<details', editor)
+        self.assertNotIn('hx-post=', editor)
+        self.assertNotIn('name="panel_context"', editor)
+        self.assertContains(response, 'lead-editor-controls.')
+        self.assertContains(response, 'lead-detail.')
+
+    def test_full_card_invalid_contact_and_plan_keep_the_correct_editor_and_values(self):
+        for action, mode in [("contacted", "contact"), ("save", "plan")]:
+            with self.subTest(action=action):
+                data = self.processing_data(action=action, qualification="follow_up", next_action_due_at="2020-01-01T10:00")
+                response = self.client.post(reverse("lead_process", args=[self.lead.pk]), data)
+                self.assertEqual(response.status_code, 200)
+                self.assertContains(response, f'data-lead-detail-actions data-lead-editor-state="{mode}"')
+                self.assertContains(response, 'id="lead-detail-editor" role="region" tabindex="-1" aria-labelledby="lead-panel-editor-title">')
+                self.assertContains(response, 'name="qualification" value="follow_up" checked')
+                self.assertContains(response, data["contact_note"])
+                self.assertContains(response, 'data-unsaved="true"')
+                self.assertContains(response, "Укажите время в будущем")
+        self.lead.refresh_from_db()
+        self.assertIsNone(self.lead.first_contacted_at)
+
+    def test_full_card_invalid_result_opens_editor_and_preserves_note(self):
+        self.client.post(reverse("lead_process", args=[self.lead.pk]), self.processing_data())
+        task = ClientReminder.objects.get(lead=self.lead, is_done=False)
+        data = self.completion_data(task, next_action_due_at="2020-01-01T10:00")
+        response = self.client.post(reverse("lead_action_complete", args=[self.lead.pk]), data)
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'data-lead-detail-actions data-lead-editor-state="complete"')
+        self.assertContains(response, data["outcome_note"])
+        self.assertContains(response, 'data-unsaved="true"')
+        task.refresh_from_db()
+        self.assertFalse(task.is_done)
+
+    def test_finished_full_card_has_no_action_editor(self):
+        self.lead.outcome = "declined"
+        self.lead.outcome_reason = "Клиент отложил покупку"
+        self.lead.save(update_fields=["outcome", "outcome_reason"])
+        response = self.client.get(reverse("lead_detail", args=[self.lead.pk]), {"contact": "1"})
+        self.assertNotContains(response, 'data-lead-detail-actions')
+        self.assertNotContains(response, 'id="lead-detail-editor"')
+        self.assertContains(response, "Возобновить работу")
 
     def test_lead_list_keeps_contacted_and_archived_leads_visible(self):
         self.lead.status = "read"

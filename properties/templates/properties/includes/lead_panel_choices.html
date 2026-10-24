@@ -1,0 +1,13 @@
+<fieldset class="lead-panel__choices-field"{% if field.errors %} aria-describedby="{{ field.id_for_label }}_choices_errors"{% endif %}>
+  <legend class="form-label">{{ field.label }}</legend>
+  <div class="lead-panel__choices{% if contact_choices %} lead-panel__choices--contact{% endif %}">
+    {% for value, label in field.field.choices %}{% if value %}
+      <label class="lead-panel__choice" for="{{ field.id_for_label }}_{{ forloop.counter }}">
+        <input class="form-check-input" type="radio" id="{{ field.id_for_label }}_{{ forloop.counter }}" name="{{ field.html_name }}" value="{{ value }}"{% if field.value == value %} checked{% endif %}{% if field.errors %} aria-invalid="true" aria-describedby="{{ field.id_for_label }}_choices_errors"{% endif %}>
+        {% if contact_choices %}<svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><use href="{% if value == 'call' %}#ui-icon-phone{% else %}#ui-icon-mail{% endif %}"></use></svg>{% endif %}
+        <span>{{ label }}</span>
+      </label>
+    {% endif %}{% endfor %}
+  </div>
+  {% if field.errors %}<div id="{{ field.id_for_label }}_choices_errors">{{ field.errors }}</div>{% endif %}
+</fieldset>

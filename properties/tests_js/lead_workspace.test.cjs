@@ -14,7 +14,7 @@ test('clicking a lead row opens its panel without hijacking row controls', () =>
   };
   const history = { state: null, replaceState(state) { this.state = state; } };
   const window = { location: { href: 'https://example.test/leads/' }, addEventListener() {} };
-  const code = fs.readFileSync(path.join(__dirname, '../../static/js/lead-workspace.js'), 'utf8');
+  const code = ["lead-editor-controls.js", "lead-workspace.js"].map((file) => fs.readFileSync(path.join(__dirname, '../../static/js', file), 'utf8')).join('\n');
   vm.runInNewContext(code, {
     document, window, history, FormData, URL, URLSearchParams, WeakMap,
     ResizeObserver: class { observe() {} unobserve() {} },
@@ -59,7 +59,7 @@ test('clicking an owner request row opens its owner workflow', () => {
   };
   const history = { state: null, replaceState(state) { this.state = state; } };
   const window = { location: { href: 'https://example.test/leads/' }, addEventListener() {} };
-  const code = fs.readFileSync(path.join(__dirname, '../../static/js/lead-workspace.js'), 'utf8');
+  const code = ["lead-editor-controls.js", "lead-workspace.js"].map((file) => fs.readFileSync(path.join(__dirname, '../../static/js', file), 'utf8')).join('\n');
   vm.runInNewContext(code, { document, window, history, FormData, URL, URLSearchParams, WeakMap });
   let opened = 0;
   const row = { querySelector() { return { click() { opened += 1; } }; } };
@@ -84,8 +84,6 @@ test('unsaved lead form keeps the panel open until the user chooses to leave', (
   const form = { dataset: {}, value: 'Исходный шаг' };
   const stay = { focus() {} };
   const warning = { hidden: true, querySelector: () => stay };
-  let planFocuses = 0;
-  const planEditor = { open: false, querySelector: () => ({ focus() { planFocuses += 1; } }) };
   const history = {
     state: null,
     replaceState(state) { this.state = state; },
@@ -97,7 +95,6 @@ test('unsaved lead form keeps the panel open until the user chooses to leave', (
     getElementById(id) {
       if (id === 'lead-panel-discard') return warning;
       if (id === 'lead-panel') return panel;
-      if (id === 'lead-panel-process') return planEditor;
       return null;
     },
   };
@@ -109,7 +106,7 @@ test('unsaved lead form keeps the panel open until the user chooses to leave', (
     constructor(currentForm) { this.items = [['next_action', currentForm.value]]; }
     [Symbol.iterator]() { return this.items[Symbol.iterator](); }
   }
-  const code = fs.readFileSync(path.join(__dirname, '../../static/js/lead-workspace.js'), 'utf8');
+  const code = ["lead-editor-controls.js", "lead-workspace.js"].map((file) => fs.readFileSync(path.join(__dirname, '../../static/js', file), 'utf8')).join('\n');
   vm.runInNewContext(code, {
     document, window, history, FormData: FakeFormData, URL, URLSearchParams, WeakMap,
     ResizeObserver: class { observe() {} unobserve() {} },
@@ -131,7 +128,6 @@ test('unsaved lead form keeps the panel open until the user chooses to leave', (
       closest(selector) {
         if (selector === '[data-lead-discard-stay]') return kind === 'stay' ? stay : null;
         if (selector === '[data-lead-discard-leave]') return kind === 'leave' ? {} : null;
-        if (selector === '[data-lead-panel-plan]') return kind === 'plan' ? {} : null;
         if (selector === 'a[href]') return kind === 'link' ? link : null;
         return null;
       },
@@ -143,10 +139,6 @@ test('unsaved lead form keeps the panel open until the user chooses to leave', (
     });
     return prevented;
   };
-
-  click('plan');
-  assert.equal(planEditor.open, true);
-  assert.equal(planFocuses, 1);
 
   form.value = 'Позвонить завтра';
   assert.equal(click('link'), true);
@@ -201,12 +193,12 @@ test('saved lead shows a result and offers the next visible lead', () => {
     process(element) { processed.push(element); },
   };
   const window = {
-    location: { href: 'https://example.test/leads/?page=1&lead=1', pathname: '/leads/', search: '?page=1&lead=1' },
+    location: { href: 'https://example.test/leads/?page=1&lead=1&complete=1', pathname: '/leads/', search: '?page=1&lead=1&complete=1' },
     scrollX: 0,
     scrollY: 100,
     addEventListener() {},
   };
-  const code = fs.readFileSync(path.join(__dirname, '../../static/js/lead-workspace.js'), 'utf8');
+  const code = ["lead-editor-controls.js", "lead-workspace.js"].map((file) => fs.readFileSync(path.join(__dirname, '../../static/js', file), 'utf8')).join('\n');
   vm.runInNewContext(code, {
     document, window, history, FormData, URL, URLSearchParams, WeakMap, htmx,
     ResizeObserver: class { observe() {} unobserve() {} },
@@ -254,7 +246,7 @@ test('opening a lead focuses its in-page panel and scrolls to it only in a stack
     };
     const history = { state: null, replaceState(state) { this.state = state; } };
     const window = { location: { href: 'https://example.test/leads/' }, addEventListener() {} };
-    const code = fs.readFileSync(path.join(__dirname, '../../static/js/lead-workspace.js'), 'utf8');
+    const code = ["lead-editor-controls.js", "lead-workspace.js"].map((file) => fs.readFileSync(path.join(__dirname, '../../static/js', file), 'utf8')).join('\n');
     vm.runInNewContext(code, { document, window, history, FormData, URL, URLSearchParams, WeakMap });
 
     listeners.get('htmx:afterSwap')({ detail: { target: { id: 'lead-workspace' } } });
@@ -294,7 +286,7 @@ test('lead filters stay expanded while htmx replaces the list after filtering', 
   };
   const history = { state: null, replaceState(state) { this.state = state; } };
   const window = { location: { href: 'https://example.test/leads/' }, addEventListener() {} };
-  const code = fs.readFileSync(path.join(__dirname, '../../static/js/lead-workspace.js'), 'utf8');
+  const code = ["lead-editor-controls.js", "lead-workspace.js"].map((file) => fs.readFileSync(path.join(__dirname, '../../static/js', file), 'utf8')).join('\n');
   vm.runInNewContext(code, { document, window, history, FormData, URL, URLSearchParams, WeakMap });
 
   listeners.get('show.bs.collapse')({ target: { id: 'lead-filter-panel' } });
@@ -310,4 +302,201 @@ test('lead filters stay expanded while htmx replaces the list after filtering', 
   listeners.get('htmx:afterSwap')({ detail: { target: { id: 'lead-workspace' } } });
   assert.equal(panel.classes.has('show'), false);
   assert.equal(toggle.attributes['aria-expanded'], 'false');
+});
+
+function editorFixture() {
+  const listeners = new Map();
+  let focused = null;
+  let sent = 0;
+  let closed = 0;
+  const element = (selectors = [], dataset = {}) => ({
+    dataset, hidden: false, attributes: {},
+    closest(selector) { return selectors.includes(selector) ? this : null; },
+    focus() { focused = this; },
+    setAttribute(name, value) { this.attributes[name] = value; },
+    getAttribute(name) { return this.attributes[name]; },
+    hasAttribute(name) { return selectors.includes(`[${name}]`); },
+  });
+  const overview = element();
+  const body = { scrollTop: 80 };
+  const heading = element();
+  const contact = element();
+  const contactSubmit = Object.assign(element(['[data-lead-contact-submit]']), { value: 'contacted' });
+  const planSubmit = Object.assign(element(['[data-lead-plan-submit]']), { value: 'save' });
+  const views = ['process', 'complete', 'decline'].map((view) => Object.assign(element([], { leadEditorView: view }), { hidden: true }));
+  const forms = views.map(() => ({
+    dataset: {}, values: { next_action: 'Позвонить', contact_note: '', contact_method: '' },
+    closest(selector) { return selector === '#lead-panel' ? panel : null; },
+    querySelector(selector) {
+      if (selector === '[name="contact_note"]') return { value: this.values.contact_note };
+      if (selector === '[name="contact_method"]:checked') return this.values.contact_method ? {} : null;
+      return null;
+    },
+    requestSubmit(submitter) {
+      let prevented = false;
+      listeners.get('submit')({ target: this, submitter, preventDefault() { prevented = true; }, stopImmediatePropagation() {} });
+      if (!prevented) sent += 1;
+    },
+  }));
+  const shell = Object.assign(element(), {
+    hidden: true,
+    querySelector(selector) { return selector === '#lead-panel-editor-title' ? heading : selector === '[data-lead-contact-fields]' ? contact : null; },
+    querySelectorAll(selector) { return selector === '[data-lead-editor-view]' ? views : [contactSubmit, planSubmit]; },
+  });
+  const more = Object.assign(element(), { hidden: true });
+  const moreToggle = element(['[data-lead-more-toggle]']);
+  moreToggle.setAttribute('aria-expanded', 'false');
+  const warningText = element();
+  const stay = element(['[data-lead-discard-stay]']);
+  const leave = element(['[data-lead-discard-leave]']);
+  const warning = {
+    hidden: true,
+    querySelector(selector) { return selector === '#lead-panel-discard-text' ? warningText : selector === '[data-lead-discard-leave]' ? leave : stay; },
+  };
+  const openers = Object.fromEntries(['contact', 'plan', 'complete', 'decline'].map((mode) => [mode, element(['[data-lead-editor-open]'], { leadEditorOpen: mode })]));
+  const panel = {
+    dataset: { leadEditorState: '' },
+    querySelector(selector) {
+      const elements = {
+        '[data-lead-editor-shell]': shell, '[data-lead-overview]': overview, '.lead-panel__body': body,
+        '#lead-panel-more': more, '[data-lead-more-toggle]': moreToggle,
+        '[data-lead-editor-open]': openers.contact, '[data-lead-panel-close]': { click() { closed += 1; } },
+      };
+      if (selector === '[data-lead-more-toggle][aria-expanded="true"]') return moreToggle.getAttribute('aria-expanded') === 'true' ? moreToggle : null;
+      return elements[selector] || views.find((view) => selector === `[data-lead-editor-view="${view.dataset.leadEditorView}"]`) || null;
+    },
+  };
+  moreToggle.closest = (selector) => selector === '#lead-panel' ? panel : selector === '[data-lead-more-toggle]' ? moreToggle : null;
+  const document = {
+    body: { addEventListener(name, listener) { listeners.set(name, listener); } },
+    addEventListener(name, listener) { listeners.set(name, listener); },
+    querySelectorAll(selector) { return selector === '#lead-panel form' ? forms : []; },
+    getElementById(id) { return id === 'lead-panel' ? panel : id === 'lead-panel-discard' ? warning : null; },
+  };
+  class PanelFormData {
+    constructor(form) { this.items = Object.entries(form.values); }
+    [Symbol.iterator]() { return this.items[Symbol.iterator](); }
+  }
+  const history = { state: null, replaceState(state) { this.state = state; } };
+  const window = { location: { href: 'https://example.test/leads/?lead=1' }, addEventListener() {} };
+  vm.runInNewContext(["lead-editor-controls.js", "lead-workspace.js"].map((file) => fs.readFileSync(path.join(__dirname, '../../static/js', file), 'utf8')).join('\n'), {
+    document, window, history, FormData: PanelFormData, URL, URLSearchParams, WeakMap,
+  });
+  return {
+    panel, overview, shell, views, forms, body, heading, contact, contactSubmit, planSubmit, more, moreToggle, warning, leave, warningText, openers,
+    back: element(['[data-lead-editor-back]']),
+    click(target) { listeners.get('click')({ target, preventDefault() {}, stopImmediatePropagation() {} }); },
+    escape() { listeners.get('keydown')({ key: 'Escape', preventDefault() {} }); },
+    get focused() { return focused; }, get sent() { return sent; }, get closed() { return closed; },
+  };
+}
+
+test('lead editor opens one screen, keeps the draft on Back and restores the initiating button', () => {
+  const ui = editorFixture();
+  ui.click(ui.openers.contact);
+  assert.equal(ui.overview.hidden, true);
+  assert.equal(ui.shell.hidden, false);
+  assert.deepEqual(ui.views.map((view) => view.hidden), [false, true, true]);
+  assert.equal(ui.contact.hidden, false);
+  assert.equal(ui.contactSubmit.disabled, false);
+  assert.equal(ui.planSubmit.disabled, true);
+  assert.equal(ui.focused, ui.heading);
+  ui.forms[0].values.contact_note = 'Попросил позвонить завтра';
+  ui.click(ui.back);
+  assert.equal(ui.overview.hidden, false);
+  assert.equal(ui.shell.hidden, true);
+  assert.equal(ui.body.scrollTop, 80);
+  assert.equal(ui.focused, ui.openers.contact);
+  ui.click(ui.openers.contact);
+  assert.equal(ui.forms[0].values.contact_note, 'Попросил позвонить завтра');
+  ui.escape();
+  assert.equal(ui.closed, 0);
+  assert.equal(ui.overview.hidden, false);
+  ui.click(ui.openers.plan);
+  assert.equal(ui.contact.hidden, true);
+  assert.equal(ui.contactSubmit.disabled, true);
+  assert.equal(ui.planSubmit.disabled, false);
+});
+
+test('closing without a deal is reached from More and Escape returns to the same action', () => {
+  const ui = editorFixture();
+  ui.click(ui.moreToggle);
+  assert.equal(ui.more.hidden, false);
+  ui.click(ui.openers.decline);
+  assert.deepEqual(ui.views.map((view) => view.hidden), [true, true, false]);
+  assert.equal(ui.more.hidden, true);
+  ui.escape();
+  assert.equal(ui.more.hidden, false);
+  assert.equal(ui.focused, ui.openers.decline);
+  ui.escape();
+  assert.equal(ui.more.hidden, true);
+  assert.equal(ui.closed, 0);
+});
+
+test('sending a different action warns before discarding another form draft', () => {
+  const ui = editorFixture();
+  ui.forms[0].values.next_action = 'Новый несохранённый план';
+  ui.click(ui.openers.complete);
+  ui.forms[1].requestSubmit({ value: '' });
+  assert.equal(ui.sent, 0);
+  assert.equal(ui.warning.hidden, false);
+  assert.match(ui.warningText.textContent, /в другом действии/);
+  ui.click(ui.leave);
+  assert.equal(ui.sent, 1);
+  assert.equal(ui.warning.hidden, true);
+});
+
+test('saving only a plan warns when the user also drafted a first contact', () => {
+  const ui = editorFixture();
+  ui.forms[0].values.contact_method = 'call';
+  ui.forms[0].values.contact_note = 'Договорились о просмотре';
+  ui.click(ui.openers.plan);
+  ui.forms[0].requestSubmit(ui.planSubmit);
+  assert.equal(ui.sent, 0);
+  assert.match(ui.warningText.textContent, /Способ связи и итог разговора не будут записаны/);
+  ui.escape();
+  assert.equal(ui.warning.hidden, true);
+  assert.equal(ui.panel.dataset.leadEditorState, 'plan');
+  assert.equal(ui.forms[0].values.contact_note, 'Договорились о просмотре');
+});
+
+test('date shortcuts use CRM timezone, keep precise time and handle the end of a day', () => {
+  const listeners = new Map();
+  let now = '2026-10-22T21:10:00Z'; // Already 23 October in Moscow.
+  class ClockDate extends Date {
+    constructor(...args) { super(...(args.length ? args : [now])); }
+  }
+  const input = {
+    value: '2026-11-01T15:40', validity: '', events: [],
+    setCustomValidity(message) { this.validity = message; }, reportValidity() {}, focus() {},
+    dispatchEvent(event) { this.events.push(event.type); },
+  };
+  const group = { dataset: { timeZone: 'Europe/Moscow' }, querySelector() { return input; } };
+  const document = {
+    body: { addEventListener() {} }, querySelectorAll() { return []; }, getElementById() { return null; },
+    addEventListener(name, listener) { listeners.set(name, listener); },
+  };
+  const history = { state: null, replaceState(state) { this.state = state; } };
+  const window = { location: { href: 'https://example.test/leads/' }, addEventListener() {} };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../../static/js/lead-editor-controls.js'), 'utf8'), {
+    document, window, history, FormData, URL, URLSearchParams, WeakMap, Date: ClockDate, Intl, Event,
+  });
+  const pick = (offset) => {
+    const button = { dataset: { leadDate: offset }, closest: () => group };
+    listeners.get('click')({ target: { closest(selector) { return selector === '[data-lead-date]' ? button : null; } } });
+  };
+  pick('0');
+  assert.equal(input.value, '2026-10-23T15:40');
+  pick('1');
+  assert.equal(input.value, '2026-10-24T15:40');
+  assert.deepEqual(input.events, ['input', 'change', 'input', 'change']);
+  now = '2026-10-23T15:10:00Z';
+  pick('0');
+  assert.equal(input.value, '2026-10-23T19:10');
+  now = '2026-10-23T20:59:30Z';
+  pick('0');
+  assert.match(input.validity, /Сегодня уже нет доступного времени/);
+  pick('1');
+  assert.equal(input.validity, '');
+  assert.equal(input.value, '2026-10-24T19:10');
 });
